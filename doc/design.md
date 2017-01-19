@@ -1,4 +1,3 @@
-<<<<<<< HEAD:doc/containerfs_design.md
 ## Containerfs Design
 The architecture of Containerfs is data symmetric and mata centrally (raft group); This design enables following features.
 
