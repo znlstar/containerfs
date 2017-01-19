@@ -247,7 +247,4 @@ the target data node.
 
 ## Volume manager sql tables
 todo
- 
-## Structure pic
-todo      
 
