@@ -19,6 +19,7 @@ Even if a machine fails, the data is still accessible through other machines.
 
 Containerfs is a distributed file system and provides an instant volume to Containerfs client (fuse).
 See the later sections for more details of each Containerfs component.
+![image](https://github.com/zhengxiaochuan-3/containerfs/blob/adddoc20170119/doc/architecture.png)
 
 #### Volume  
 Volume is a Containerfs instant. Each Containerfs cluster may have multiple volumes.
