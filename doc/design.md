@@ -79,8 +79,8 @@ Linux kernel
 #### chunk
 单独把chunk用map存储，可以实现通过ChunkID快速的反向查找，使用场景比如:chunk副本修复
 <pre>
-&nbsp;ChunkDB : map[string]*protobuf.ChunkInfo // key : ChunkID
-&nbsp;
+&nbsp;ChunkDB : map[string]*protobuf.ChunkInfo
+&nbsp;// key : string(ChunkID)
 &nbsp;type ChunkInfo struct {
 &nbsp;        ChunkSize  int32        `protobuf:"varint,1,opt,name=ChunkSize" json:"ChunkSize,omitempty"`
 &nbsp;        BlockGroupID int32        `protobuf:"varint,2,opt,name=BlockGroupID" json:"BlockGroupID,omitempty"`
@@ -94,7 +94,6 @@ Linux kernel
 &nbsp;}
 </pre>
 
-#### todo
 
 ## Volume manager sql tables
 <pre>
@@ -104,4 +103,3 @@ Linux kernel
 &nbsp;volume table:
 &nbsp;volumeID | name | spacequota | spaceused | inodequota | inodeused | blockGroupID1 blockGroupID2 blockGroupID3 ... | status
 </pre>
-
