@@ -1,0 +1,139 @@
+syntax="proto3";
+package protobuf;
+
+service MetaNode {
+    rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
+    rpc CreateDir(CreateDirReq) returns (CreateDirAck){};
+    rpc Stat(StatReq) returns (StatAck){};
+    rpc List(ListReq) returns (ListAck){};
+    rpc DeleteDir(DeleteDirReq) returns (DeleteDirAck){};
+    rpc Rename(RenameReq) returns (RenameAck){};
+
+    rpc CreateFile(CreateFileReq) returns (CreateFileAck){};
+
+    //rpc WriteChunk(WriteChunkReq) returns (WriteChunkAck){};
+    //rpc ReadChunk(ReadChunkReq) returns (ReadChunkAck){};
+    //rpc DeleteFile(DeleteFileReq) returns (DeleteFileAck){};
+}
+
+message NULL{
+}
+message CreateNameSpaceReq{
+    string VolID = 1;
+}
+message CreateNameSpaceAck{
+    int32 Ret = 1;
+}
+message CreateDirReq{
+    string VolID = 1;
+    string FullPathName = 2;
+}
+message CreateDirAck{
+    int32 Ret = 1;
+}
+message DeleteDirReq{
+    string VolID = 1;
+    string FullPathName = 2;
+}
+message DeleteDirAck{
+    int32 Ret = 1;
+}
+
+message RenameReq{
+    string VolID = 1;
+    string FullPathName1 = 2;
+    string FullPathName2 = 3;
+}
+message RenameAck{
+    int32 Ret = 1;
+}
+
+
+message CreateFileReq{
+    string VolID = 1;
+    string FullPathName = 2;
+}
+message CreateFileAck{
+    int32 Ret = 1;
+}
+message WriteChunkReq{
+    string VolID = 1;
+    string FullPathName = 2;
+    int64 SequenceID = 3;
+    bool IsLast = 4;
+    int32 ChunkSize = 5;
+}
+message WriteChunkAck{
+    int32 Ret = 1;
+    int64 SequenceID = 2;
+    int64 ChunkID = 3;
+    ChunkInfo ChunkIndo = 4;
+
+}
+message ReadChunkReq{
+    string VolID = 1;
+    InodeInfo InodeInfo = 2;
+}
+message ReadChunkAck{
+    int32 Ret = 1;
+}
+message StatFileReq{
+    string VolID = 1;
+    string FullPathName = 2;
+}
+message StatFileAck{
+    int32 Ret = 1;
+    InodeInfo InodeInfo = 2;
+}
+message DeleteFileReq{
+    string VolID = 1;
+    string FullPathName = 2;
+}
+message DeleteFileAck{
+    int32 Ret = 1;
+}
+
+message StatReq{
+    string VolID = 1;
+    string FullPathName = 2;
+}
+message StatAck{
+    int32 Ret = 1;
+    InodeInfo InodeInfo = 2;
+}
+message ListReq{
+    string VolID = 1;
+    string FullPathName = 2;
+}
+message ListAck{
+    int32 Ret = 1;
+    repeated InodeInfo InodeInfos = 2;
+}
+
+message InodeInfo{
+    int64 ParentInodeID = 1;
+    int64 InodeID = 2;
+    string Name = 3;
+    int64 ModifiTime = 4;
+    int64 AccessTime = 5;
+    bool InodeType = 6;
+    int64 FileSize = 7;
+    repeated int64 ChunkIDs = 8;
+    repeated int64 ChildrenInodeIDs = 9;
+}
+
+message ChunkInfo{
+    int32 ChunkSize = 1;
+    int32 BlockGroupID = 2;
+    MNBlockGroup BlockGroup = 3;
+}
+message MNBlockGroup{
+    int32 BlockGroupID = 1;
+    repeated MNBlockInfo BlockInfo = 2;
+}
+
+message MNBlockInfo{
+    int32 BlockID = 1;
+    int32 DataNodeIP = 2;
+    int32 DataNodePort = 3;
+}

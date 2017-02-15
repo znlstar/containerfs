@@ -1,0 +1,77 @@
+syntax="proto3";
+package protobuf;
+
+service VolMgr {
+    rpc CreateVol(CreateVolReq) returns (CreateVolAck){};
+    rpc GetVolInfo(GetVolInfoReq) returns (GetVolInfoAck){};
+    //rpc ListVol(ListVolReq) returns (ListVolAck){};
+    //rpc DeleteVol(DeleteVolReq) returns (DeleteVolAck){};
+    rpc DatanodeRegistry(DatanodeRegistryReq) returns (DatanodeRegistryAck){};
+    rpc DatanodeHeartbeat(DatanodeHeartbeatReq) returns (DatanodeHeartbeatAck){};
+
+}
+
+message CreateVolReq {
+    string VolName = 1 ;
+    int32  SpaceQuota = 2 ;
+    int32  InodeQuota = 3 ;
+}
+message CreateVolAck {
+    int32 Ret = 1;
+    string UUID = 2;
+}
+
+message GetVolInfoReq {
+    string UUID = 1 ;
+}
+message GetVolInfoAck {
+    int32 Ret = 1;
+    VolInfo VolInfo = 2;
+}
+
+message VolInfo {
+    string VolID = 1;
+    string VolName = 2;
+    int32  SpaceQuota = 3 ;
+    int32  InodeQuota = 4 ;
+    repeated BlockGroup BlockGroups = 5;
+}
+message BlockGroup{
+    int32 BlockGroupID = 1;
+    repeated BlockInfo BlockInfos = 2;
+}
+message BlockInfo{
+    int32 BlockID = 1;
+    int32 DataNodeIP = 2;
+    int32 DataNodePort = 3;
+}
+
+message DatanodeRegistryReq {
+    int32 Ip = 1;
+    int32 Port = 2;
+    string MountPoint = 3 ;
+    int32 Capacity = 4; //GB
+}
+
+message DatanodeRegistryAck {
+    int32 Ret = 1;
+    int32 StartBlockID = 2;
+    int32 EndBlockID = 3;
+}
+
+message DatanodeHeartbeatReq {
+    int32 Ip = 1;
+    int32 Port = 2;
+    int32 Free = 3;
+    int32 Used = 4;
+    int32 Status = 5;
+}
+
+message DatanodeHeartbeatAck {
+}
+
+// block table:
+// blockID | ip | port | status | blockGroupID
+
+// volume table:
+// volumeID | name | spacequota | spaceused | inodequota | inodeused | blockGroupID1 blockGroupID2 blockGroupID3 ... | status 
