@@ -1,0 +1,29 @@
+syntax="proto3";
+package protobuf;
+
+service DataNode {
+    rpc WriteChunk(WriteChunkReq) returns (WriteChunkAck){};
+    //rpc ReadChunk(ReadChunkReq) returns (ReadChunkAck){};
+    //rpc DeleteFile(DeleteFileReq) returns (DeleteFileAck){};
+}
+
+message WriteChunkReq{
+    int64 ChunkID = 1;
+    ChunkInfo ChunkInfo = 4;
+    bytes Databuf = 2;
+    bool IsLast = 3;
+}
+message WriteChunkAck{
+    int32 Ret = 1;
+}
+message ChunkInfo{
+    int32 ChunkSize = 1;
+    int32 BlockGroupID = 2;
+    repeated BlockInfo BlockGroup = 3;
+}
+
+message BlockInfo{
+    int32 BlockID = 1;
+    int32 DataNodeIP = 2;
+    int32 DataNodePort = 3;
+}

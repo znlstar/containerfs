@@ -34,7 +34,7 @@ VolMgr holds all the cluster-level metadata, like the volume space quota, nodes 
 Data storage options: 1. MGR; 2. replicated VolMgr via Raft.
 
 #### Client
-FUSE
+FUSE  
 Linux kernel
 
 ## Communication
@@ -46,9 +46,10 @@ Linux kernel
 
 #### Volume create
 1. Cmdtool or RESTful api create a volume  
-2. allocate volumeID, create a volume record in volume-info table  
-3. send message to mata node create a new map  
-4. allocate a block from block table, update volume record  
+2. allocate volumeID, create a volume record from volmgr  
+3. allocate blockgroups from block table, update volume record 
+4. send message to metanode create a new map  
+ 
 
 #### open I/O flow
 
@@ -77,9 +78,9 @@ Linux kernel
 &nbsp;}
 </pre>
 #### chunk
-单独把chunk用map存储，可以实现通过ChunkID快速的反向查找，使用场景比如:chunk副本修复
 <pre>
 &nbsp;ChunkDB : map[string]*protobuf.ChunkInfo
+&nbsp;// 单独把chunk用map存储，可以实现通过ChunkID快速的反向查找，使用场景比如:chunk副本修复
 &nbsp;// key : string(ChunkID)
 &nbsp;type ChunkInfo struct {
 &nbsp;        ChunkSize  int32        `protobuf:"varint,1,opt,name=ChunkSize" json:"ChunkSize,omitempty"`
