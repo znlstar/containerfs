@@ -277,32 +277,35 @@ func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
 	tmpKey := strconv.FormatInt(pParentInodeInfo2.InodeID, 10) + "-" + name
 	ns.Set(tmpKey, &tmpInodeInfo)
 
-	/*keep inode key */
+	/*modfiy inode key */
+	ns.Set(strconv.FormatInt(pInodeInfo.InodeID, 10), &tmpInodeInfo)
 
-	/*update patent1 inode info*/
-	var pTmpParentInodeInfo1 *mp.InodeInfo
-	_, pTmpParentInodeInfo1 = ns.Get(key1s[key1sNum-2])
-	for index, value := range pTmpParentInodeInfo1.ChildrenInodeIDs {
-		if value == pInodeInfo.InodeID {
-			//fmt.Println("find the child index:")
-			pTmpParentInodeInfo1.ChildrenInodeIDs = append(pTmpParentInodeInfo1.ChildrenInodeIDs[:index], pTmpParentInodeInfo1.ChildrenInodeIDs[index+1:]...)
-			break
+	/*modify parents inodeinfo if they are not same*/
+	if key2s[key2sNum-2] != key1s[key1sNum-2] {
+		/*update patent1 inode info*/
+		var pTmpParentInodeInfo1 *mp.InodeInfo
+		_, pTmpParentInodeInfo1 = ns.Get(key1s[key1sNum-2])
+		for index, value := range pTmpParentInodeInfo1.ChildrenInodeIDs {
+			if value == pInodeInfo.InodeID {
+				//fmt.Println("find the child index:")
+				pTmpParentInodeInfo1.ChildrenInodeIDs = append(pTmpParentInodeInfo1.ChildrenInodeIDs[:index], pTmpParentInodeInfo1.ChildrenInodeIDs[index+1:]...)
+				break
+			}
+		}
+		ns.Set(strconv.FormatInt(pTmpParentInodeInfo1.InodeID, 10), pTmpParentInodeInfo1)
+		ns.Set(strconv.FormatInt(pTmpParentInodeInfo1.ParentInodeID, 10)+"-"+utils.GetParentName(path1), pTmpParentInodeInfo1)
+
+		/*update patent2 inode info*/
+		pParentInodeInfo2.ChildrenInodeIDs = append(pParentInodeInfo2.ChildrenInodeIDs, pInodeInfo.InodeID)
+		parent2Name := utils.GetParentName(path2)
+		if parent2Name == "/" {
+			ns.Set("0", pParentInodeInfo2)
+		} else {
+			ns.Set(strconv.FormatInt(pParentInodeInfo2.InodeID, 10), pParentInodeInfo2)
+			tmpKey2 := strconv.FormatInt(pParentInodeInfo2.ParentInodeID, 10) + "-" + utils.GetParentName(path2)
+			ns.Set(tmpKey2, pParentInodeInfo2)
 		}
 	}
-	ns.Set(key1s[key1sNum-2], pTmpParentInodeInfo1)
-	ns.Set(strconv.FormatInt(pTmpParentInodeInfo1.ParentInodeID, 10)+"-"+utils.GetParentName(path1), pTmpParentInodeInfo1)
-
-	/*update patent2 inode info*/
-	pParentInodeInfo2.ChildrenInodeIDs = append(pParentInodeInfo2.ChildrenInodeIDs, pInodeInfo.InodeID)
-	parent2Name := utils.GetParentName(path2)
-	if parent2Name == "/" {
-		ns.Set("0", pParentInodeInfo2)
-	} else {
-		ns.Set(strconv.FormatInt(pParentInodeInfo2.InodeID, 10), pParentInodeInfo2)
-		tmpKey2 := strconv.FormatInt(pParentInodeInfo2.ParentInodeID, 10) + "-" + utils.GetParentName(path2)
-		ns.Set(tmpKey2, pParentInodeInfo2)
-	}
-
 	/*delete old parentID + name key*/
 	ns.Delete(strconv.FormatInt(pInodeInfo.ParentInodeID, 10) + "-" + utils.GetSelfName(path1))
 
