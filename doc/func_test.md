@@ -6,11 +6,11 @@
 </pre>
 #### 2.datanode start
 <pre>
-&nbsp; [root@localhost volmgr]# ./main 10.8.65.94 10003 /mnt 10.8.65.94
+&nbsp; [root@localhost datanode]# ./main 10.8.65.94 10003 /mnt 10.8.65.94
 </pre>
 #### 3.metanode start
 <pre>
-&nbsp; [root@localhost volmgr]# ./main
+&nbsp; [root@localhost metanode]# ./main
 </pre>
 
 ## Volume Operation
