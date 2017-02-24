@@ -7,9 +7,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	//"io/ioutil"
-	dp "ipd.org/containerfs/datanode/protobuf"
+	"bufio"
+	dp "ipd.org/containerfs/proto/dp"
+	vp "ipd.org/containerfs/proto/vp"
 	"ipd.org/containerfs/utils"
-	vp "ipd.org/containerfs/volmgr/protobuf"
 	"net"
 	"os"
 	"runtime"
@@ -112,9 +113,74 @@ func heartbeatToVolMgr() {
 	c.DatanodeHeartbeat(context.Background(), &datanodeHeartbeatReq)
 }
 
+/*
 func isFileExist(filename string) bool {
 	_, err := os.Stat(filename)
 	return err == nil || os.IsExist(err)
+}
+*/
+
+/*
+rpc GetChunks(GetChunksReq) returns (GetChunksAck){};
+*/
+func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (*dp.WriteChunkAck, error) {
+	var f *os.File
+	var err error
+
+	//fmt.Println("writechunking in datanode ...")
+	ack := dp.WriteChunkAck{}
+	chunkID := in.ChunkID
+	blockID := in.BlockID
+
+	chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
+	fmt.Println(chunkFileName)
+
+	f, err = os.OpenFile(chunkFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	defer f.Close()
+	if err != nil {
+		ack.Ret = -1
+		return &ack, nil
+	}
+	fmt.Println(len(in.Databuf))
+	f.WriteString(in.Databuf)
+	ack.Ret = 0
+	return &ack, nil
+}
+
+func (s *DataNodeServer) ReadChunk(ctx context.Context, in *dp.ReadChunkReq) (*dp.ReadChunkAck, error) {
+	ack := dp.ReadChunkAck{}
+	chunkID := in.ChunkID
+	blockID := in.BlockID
+	readsize := in.Readlen
+	offset := in.Offset
+
+	chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
+	f, err := os.Open(chunkFileName)
+	defer f.Close()
+	if err != nil {
+		ack.Ret = -1
+		return &ack, nil
+	}
+	_, err = f.Seek(offset, 0)
+	if err != nil {
+		ack.Ret = -1
+		return &ack, nil
+	}
+	
+	buf := make([]byte, readsize)
+	bfRd := bufio.NewReader(f)
+	for {
+		n, err := bfRd.Read(buf)
+		if err != nil {
+			ack.Ret = -1
+			return &ack, nil
+		}
+		fmt.Printf("#### buflen:%v #### bufcap:%v ####\n",len(buf),cap(buf))
+		ack.Databuf = utils.B2S(buf)
+		ack.Ret = 1
+		ack.Readsize = int64(n)
+		return &ack, nil
+	}
 }
 
 func init() {
@@ -134,7 +200,7 @@ func init() {
 	DataNodeServerAddr.Port = int32(port)
 	DataNodeServerAddr.Path = os.Args[3]
 	DataNodeServerAddr.Flag = DataNodeServerAddr.Path + "/.registryflag"
-	if ok := isFileExist(DataNodeServerAddr.Flag); !ok {
+	if ok, _ := utils.LocalPathExists(DataNodeServerAddr.Flag); !ok {
 		fmt.Println("registy ...")
 		registryToVolMgr()
 		fmt.Println("registy end ...")
@@ -156,8 +222,5 @@ func main() {
 			heartbeatToVolMgr()
 		}
 	}()
-	for true {
-		time.Sleep(time.Second)
-	}
-	//startDataService()
+	startDataService()
 }

@@ -1,5 +1,6 @@
 syntax="proto3";
-package protobuf;
+
+package vp;
 
 service VolMgr {
     rpc CreateVol(CreateVolReq) returns (CreateVolAck){};
@@ -38,8 +39,12 @@ message VolInfo {
 }
 message BlockGroup{
     int32 BlockGroupID = 1;
-    repeated BlockInfo BlockInfos = 2;
+    int32 FreeCnt = 2;
+    int32 Status = 3;
+    repeated BlockInfo BlockInfos = 4;
 }
+
+
 message BlockInfo{
     int32 BlockID = 1;
     int32 DataNodeIP = 2;

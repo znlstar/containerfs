@@ -3,13 +3,13 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	"ipd.org/containerfs/logger"
+	vp "ipd.org/containerfs/proto/vp"
 	"ipd.org/containerfs/utils"
-	_ "ipd.org/containerfs/volmgr/mysql"
-	"ipd.org/containerfs/volmgr/protobuf"
 	"net"
 	"runtime"
 	"sort"
@@ -56,12 +56,12 @@ func init() {
 
 func checkErr(err error) {
 	if err != nil {
-		logger.Error("%s",err)
+		logger.Error("%s", err)
 	}
 }
 
-func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *protobuf.DatanodeRegistryReq) (*protobuf.DatanodeRegistryAck, error) {
-	ack := protobuf.DatanodeRegistryAck{}
+func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegistryReq) (*vp.DatanodeRegistryAck, error) {
+	ack := vp.DatanodeRegistryAck{}
 	dn_ip := utils.Inet_ntoa(in.Ip)
 	ip := dn_ip.String()
 	dn_port := in.Port
@@ -109,8 +109,8 @@ func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *protobuf.Datano
 	return &ack, nil
 }
 
-func (s *VolMgrServer) DatanodeHeartbeat(ctx context.Context, in *protobuf.DatanodeHeartbeatReq) (*protobuf.DatanodeHeartbeatAck, error) {
-	ack := protobuf.DatanodeHeartbeatAck{}
+func (s *VolMgrServer) DatanodeHeartbeat(ctx context.Context, in *vp.DatanodeHeartbeatReq) (*vp.DatanodeHeartbeatAck, error) {
+	ack := vp.DatanodeHeartbeatAck{}
 	port := in.Port
 	used := in.Used
 	free := in.Free
@@ -140,8 +140,8 @@ func (s *VolMgrServer) DatanodeHeartbeat(ctx context.Context, in *protobuf.Datan
 	return &ack, nil
 }
 
-func (s *VolMgrServer) CreateVol(ctx context.Context, in *protobuf.CreateVolReq) (*protobuf.CreateVolAck, error) {
-	ack := protobuf.CreateVolAck{}
+func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.CreateVolAck, error) {
+	ack := vp.CreateVolAck{}
 	volname := in.VolName
 	volsize := in.SpaceQuota
 	voluuid, err := utils.GenUUID()
@@ -218,9 +218,9 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *protobuf.CreateVolReq)
 	return &ack, nil
 }
 
-func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *protobuf.GetVolInfoReq) (*protobuf.GetVolInfoAck, error) {
-	ack := protobuf.GetVolInfoAck{}
-	var volInfo protobuf.VolInfo
+func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*vp.GetVolInfoAck, error) {
+	ack := vp.GetVolInfoAck{}
+	var volInfo vp.VolInfo
 
 	voluuid := in.UUID
 
@@ -253,7 +253,7 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *protobuf.GetVolInfoRe
 		return &ack, nil
 	}
 	defer blkgrp.Close()
-	pBlockGroups := []*protobuf.BlockGroup{}
+	pBlockGroups := []*vp.BlockGroup{}
 	for blkgrp.Next() {
 		err := blkgrp.Scan(&blkgrpid, &blks)
 		if err != nil {
@@ -263,7 +263,7 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *protobuf.GetVolInfoRe
 		logger.Debug("Get blks:%s in blkgroup:%d for volume(%s)", blks, blkgrpid, voluuid)
 		blkids := strings.Split(blks, ",")
 
-		pBlockInfos := []*protobuf.BlockInfo{}
+		pBlockInfos := []*vp.BlockInfo{}
 		for _, ele := range blkids {
 			if ele == "," {
 				continue
@@ -284,7 +284,7 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *protobuf.GetVolInfoRe
 					ack.Ret = 1
 					return &ack, nil
 				}
-				tmpBlockInfo := protobuf.BlockInfo{}
+				tmpBlockInfo := vp.BlockInfo{}
 				tmpBlockInfo.BlockID = int32(blkid)
 				ipnr := net.ParseIP(hostip)
 				ipint := utils.Inet_aton(ipnr)
@@ -293,14 +293,14 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *protobuf.GetVolInfoRe
 				pBlockInfos = append(pBlockInfos, &tmpBlockInfo)
 			}
 		}
-		tmpBlockGroup := protobuf.BlockGroup{}
+		tmpBlockGroup := vp.BlockGroup{}
 		tmpBlockGroup.BlockGroupID = int32(blkgrpid)
 		tmpBlockGroup.BlockInfos = pBlockInfos
 		pBlockGroups = append(pBlockGroups, &tmpBlockGroup)
 	}
 	volInfo.BlockGroups = pBlockGroups
 	logger.Debug("Get info:%v for the volume(%s)", volInfo, voluuid)
-	ack = protobuf.GetVolInfoAck{Ret: 0, VolInfo: &volInfo}
+	ack = vp.GetVolInfoAck{Ret: 0, VolInfo: &volInfo}
 	return &ack, nil
 }
 
@@ -311,7 +311,7 @@ func StartVolMgrService() {
 		panic(fmt.Sprintf("Failed to listen on:%v", g_RpcConfig.ListenPort))
 	}
 	s := grpc.NewServer()
-	protobuf.RegisterVolMgrServer(s, &VolMgrServer{})
+	vp.RegisterVolMgrServer(s, &VolMgrServer{})
 	// Register reflection service on gRPC server.
 	reflection.Register(s)
 	if err := s.Serve(lis); err != nil {
