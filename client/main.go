@@ -219,7 +219,7 @@ func getstream(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsi
 
 	var length int64 = 0
 	length = cfile.Reads(dstFile, offset, readsize)
-	fmt.Printf("#### Read %v bytes from %s have finised!\n", length, cfsFile)
+	fmt.Printf("Read %v bytes from %s have finised... !\n", length, cfsFile)
 }
 
 func get(cfs *fs.CFS, cfsFile string, dstFile string) {
@@ -243,7 +243,6 @@ func get(cfs *fs.CFS, cfsFile string, dstFile string) {
 	buf := make([]byte, 1024*1024)
 	var bytes int64 = 0
 	var length int64 = 0
-
 	for {
 		length = cfile.Read(&buf, int64(len(buf)))
 		if length <= 0 {
@@ -266,8 +265,7 @@ func get(cfs *fs.CFS, cfsFile string, dstFile string) {
 		fmt.Println("Flush Localfile data err!\n")
 		os.Exit(1)
 	}
-
-	fmt.Printf("#### Read %v bytes from %s have finised!\n", bytes, cfsFile)
+	fmt.Printf("Read %v bytes from %s have finised...\n", bytes, cfsFile)
 }
 
 func put(cfs *fs.CFS, localFile string, cfsFile string) int32 {
