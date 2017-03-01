@@ -3,7 +3,7 @@ package cfs
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
+	//"encoding/json"
 	"fmt"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -36,7 +36,9 @@ type CFS struct {
 	volID string
 }
 
-func CreateVol(name string, capacity string) {
+
+
+func CreateVol(name string, capacity string) int32 {
 	//fmt.Println("createVol...")
 	// send to volmgr to allcate a new vol
 	conn, err := grpc.Dial(volMgrAddress, grpc.WithInsecure())
@@ -55,6 +57,7 @@ func CreateVol(name string, capacity string) {
 	conn2, err2 := grpc.Dial(metaDataAddress, grpc.WithInsecure())
 	if err2 != nil {
 		fmt.Printf("did not connect: %v", err2)
+		return -1
 	}
 	defer conn2.Close()
 	mc := mp.NewMetaNodeClient(conn2)
@@ -62,10 +65,13 @@ func CreateVol(name string, capacity string) {
 	pmCreateNameSpaceAck, _ := mc.CreateNameSpace(context.Background(), pmCreateNameSpaceReq)
 	if pmCreateNameSpaceAck.Ret != 0 {
 		fmt.Println("CreateNameSpace failed ...")
+		return -1
 	}
+
+	return 0
 }
 
-func GetVolInfo(name string) {
+func GetVolInfo(name string) (int32, *vp.VolInfo) {
 	//fmt.Println("GetVolInfo...")
 	conn, err := grpc.Dial(volMgrAddress, grpc.WithInsecure())
 	if err != nil {
@@ -76,8 +82,10 @@ func GetVolInfo(name string) {
 	pGetVolInfoReq := &vp.GetVolInfoReq{UUID: name}
 	pGetVolInfoAck, _ := vc.GetVolInfo(context.Background(), pGetVolInfoReq)
 
-	b, _ := json.Marshal(pGetVolInfoAck)
-	fmt.Println(string(b))
+	if pGetVolInfoAck.Ret != 0 {
+		return 1, nil
+	}
+	return 0, pGetVolInfoAck.VolInfo
 }
 
 func OpenFileSystem(UUID string) *CFS {
@@ -85,7 +93,7 @@ func OpenFileSystem(UUID string) *CFS {
 	return &cfs
 }
 
-func (cfs *CFS) CreateDir(path string) {
+func (cfs *CFS) CreateDir(path string) int32 {
 	//fmt.Println("CreateDir...")
 	conn, err := grpc.Dial(metaDataAddress, grpc.WithInsecure())
 	if err != nil {
@@ -95,25 +103,11 @@ func (cfs *CFS) CreateDir(path string) {
 	mc := mp.NewMetaNodeClient(conn)
 	pCreateDirReq := &mp.CreateDirReq{FullPathName: path, VolID: cfs.volID}
 	pCreateDirAck, _ := mc.CreateDir(context.Background(), pCreateDirReq)
-	if pCreateDirAck.Ret == -1 {
-		fmt.Print("failed\n")
-		return
-	}
-	if pCreateDirAck.Ret == 1 {
-		fmt.Print("not allowed\n")
-		return
-	}
-	if pCreateDirAck.Ret == 2 {
-		fmt.Print("no parent path\n")
-		return
-	}
-	if pCreateDirAck.Ret == 17 {
-		fmt.Print("already exist\n")
-		return
-	}
+
+	return pCreateDirAck.Ret
 
 }
-func (cfs *CFS) Stat(path string) int32 {
+func (cfs *CFS) Stat(path string) (int32, *mp.InodeInfo) {
 	conn, err := grpc.Dial(metaDataAddress, grpc.WithInsecure())
 	if err != nil {
 		fmt.Printf("did not connect: %v", err)
@@ -122,50 +116,24 @@ func (cfs *CFS) Stat(path string) int32 {
 	mc := mp.NewMetaNodeClient(conn)
 	pStatReq := &mp.StatReq{FullPathName: path, VolID: cfs.volID}
 	pStatAck, _ := mc.Stat(context.Background(), pStatReq)
-	if pStatAck.Ret == 2 {
-		fmt.Print("not existed\n")
-		return pStatAck.Ret
-	}
-	b, _ := json.Marshal(pStatAck)
-	fmt.Println(string(b))
-	return 0
-}
-func (cfs *CFS) List(path string) {
-	conn, err := grpc.Dial(metaDataAddress, grpc.WithInsecure())
-	if err != nil {
-		fmt.Printf("did not connect: %v", err)
-	}
-	defer conn.Close()
-	mc := mp.NewMetaNodeClient(conn)
-	pListReq := &mp.ListReq{FullPathName: path, VolID: cfs.volID}
-	pListAck, _ := mc.List(context.Background(), pListReq)
-	if pListAck.Ret == 2 {
-		fmt.Print("not existed\n")
-		return
-	}
-	for _, value := range pListAck.InodeInfos {
-		fmt.Println(value.Name)
-	}
-}
-func (cfs *CFS) ListAll(path string) {
-	conn, err := grpc.Dial(metaDataAddress, grpc.WithInsecure())
-	if err != nil {
-		fmt.Printf("did not connect: %v", err)
-	}
-	defer conn.Close()
-	mc := mp.NewMetaNodeClient(conn)
-	pListReq := &mp.ListReq{FullPathName: path, VolID: cfs.volID}
-	pListAck, _ := mc.List(context.Background(), pListReq)
-	if pListAck.Ret == 2 {
-		fmt.Print("not existed\n")
-		return
-	}
-	for _, value := range pListAck.InodeInfos {
-		fmt.Println(value)
-	}
+
+	return pStatAck.Ret, pStatAck.InodeInfo
 
 }
-func (cfs *CFS) DeleteDir(path string) {
+func (cfs *CFS) List(path string) (int32, []*mp.InodeInfo) {
+	conn, err := grpc.Dial(metaDataAddress, grpc.WithInsecure())
+	if err != nil {
+		fmt.Printf("did not connect: %v", err)
+	}
+	defer conn.Close()
+	mc := mp.NewMetaNodeClient(conn)
+	pListReq := &mp.ListReq{FullPathName: path, VolID: cfs.volID}
+	pListAck, _ := mc.List(context.Background(), pListReq)
+
+	return pListAck.Ret, pListAck.InodeInfos
+
+}
+func (cfs *CFS) DeleteDir(path string) int32 {
 	conn, err := grpc.Dial(metaDataAddress, grpc.WithInsecure())
 	if err != nil {
 		fmt.Printf("did not connect: %v", err)
@@ -174,12 +142,11 @@ func (cfs *CFS) DeleteDir(path string) {
 	mc := mp.NewMetaNodeClient(conn)
 	pDeleteDirReq := &mp.DeleteDirReq{FullPathName: path, VolID: cfs.volID}
 	pDeleteDirAck, _ := mc.DeleteDir(context.Background(), pDeleteDirReq)
-	if pDeleteDirAck.Ret == 1 {
-		fmt.Println("not allowed")
-	}
+
+	return pDeleteDirAck.Ret
 }
 
-func (cfs *CFS) Rename(path1 string, path2 string) {
+func (cfs *CFS) Rename(path1 string, path2 string) int32 {
 	conn, err := grpc.Dial(metaDataAddress, grpc.WithInsecure())
 	if err != nil {
 		fmt.Printf("did not connect: %v", err)
@@ -188,24 +155,27 @@ func (cfs *CFS) Rename(path1 string, path2 string) {
 	mc := mp.NewMetaNodeClient(conn)
 	pRenameReq := &mp.RenameReq{FullPathName1: path1, FullPathName2: path2, VolID: cfs.volID}
 	pRenameAck, _ := mc.Rename(context.Background(), pRenameReq)
-	if pRenameAck.Ret == 2 {
-		fmt.Println("not existed")
-	}
-	if pRenameAck.Ret == 1 {
-		fmt.Println("not allowed")
-	}
+
+	return pRenameAck.Ret
 }
 
 func (cfs *CFS) OpenFile(path string, flags int32) (int32, *CFile) {
 	var ret int32
 	var writer int32 = 0
-
+	var tmpFileSize int64 = 0
 	chunkInfos := make([]*mp.ChunkInfo, 0)
 
 	if flags == O_RDONLY {
+		fmt.Println("OpenFile ...")
+		fmt.Println(path)
 		if ret, chunkInfos = cfs.GetFileChunks(path); ret != 0 {
 			return ret, nil
 		}
+
+		for i := range chunkInfos {
+			tmpFileSize += int64(chunkInfos[i].ChunkSize)
+		}
+
 	}
 	if flags == O_WRONLY {
 		writer = 1
@@ -216,7 +186,8 @@ func (cfs *CFS) OpenFile(path string, flags int32) (int32, *CFile) {
 
 	wChunk := Chunk{freeSize: 0}
 	wChannel := make(chan *Chunk, 16)
-	cfile := CFile{Path: path, OpenFlag: flags, cfs: cfs, Writer: writer, chunks: chunkInfos, wChannel: wChannel, wChunk: wChunk, lastoffset: 0}
+	cfile := CFile{Path: path, OpenFlag: flags, cfs: cfs, Writer: writer, fileSize: tmpFileSize, chunks: chunkInfos, wChannel: wChannel, wChunk: wChunk, lastoffset: 0}
+	go cfile.flushChannel()
 	return 0, &cfile
 }
 
@@ -252,7 +223,6 @@ func (cfs *CFS) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
 	pAllocateChunkReq := &mp.AllocateChunkReq{FileName: path, VolID: cfs.volID}
-	fmt.Println("pAllocateChunkReq : ")
 	fmt.Println(pAllocateChunkReq)
 	pAllocateChunkAck, _ := mc.AllocateChunk(context.Background(), pAllocateChunkReq)
 	if pAllocateChunkAck.Ret != 0 {
@@ -288,6 +258,7 @@ type CFile struct {
 	cfs      *CFS
 	Path     string
 	OpenFlag int32
+	fileSize int64
 
 	// for write
 	WMutex sync.Mutex
@@ -304,25 +275,159 @@ type CFile struct {
 	chunks []*mp.ChunkInfo // chunkinfo
 }
 
+func (cfile *CFile) Reads(dstFile string, offset int64, readsize int64) int64 {
+	if cfile.OpenFlag != O_RDONLY {
+		fmt.Println("Openflag bad parameter!\n")
+		return -1
+	}
+
+	if readsize != 0 && offset != 0 {
+		cfile.lastoffset = offset
+		readsize = readsize
+	} else if offset != 0 && readsize == 0 {
+		cfile.lastoffset = offset
+		readsize = cfile.fileSize - offset
+	} else if offset == 0 && readsize != 0 {
+		cfile.lastoffset = offset
+		readsize = readsize
+	} else {
+		cfile.lastoffset = offset
+		readsize = cfile.fileSize
+	}
+
+	//local file
+	f, err := os.Create(dstFile)
+	if err != nil {
+		fmt.Println("Open local dstFile error!\n")
+		os.Exit(1)
+	}
+	defer f.Close()
+	w := bufio.NewWriter(f)
+	var length int64 = 0
+	var ch map[int]chan string
+	ch = make(map[int]chan string)
+
+	var free_offset int64
+	var free_size int64
+	var begin_chunk_num int = 0
+	var end_chunk_num int = 0
+	cur_offset := cfile.lastoffset
+	for i := range cfile.chunks {
+		free_offset = cur_offset - int64(cfile.chunks[i].ChunkSize)
+		if free_offset < 0 {
+			begin_chunk_num = i
+			break
+		} else {
+			cur_offset = free_offset
+		}
+	}
+
+	cur_size := cfile.lastoffset + readsize
+	for i := range cfile.chunks {
+		free_size = cur_size - int64(cfile.chunks[i].ChunkSize)
+		if free_size <= 0 {
+			end_chunk_num = i
+			break
+		} else {
+			cur_size = free_size
+		}
+	}
+
+	var each_read_len int64
+	freesize := readsize
+	for i := range cfile.chunks[begin_chunk_num : end_chunk_num+1] {
+		ch[i] = make(chan string)
+		index := i + begin_chunk_num
+		if cur_offset+freesize < int64(cfile.chunks[index].ChunkSize) {
+			each_read_len = freesize
+		} else {
+			each_read_len = int64(cfile.chunks[index].ChunkSize) - cur_offset
+			cur_offset = 0
+		}
+
+		freesize = freesize - each_read_len
+		if i == 0 {
+			fmt.Printf("=== The %v-th chunk  need read size:%v (offset:%v) ===\n", index, each_read_len, cfile.lastoffset)
+			go cfile.streamread(index, ch[i], cfile.lastoffset, each_read_len) // ch0 <- buf([]byte) ~ chn<-
+		} else {
+			fmt.Printf("=== The %v-th chunk  need read size:%v (offset:%v) ===\n", index, each_read_len, cur_offset)
+			go cfile.streamread(index, ch[i], cur_offset, each_read_len)
+		}
+	}
+
+	var n int = 0
+	for i := range cfile.chunks[begin_chunk_num : end_chunk_num+1] {
+		str := <-ch[i]
+		fmt.Printf("===Write the chunk:%v datasize:%v to dstfile ===\n", i, len(str))
+		buf := utils.S2B(&str)
+		if n, err = w.Write(buf); err != nil {
+			fmt.Printf("Write CFSfile the %v-th chunk to Localfile err:%v !\n", i, err)
+			return -1
+		}
+		cfile.lastoffset += int64(n)
+		length += int64(n)
+
+		if err = w.Flush(); err != nil {
+			fmt.Println("Flush Localfile data err!\n")
+			os.Exit(1)
+		}
+	}
+	return length
+}
+
+func (cfile *CFile) streamread(chunkidx int, ch chan string, offset int64, size int64) {
+	for i, _ := range cfile.chunks[chunkidx].BlockGroup.BlockInfos {
+		conn, err := grpc.Dial(utils.Inet_ntoa(cfile.chunks[chunkidx].BlockGroup.BlockInfos[i].DataNodeIP).String()+":"+strconv.Itoa(int(cfile.chunks[chunkidx].BlockGroup.BlockInfos[i].DataNodePort)), grpc.WithInsecure())
+		if err != nil {
+			fmt.Printf("Connect Datanode error: %v\n", err)
+			continue
+		}
+		defer conn.Close()
+		dc := dp.NewDataNodeClient(conn)
+		streamreadChunkReq := &dp.StreamReadChunkReq{ChunkID: cfile.chunks[chunkidx].ChunkID, BlockID: cfile.chunks[chunkidx].BlockGroup.BlockInfos[i].BlockID, Offset: offset, Readsize: size}
+		stream, err := dc.StreamReadChunk(context.Background(), streamreadChunkReq)
+		if err != nil {
+			fmt.Printf("Stream read the chunk:%v err:%v\n", cfile.chunks[chunkidx].ChunkID, err)
+			close(ch)
+		}
+		var str string
+		for {
+
+			ack, err := stream.Recv()
+			if err == io.EOF {
+				fmt.Printf("Stream read the chunkid:%v have finished!\n", cfile.chunks[chunkidx].ChunkID)
+				break
+			}
+			if err != nil {
+				fmt.Printf("Recv stream the chunkid:%v from chunksever err:%v\n", cfile.chunks[chunkidx].ChunkID, err)
+				close(ch)
+			}
+			str += ack.Databuf
+		}
+		fmt.Printf("##### the %v-th chunk have readsize:%v from datanode #####\n", chunkidx, len(str))
+		ch <- str
+	}
+}
+
 func (cfile *CFile) Read(buf *[]byte, read_size int64) int64 {
 	if cfile.OpenFlag != O_RDONLY {
 		fmt.Println("Openflag bad parameter!\n")
 		return -1
 	}
 
-	cfile.RMutex.Lock()
-	defer cfile.RMutex.Unlock()
+	//cfile.RMutex.Lock()
+	//defer cfile.RMutex.Unlock()
 
 	var ret int64 = 0
 	var filesize int64 = 0
 
-        for i := range cfile.chunks {
-                filesize += int64(cfile.chunks[i].ChunkSize)
-        }
+	for i := range cfile.chunks {
+		filesize += int64(cfile.chunks[i].ChunkSize)
+	}
 
 	if cfile.lastoffset == filesize {
-                return 0
-        }	
+		return 0
+	}
 
 	ret = cfile.Pread(buf, read_size, cfile.lastoffset)
 	if ret >= 0 {
@@ -361,8 +466,7 @@ func (cfile *CFile) Pread(buf *[]byte, read_size int64, offset int64) int64 {
 	var total_buf bytes.Buffer
 	read_len := read_size
 
-	
-	for i,_ := range cfile.chunks[cur_chunk_num:] {
+	for i, _ := range cfile.chunks[cur_chunk_num:] {
 		cur_chunk_index := i + cur_chunk_num
 		if cur_offset+read_len < int64(cfile.chunks[cur_chunk_index].ChunkSize) {
 			each_read_len = read_len
@@ -371,7 +475,7 @@ func (cfile *CFile) Pread(buf *[]byte, read_size int64, offset int64) int64 {
 		}
 		read_len = read_len - each_read_len
 
-		for j,_ := range cfile.chunks[cur_chunk_index].BlockGroup.BlockInfos {
+		for j, _ := range cfile.chunks[cur_chunk_index].BlockGroup.BlockInfos {
 			conn, err := grpc.Dial(utils.Inet_ntoa(cfile.chunks[cur_chunk_index].BlockGroup.BlockInfos[j].DataNodeIP).String()+":"+strconv.Itoa(int(cfile.chunks[cur_chunk_index].BlockGroup.BlockInfos[j].DataNodePort)), grpc.WithInsecure())
 			if err != nil {
 				fmt.Printf("Connect Datanode error: %v\n", err)
@@ -401,11 +505,19 @@ func (cfile *CFile) Pread(buf *[]byte, read_size int64, offset int64) int64 {
 			return ret_len
 		}
 	}
-	
+
 	return ret_len
 }
 
 func (cfile *CFile) Seek(offset int64, whence int32) int64 {
+	if whence <= 1 {
+		cfile.lastoffset = offset
+	} else if whence == 2 {
+		cfile.lastoffset = cfile.fileSize - offset
+	} else {
+		fmt.Printf("Seek file for read/write invalid whence:%v\n", whence)
+		return -1
+	}
 	return 0
 }
 
@@ -441,28 +553,24 @@ func (cfile *CFile) Write(buf []byte, len int32) int32 {
 	}
 	return w
 }
+
 func (cfile *CFile) WriteChunk() int32 {
+	//fmt.Println("WriteChunk in ...")
 	cfile.wChunk.chunkInfo.ChunkSize = chunkSize - cfile.wChunk.freeSize
 	wChunk := cfile.wChunk    // record cur chunk
 	cfile.wChannel <- &wChunk // push to channel
 	cfile.wChunk.freeSize = 0 // disable cur chunk
-	cfile.flushChannel()
+	//wg.Add(1))
 	return 0
 }
 func (cfile *CFile) flushChannel() {
-	//var ret int32
-	fmt.Println("flushChannel ... ")
-
-	for v := range cfile.wChannel {
-		// write chunk to 3 datanode
-		//fmt.Println("v:")
-		//fmt.Println(v)
-		//fmt.Println(v.chunkInfo.BlockGroup.BlockInfos)
+	for {
+		v := <-cfile.wChannel
+		fmt.Println("channel has a num !!!")
 		for i := range v.chunkInfo.BlockGroup.BlockInfos {
-			fmt.Println("write chunk to datanode 1...")
 			addr := utils.Inet_ntoa(v.chunkInfo.BlockGroup.BlockInfos[i].DataNodeIP).String() + ":" + strconv.Itoa(int(v.chunkInfo.BlockGroup.BlockInfos[i].DataNodePort))
-			fmt.Println("addr:")
-			fmt.Println(addr)
+			//fmt.Println("addr:")
+			//fmt.Println(addr)
 			conn, err := grpc.Dial(addr, grpc.WithInsecure())
 			if err != nil {
 				fmt.Printf("did not connect: %v", err)
@@ -472,30 +580,33 @@ func (cfile *CFile) flushChannel() {
 
 			dataBuf := v.buffer.String()
 			dataLen := len(dataBuf)
-			fmt.Println(dataLen)
+			//fmt.Println(dataLen)
 			blockID := v.chunkInfo.BlockGroup.BlockInfos[i].BlockID
 			chunkID := v.chunkInfo.ChunkID
+
+			stream, err1 := dc.WriteChunkStream(context.Background())
+			if err1 != nil {
+				fmt.Printf("stream.Send error !")
+			}
 			var cur int = 0
 			for cur < dataLen {
 				if dataLen-cur < 1024*1024 {
 					pWriteChunkReq := &dp.WriteChunkReq{ChunkID: chunkID, BlockID: blockID, Databuf: dataBuf[cur:dataLen]}
-					pWriteChunkAck, _ := dc.WriteChunk(context.Background(), pWriteChunkReq)
-					if pWriteChunkAck.Ret != 0 {
-						fmt.Print("WriteChunk Failed\n")
-						return
+					if err := stream.Send(pWriteChunkReq); err != nil {
+						fmt.Printf("stream.Send error !")
 					}
 					cur = dataLen
 				} else {
 					pWriteChunkReq := &dp.WriteChunkReq{ChunkID: chunkID, BlockID: blockID, Databuf: dataBuf[cur : cur+1024*1024]}
-					pWriteChunkAck, _ := dc.WriteChunk(context.Background(), pWriteChunkReq)
-					if pWriteChunkAck.Ret != 0 {
-						fmt.Print("WriteChunk Failed\n")
-						return
+					if err := stream.Send(pWriteChunkReq); err != nil {
+						fmt.Printf("stream.Send error !")
 					}
 					cur = cur + 1024*1024
 				}
 
 			}
+			stream.CloseAndRecv()
+
 		}
 
 		fmt.Println("update chunkinfo to metanode...")
@@ -504,6 +615,7 @@ func (cfile *CFile) flushChannel() {
 		if err != nil {
 			fmt.Printf("did not connect: %v", err)
 		}
+		//	defer wg.Add(-1)
 		defer conn.Close()
 		mc := mp.NewMetaNodeClient(conn)
 		pSyncChunkReq := &mp.SyncChunkReq{FileName: cfile.Path, VolID: cfile.cfs.volID, ChunkInfo: v.chunkInfo}
@@ -512,9 +624,7 @@ func (cfile *CFile) flushChannel() {
 			fmt.Print("SyncChunk Failed!\n")
 			return
 		}
-		return
 	}
-	return
 }
 
 func (cfile *CFile) Flush() int32 {
@@ -529,7 +639,6 @@ func (cfile *CFile) Close() int32 {
 	fmt.Println("Close  ... ")
 
 	if cfile.OpenFlag == O_WRONLY {
-		fmt.Println("WriteChunk ... ")
 		cfile.WriteChunk()
 	}
 	return 0
@@ -541,18 +650,17 @@ func ProcessLocalBuffer(buffer []byte, cfile *CFile) {
 }
 
 func ReadLocalAndWriteCFS(filePth string, bufSize int, hookfn func([]byte, *CFile), cfile *CFile) error {
-	fmt.Println("ReadLocalAndWriteCFS...")
 	f, err := os.Open(filePth)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	buf := make([]byte, bufSize) //一次读取多少个字节
+	buf := make([]byte, bufSize)
 	bfRd := bufio.NewReader(f)
 	for {
 		n, err := bfRd.Read(buf)
-		hookfn(buf[:n], cfile) // n 是成功读取字节数
-		if err != nil {        //遇到任何错误立即返回，并忽略 EOF 错误信息
+		hookfn(buf[:n], cfile)
+		if err != nil {
 			if err == io.EOF {
 				return nil
 			}

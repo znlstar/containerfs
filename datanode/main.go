@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/reflection"
 	//"io/ioutil"
 	"bufio"
+	"io"
 	dp "ipd.org/containerfs/proto/dp"
 	vp "ipd.org/containerfs/proto/vp"
 	"ipd.org/containerfs/utils"
@@ -147,6 +148,37 @@ func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (
 	return &ack, nil
 }
 
+/*rpc WriteChunkStream(stream WriteChunkReq) returns (WriteChunkAck){}; */
+func (s *DataNodeServer) WriteChunkStream(stream dp.DataNode_WriteChunkStreamServer) error {
+
+	var f *os.File
+	var err error
+	//fmt.Println("writechunking in datanode ...")
+	ack := dp.WriteChunkAck{}
+	if err != nil {
+		ack.Ret = -1
+		return stream.SendAndClose(&ack)
+	}
+	for {
+		in, err := stream.Recv()
+		if err == io.EOF {
+			ack.Ret = 0
+			return stream.SendAndClose(&ack)
+		}
+		if err != nil {
+			ack.Ret = 1
+			return stream.SendAndClose(&ack)
+		}
+		chunkID := in.ChunkID
+		blockID := in.BlockID
+		chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
+		fmt.Println(chunkFileName)
+		f, err = os.OpenFile(chunkFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+		fmt.Println(len(in.Databuf))
+		f.WriteString(in.Databuf)
+		f.Close()
+	}
+}
 func (s *DataNodeServer) ReadChunk(ctx context.Context, in *dp.ReadChunkReq) (*dp.ReadChunkAck, error) {
 	ack := dp.ReadChunkAck{}
 	chunkID := in.ChunkID
@@ -166,7 +198,7 @@ func (s *DataNodeServer) ReadChunk(ctx context.Context, in *dp.ReadChunkReq) (*d
 		ack.Ret = -1
 		return &ack, nil
 	}
-	
+
 	buf := make([]byte, readsize)
 	bfRd := bufio.NewReader(f)
 	for {
@@ -175,12 +207,64 @@ func (s *DataNodeServer) ReadChunk(ctx context.Context, in *dp.ReadChunkReq) (*d
 			ack.Ret = -1
 			return &ack, nil
 		}
-		fmt.Printf("#### buflen:%v #### bufcap:%v ####\n",len(buf),cap(buf))
+		fmt.Printf("#### buflen:%v #### bufcap:%v ####\n", len(buf), cap(buf))
 		ack.Databuf = utils.B2S(buf)
 		ack.Ret = 1
 		ack.Readsize = int64(n)
 		return &ack, nil
 	}
+}
+
+func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.DataNode_StreamReadChunkServer) error {
+	chunkID := in.ChunkID
+	blockID := in.BlockID
+	offset := in.Offset
+	readsize := in.Readsize
+
+	fmt.Printf("#### Hello read chunk:%v #####\n", chunkID)
+	chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
+	f, err := os.Open(chunkFileName)
+	defer f.Close()
+	if err != nil {
+		return err
+	}
+	_, err = f.Seek(offset, 0)
+	if err != nil {
+		return err
+	}
+
+	var ack dp.StreamReadChunkAck
+	totalsize := readsize
+	buf := make([]byte, 1024*1024)
+	bfRd := bufio.NewReader(f)
+	for {
+		n, err := bfRd.Read(buf)
+		if err != nil {
+			return err
+		}
+
+		totalsize -= int64(n)
+		if totalsize <= 0 {
+			var m int64
+			m = int64(n) + totalsize
+			ack.Databuf = utils.B2S(buf[:m])
+			if err := stream.Send(&ack); err != nil {
+				fmt.Printf("+++++++ error:%v +++++\n", err)
+				return err
+			}
+			break
+		}
+
+		ack.Databuf = utils.B2S(buf[:n])
+
+		if err := stream.Send(&ack); err != nil {
+			fmt.Printf("+++++++ error:%v +++++\n", err)
+			return err
+		}
+	}
+
+	return nil
+
 }
 
 func init() {
@@ -215,7 +299,7 @@ func main() {
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
 
-	ticker := time.NewTicker(time.Second * 5)
+	ticker := time.NewTicker(time.Second * 60)
 	go func() {
 		for _ = range ticker.C {
 			////fmt.Printf("ticked at %v", time.Now())

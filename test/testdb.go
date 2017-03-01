@@ -92,6 +92,12 @@ func main() {
 	str3 := B2S(buf)
 	out := rand_test()
 	
+	var a int64=1
+	var b int=5
+	a -= int64(b)
+	if a <= 0 {
+		fmt.Println("xxxxxxx",int64(b)-a,int64(b)+a)
+	}
 	fmt.Printf("********* str1:%s *** str2:%s **** str3:%s ***** outchannel:%d ****\n",str1,str2,str3,<-out)
 	fmt.Printf("----- buf:%v ------\n",buf)
 
