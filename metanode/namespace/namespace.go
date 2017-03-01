@@ -420,6 +420,8 @@ func (ns *nameSpace) SyncChunk(path string, chunkinfo *mp.ChunkInfo) int32 {
 		return ret
 	}
 	pTmpInodeInfo.ChunkIDs = append(pTmpInodeInfo.ChunkIDs, chunkinfo.ChunkID)
+	pTmpInodeInfo.ModifiTime = time.Now().Unix()
+	pTmpInodeInfo.FileSize += int64(chunkinfo.ChunkSize)
 	ns.Set(strconv.FormatInt(pTmpInodeInfo.InodeID, 10), pTmpInodeInfo)
 	ns.Set(keys[keysNum-1], pTmpInodeInfo)
 
