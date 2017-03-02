@@ -36,7 +36,7 @@ type CFS struct {
 	volID string
 }
 
-
+var wg sync.WaitGroup
 
 func CreateVol(name string, capacity string) int32 {
 	//fmt.Println("createVol...")
@@ -347,18 +347,17 @@ func (cfile *CFile) Reads(dstFile string, offset int64, readsize int64) int64 {
 
 		freesize = freesize - each_read_len
 		if i == 0 {
-			fmt.Printf("=== The %v-th chunk  need read size:%v (offset:%v) ===\n", index, each_read_len, cfile.lastoffset)
+			fmt.Printf("== The %v-th chunk  need read size:%v (offset:%v)\n", index, each_read_len, cfile.lastoffset)
 			go cfile.streamread(index, ch[i], cfile.lastoffset, each_read_len) // ch0 <- buf([]byte) ~ chn<-
 		} else {
-			fmt.Printf("=== The %v-th chunk  need read size:%v (offset:%v) ===\n", index, each_read_len, cur_offset)
+			fmt.Printf("== The %v-th chunk  need read size:%v (offset:%v)\n", index, each_read_len, cur_offset)
 			go cfile.streamread(index, ch[i], cur_offset, each_read_len)
 		}
 	}
-
 	var n int = 0
 	for i := range cfile.chunks[begin_chunk_num : end_chunk_num+1] {
 		str := <-ch[i]
-		fmt.Printf("===Write the chunk:%v datasize:%v to dstfile ===\n", i, len(str))
+		//fmt.Printf("===Write the chunk:%v datasize:%v to dstfile ===\n", i, len(str))
 		buf := utils.S2B(&str)
 		if n, err = w.Write(buf); err != nil {
 			fmt.Printf("Write CFSfile the %v-th chunk to Localfile err:%v !\n", i, err)
@@ -366,7 +365,6 @@ func (cfile *CFile) Reads(dstFile string, offset int64, readsize int64) int64 {
 		}
 		cfile.lastoffset += int64(n)
 		length += int64(n)
-
 		if err = w.Flush(); err != nil {
 			fmt.Println("Flush Localfile data err!\n")
 			os.Exit(1)
@@ -390,9 +388,8 @@ func (cfile *CFile) streamread(chunkidx int, ch chan string, offset int64, size 
 			fmt.Printf("Stream read the chunk:%v err:%v\n", cfile.chunks[chunkidx].ChunkID, err)
 			close(ch)
 		}
-		var str string
+		buffer := new(bytes.Buffer)
 		for {
-
 			ack, err := stream.Recv()
 			if err == io.EOF {
 				fmt.Printf("Stream read the chunkid:%v have finished!\n", cfile.chunks[chunkidx].ChunkID)
@@ -402,10 +399,9 @@ func (cfile *CFile) streamread(chunkidx int, ch chan string, offset int64, size 
 				fmt.Printf("Recv stream the chunkid:%v from chunksever err:%v\n", cfile.chunks[chunkidx].ChunkID, err)
 				close(ch)
 			}
-			str += ack.Databuf
+			buffer.WriteString(ack.Databuf)
 		}
-		fmt.Printf("##### the %v-th chunk have readsize:%v from datanode #####\n", chunkidx, len(str))
-		ch <- str
+		ch <- buffer.String()
 	}
 }
 
