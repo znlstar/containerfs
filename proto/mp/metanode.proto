@@ -11,6 +11,8 @@ service MetaNode {
     rpc Rename(RenameReq) returns (RenameAck){};
 
     rpc CreateFile(CreateFileReq) returns (CreateFileAck){};
+    rpc DeleteFile(DeleteFileReq) returns (DeleteFileAck){};
+
 
     rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
     rpc GetFileChunks(GetFileChunksReq) returns (GetFileChunksAck){};
@@ -56,7 +58,13 @@ message CreateFileReq{
 message CreateFileAck{
     int32 Ret = 1;
 }
-
+message DeleteFileReq{
+    string VolID = 1;
+    string FullPathName = 2;
+}
+message DeleteFileAck{
+    int32 Ret = 1;
+}
 message StatFileReq{
     string VolID = 1;
     string FullPathName = 2;
@@ -64,13 +72,6 @@ message StatFileReq{
 message StatFileAck{
     int32 Ret = 1;
     InodeInfo InodeInfo = 2;
-}
-message DeleteFileReq{
-    string VolID = 1;
-    string FullPathName = 2;
-}
-message DeleteFileAck{
-    int32 Ret = 1;
 }
 message StatReq{
     string VolID = 1;

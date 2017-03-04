@@ -267,6 +267,33 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 
 }
 
+/*
+rpc DeleteChunks(eleteChunksReq) returns (eleteChunksAck){};
+*/
+func (s *DataNodeServer) DeleteChunk(ctx context.Context, in *dp.DeleteChunkReq) (*dp.DeleteChunkAck, error) {
+	var err error
+
+	fmt.Println("DeleteChunk in datanode ...")
+	ack := dp.DeleteChunkAck{}
+	chunkID := in.ChunkID
+	blockID := in.BlockID
+
+	chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
+	fmt.Println(chunkFileName)
+
+	err = os.Remove(chunkFileName)
+	if err != nil {
+		ack.Ret = -1
+		fmt.Println("file remove Error!")
+		fmt.Printf("%s", err)
+	} else {
+		ack.Ret = 0
+		fmt.Print("file remove OK!")
+	}
+	ack.Ret = 0
+	return &ack, nil
+}
+
 func init() {
 	argNum := len(os.Args)
 	if argNum != 5 {

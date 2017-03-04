@@ -7,7 +7,7 @@ service DataNode {
     rpc WriteChunkStream(stream WriteChunkReq) returns (WriteChunkAck){};
     rpc ReadChunk(ReadChunkReq) returns (ReadChunkAck){};
     rpc StreamReadChunk(StreamReadChunkReq) returns (stream StreamReadChunkAck){};
-    //rpc DeleteFile(DeleteFileReq) returns (DeleteFileAck){};
+    rpc DeleteChunk(DeleteChunkReq) returns (DeleteChunkAck){};
 }
 
 message WriteChunkReq{
@@ -43,6 +43,15 @@ message StreamReadChunkAck{
     //int64 Readsize = 2;
     string Databuf = 1;
 }
+
+message DeleteChunkReq{
+    int64 ChunkID = 1;
+    int32 BlockID = 2;
+}
+message DeleteChunkAck{
+    int32 Ret = 1;
+}
+
 
 message BlockGroup{
     int32 BlockGroupID = 1;

@@ -110,7 +110,7 @@ func (s *MetaNodeServer) DeleteDir(ctx context.Context, in *mp.DeleteDirReq) (*m
 }
 
 /*
-rpc DeleteDir(DeleteDirReq) returns (DeleteDirAck){};
+rpc Rename(RenameReq) returns (RenameAck){};
 */
 func (s *MetaNodeServer) Rename(ctx context.Context, in *mp.RenameReq) (*mp.RenameAck, error) {
 	ack := mp.RenameAck{}
@@ -141,6 +141,25 @@ func (s *MetaNodeServer) CreateFile(ctx context.Context, in *mp.CreateFileReq) (
 	}
 	ack.Ret = nameSpace.CreateFile(fullPathName)
 	return &ack, nil
+}
+
+/*
+rpc DeleteFile(DeleteFileReq) returns (DeleteFileAck){};
+*/
+func (s *MetaNodeServer) DeleteFile(ctx context.Context, in *mp.DeleteFileReq) (*mp.DeleteFileAck, error) {
+
+	fmt.Println("DeleteFile in main ...")
+	ack := mp.DeleteFileAck{}
+	fullPathName := in.FullPathName
+	volID := in.VolID
+	ret, nameSpace := ns.GetNameSpace(volID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ack.Ret = nameSpace.DeleteFile(fullPathName)
+	return &ack, nil
+
 }
 
 /*

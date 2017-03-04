@@ -36,7 +36,7 @@ type CFS struct {
 	volID string
 }
 
-var wg sync.WaitGroup
+var Wg sync.WaitGroup
 
 func CreateVol(name string, capacity string) int32 {
 	//fmt.Println("createVol...")
@@ -166,8 +166,6 @@ func (cfs *CFS) OpenFile(path string, flags int32) (int32, *CFile) {
 	chunkInfos := make([]*mp.ChunkInfo, 0)
 
 	if flags == O_RDONLY {
-		fmt.Println("OpenFile ...")
-		fmt.Println(path)
 		if ret, chunkInfos = cfs.GetFileChunks(path); ret != 0 {
 			return ret, nil
 		}
@@ -215,6 +213,45 @@ func (cfs *CFS) CreateFile(path string) int32 {
 	return 0
 }
 
+func (cfs *CFS) DeleteFile(path string) int32 {
+
+	ret, chunkInfos := cfs.GetFileChunks(path)
+	if ret != 0 {
+		return ret
+	}
+
+	for _, v1 := range chunkInfos {
+		for _, v2 := range v1.BlockGroup.BlockInfos {
+
+			addr := utils.Inet_ntoa(v2.DataNodeIP).String() + ":" + strconv.Itoa(int(v2.DataNodePort))
+			conn, err := grpc.Dial(addr, grpc.WithInsecure())
+			if err != nil {
+				fmt.Printf("did not connect: %v", err)
+			}
+
+			dc := dp.NewDataNodeClient(conn)
+
+			dpDeleteChunkReq := &dp.DeleteChunkReq{ChunkID: v1.ChunkID, BlockID: v2.BlockID}
+			dpDeleteChunkAck, _ := dc.DeleteChunk(context.Background(), dpDeleteChunkReq)
+			if dpDeleteChunkAck.Ret != 0 {
+				//return dpDeleteChunkAck.Ret
+			}
+			conn.Close()
+		}
+	}
+
+	conn, err := grpc.Dial(metaDataAddress, grpc.WithInsecure())
+	if err != nil {
+		fmt.Printf("did not connect: %v", err)
+	}
+	defer conn.Close()
+	mc := mp.NewMetaNodeClient(conn)
+	mpDeleteFileReq := &mp.DeleteFileReq{FullPathName: path, VolID: cfs.volID}
+	mpDeleteFileAck, _ := mc.DeleteFile(context.Background(), mpDeleteFileReq)
+
+	return mpDeleteFileAck.Ret
+
+}
 func (cfs *CFS) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 	conn, err := grpc.Dial(metaDataAddress, grpc.WithInsecure())
 	if err != nil {
@@ -556,7 +593,7 @@ func (cfile *CFile) WriteChunk() int32 {
 	wChunk := cfile.wChunk    // record cur chunk
 	cfile.wChannel <- &wChunk // push to channel
 	cfile.wChunk.freeSize = 0 // disable cur chunk
-	//wg.Add(1))
+	Wg.Add(1)
 	return 0
 }
 func (cfile *CFile) flushChannel() {
@@ -611,7 +648,7 @@ func (cfile *CFile) flushChannel() {
 		if err != nil {
 			fmt.Printf("did not connect: %v", err)
 		}
-		//	defer wg.Add(-1)
+
 		defer conn.Close()
 		mc := mp.NewMetaNodeClient(conn)
 		pSyncChunkReq := &mp.SyncChunkReq{FileName: cfile.Path, VolID: cfile.cfs.volID, ChunkInfo: v.chunkInfo}
@@ -620,6 +657,7 @@ func (cfile *CFile) flushChannel() {
 			fmt.Print("SyncChunk Failed!\n")
 			return
 		}
+		Wg.Add(-1)
 	}
 }
 

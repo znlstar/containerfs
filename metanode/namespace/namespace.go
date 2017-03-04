@@ -63,7 +63,11 @@ func CreateNameSpace(UUID string, inodenum int64, chunknum int64) int32 {
 	AllNameSpace[UUID] = &nameSpace
 	gMutex.Unlock()
 
-	tmpInodeInfo := mp.InodeInfo{InodeID: 0, Name: "/", AccessTime: time.Now().Unix(), ModifiTime: time.Now().Unix(), InodeType: false}
+	tmpInodeInfo := mp.InodeInfo{
+		InodeID: 0, Name: "/",
+		AccessTime: time.Now().Unix(),
+		ModifiTime: time.Now().Unix(),
+		InodeType:  false}
 	nameSpace.Set("0", &tmpInodeInfo)
 
 	return 0
@@ -118,7 +122,14 @@ func (ns *nameSpace) CreateDir(path string) int32 {
 	/*update inode info*/
 	inodeID := ns.AllocateInodeID()
 	name := utils.GetSelfName(path)
-	tmpInodeInfo := mp.InodeInfo{ParentInodeID: pParentInodeInfo.InodeID, InodeID: inodeID, Name: name, AccessTime: time.Now().Unix(), ModifiTime: time.Now().Unix(), InodeType: false}
+	tmpInodeInfo := mp.InodeInfo{
+		ParentInodeID: pParentInodeInfo.InodeID,
+		InodeID:       inodeID,
+		Name:          name,
+		AccessTime:    time.Now().Unix(),
+		ModifiTime:    time.Now().Unix(),
+		InodeType:     false}
+
 	ns.Set(strconv.FormatInt(inodeID, 10), &tmpInodeInfo)
 	tmpKey := strconv.FormatInt(pParentInodeInfo.InodeID, 10) + "-" + name
 	ns.Set(tmpKey, &tmpInodeInfo)
@@ -273,7 +284,15 @@ func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
 
 	/*add a new parentID + name key  */
 	name := utils.GetSelfName(path2)
-	tmpInodeInfo := mp.InodeInfo{ParentInodeID: pParentInodeInfo2.InodeID, InodeID: pInodeInfo.InodeID, Name: name, AccessTime: pInodeInfo.AccessTime, ModifiTime: pInodeInfo.ModifiTime, InodeType: pInodeInfo.InodeType, ChildrenInodeIDs: pInodeInfo.ChildrenInodeIDs}
+	tmpInodeInfo := mp.InodeInfo{
+		ParentInodeID:    pParentInodeInfo2.InodeID,
+		InodeID:          pInodeInfo.InodeID,
+		Name:             name,
+		AccessTime:       pInodeInfo.AccessTime,
+		ModifiTime:       pInodeInfo.ModifiTime,
+		InodeType:        pInodeInfo.InodeType,
+		ChildrenInodeIDs: pInodeInfo.ChildrenInodeIDs}
+
 	tmpKey := strconv.FormatInt(pParentInodeInfo2.InodeID, 10) + "-" + name
 	ns.Set(tmpKey, &tmpInodeInfo)
 
@@ -340,7 +359,14 @@ func (ns *nameSpace) CreateFile(path string) int32 {
 	/*update inode info*/
 	inodeID := ns.AllocateInodeID()
 	name := utils.GetSelfName(path)
-	tmpInodeInfo := mp.InodeInfo{ParentInodeID: pParentInodeInfo.InodeID, InodeID: inodeID, Name: name, AccessTime: time.Now().Unix(), ModifiTime: time.Now().Unix(), InodeType: true}
+	tmpInodeInfo := mp.InodeInfo{
+		ParentInodeID: pParentInodeInfo.InodeID,
+		InodeID:       inodeID,
+		Name:          name,
+		AccessTime:    time.Now().Unix(),
+		ModifiTime:    time.Now().Unix(),
+		InodeType:     true}
+
 	ns.Set(strconv.FormatInt(inodeID, 10), &tmpInodeInfo)
 	tmpKey := strconv.FormatInt(pParentInodeInfo.InodeID, 10) + "-" + name
 	ns.Set(tmpKey, &tmpInodeInfo)
@@ -360,6 +386,67 @@ func (ns *nameSpace) CreateFile(path string) int32 {
 	return ret
 }
 
+func (ns *nameSpace) DeleteFile(path string) int32 {
+
+	fmt.Println("DeleteFile in namespace ...")
+
+	var ret int32
+	ret = 0
+
+	if path == "/" {
+		ret = 1
+		return ret
+	}
+
+	keys := ns.GetAllKeyByFullPath(path)
+	keysNum := len(keys)
+
+	var ok bool
+	var pInodeInfo *mp.InodeInfo
+
+	if ok, pInodeInfo = ns.Get(keys[keysNum-1]); !ok {
+		ret = 2 /*ENOENT*/
+		return ret
+	}
+	if pInodeInfo.InodeType == false {
+		ret = 1 /*EPERM*/
+		return ret
+	}
+
+	/*update patent inode info*/
+	var pTmpParentInodeInfo *mp.InodeInfo
+	_, pTmpParentInodeInfo = ns.Get(keys[keysNum-2])
+	for index, value := range pTmpParentInodeInfo.ChildrenInodeIDs {
+		if value == pInodeInfo.InodeID {
+			//fmt.Println("find the child index:")
+			pTmpParentInodeInfo.ChildrenInodeIDs = append(pTmpParentInodeInfo.ChildrenInodeIDs[:index], pTmpParentInodeInfo.ChildrenInodeIDs[index+1:]...)
+			break
+		}
+	}
+	ns.Set(keys[keysNum-2], pTmpParentInodeInfo)
+	ns.Set(strconv.FormatInt(pTmpParentInodeInfo.ParentInodeID, 10)+"-"+utils.GetParentName(path), pTmpParentInodeInfo)
+
+	/*delete chunk info*/
+	for _, value := range pInodeInfo.ChunkIDs {
+
+		ns.CMutex.Lock()
+		chunkInfo := ns.ChunkDB[value]
+		ns.CMutex.Unlock()
+		/*release bg cnt*/
+		ns.ReleaseBlockGroup(chunkInfo.BlockGroup.BlockGroupID)
+		ns.CMutex.Lock()
+		delete(ns.ChunkDB, value)
+		ns.CMutex.Unlock()
+	}
+
+	/*delete inode info*/
+	ns.Delete(strconv.FormatInt(pInodeInfo.InodeID, 10))
+	ns.Delete(strconv.FormatInt(pInodeInfo.ParentInodeID, 10) + "-" + utils.GetSelfName(path))
+
+	fmt.Println("DeleteFile in namespace end ...")
+
+	return ret
+}
 func (ns *nameSpace) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 	//fmt.Println("AllocateChunk in ...")
 	var ret int32
@@ -511,6 +598,23 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 	} else {
 		return 1, -1, nil
 	}
+
+}
+
+func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
+	fmt.Println("ReleaseBlockGroup in ...")
+	ns.BGMutex.Lock()
+	defer ns.BGMutex.Unlock()
+
+	blockGroup := ns.BlockBroupDB[blockGroupID]
+	blockGroup.FreeCnt += 1
+	if blockGroup.FreeCnt > 0 {
+		blockGroup.Status = 1
+	}
+	if blockGroup.FreeCnt >= 0 {
+		blockGroup.Status = 0
+	}
+	ns.BlockBroupDB[blockGroupID] = blockGroup
 
 }
 func (ns *nameSpace) GetAllKeyByFullPath(in string) (keys []string) {
