@@ -7,7 +7,6 @@ import (
 	"ipd.org/containerfs/utils"
 	"os"
 	"strconv"
-	"time"
 )
 
 func main() {
@@ -156,6 +155,21 @@ func main() {
 			fmt.Println("touch failed")
 		}
 
+	case "deletefile":
+		argNum := len(os.Args)
+		if argNum != 4 {
+			fmt.Println("deletedir [volUUID] [filename]")
+			os.Exit(1)
+		}
+		cfs := fs.OpenFileSystem(os.Args[2])
+		ret := cfs.DeleteFile(os.Args[3])
+		if ret != 0 {
+			if ret == 2 {
+				fmt.Println("not found")
+			} else {
+				fmt.Println("delete file failed")
+			}
+		}
 	case "allocatechunk":
 		argNum := len(os.Args)
 		if argNum != 4 {
@@ -202,9 +216,7 @@ func main() {
 		getstream(cfs, os.Args[3], os.Args[4], offset, size)
 	}
 
-	for true {
-		time.Sleep(3e9)
-	}
+	fs.Wg.Wait()
 }
 
 func getstream(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsize int64) {
