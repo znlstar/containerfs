@@ -405,7 +405,7 @@ func (ns *nameSpace) DeleteFile(path string) int32 {
 	var pInodeInfo *mp.InodeInfo
 
 	if ok, pInodeInfo = ns.Get(keys[keysNum-1]); !ok {
-		ret = 2 /*ENOENT*/
+		ret = 0 /*ENOENT*/
 		return ret
 	}
 	if pInodeInfo.InodeType == false {
@@ -430,8 +430,11 @@ func (ns *nameSpace) DeleteFile(path string) int32 {
 	for _, value := range pInodeInfo.ChunkIDs {
 
 		ns.CMutex.Lock()
-		chunkInfo := ns.ChunkDB[value]
+		chunkInfo, ok := ns.ChunkDB[value]
 		ns.CMutex.Unlock()
+		if !ok {
+			continue
+		}
 		/*release bg cnt*/
 		ns.ReleaseBlockGroup(chunkInfo.BlockGroup.BlockGroupID)
 		ns.CMutex.Lock()
@@ -506,9 +509,28 @@ func (ns *nameSpace) SyncChunk(path string, chunkinfo *mp.ChunkInfo) int32 {
 		ret = 2 /*ENOENT*/
 		return ret
 	}
-	pTmpInodeInfo.ChunkIDs = append(pTmpInodeInfo.ChunkIDs, chunkinfo.ChunkID)
+
 	pTmpInodeInfo.ModifiTime = time.Now().Unix()
-	pTmpInodeInfo.FileSize += int64(chunkinfo.ChunkSize)
+
+	var lastChunkInfo *mp.ChunkInfo
+	var lastChunkID int64
+	if len(pTmpInodeInfo.ChunkIDs) > 0 {
+		// for appned write
+		lastChunkID = pTmpInodeInfo.ChunkIDs[len(pTmpInodeInfo.ChunkIDs)-1]
+		if lastChunkID == chunkinfo.ChunkID {
+			ns.CMutex.Lock()
+			lastChunkInfo = ns.ChunkDB[chunkinfo.ChunkID]
+			ns.CMutex.Unlock()
+			pTmpInodeInfo.FileSize = pTmpInodeInfo.FileSize - int64(lastChunkInfo.ChunkSize) + int64(chunkinfo.ChunkSize)
+		} else {
+			pTmpInodeInfo.ChunkIDs = append(pTmpInodeInfo.ChunkIDs, chunkinfo.ChunkID)
+			pTmpInodeInfo.FileSize += int64(chunkinfo.ChunkSize)
+		}
+	} else {
+		pTmpInodeInfo.ChunkIDs = append(pTmpInodeInfo.ChunkIDs, chunkinfo.ChunkID)
+		pTmpInodeInfo.FileSize += int64(chunkinfo.ChunkSize)
+	}
+
 	ns.Set(strconv.FormatInt(pTmpInodeInfo.InodeID, 10), pTmpInodeInfo)
 	ns.Set(keys[keysNum-1], pTmpInodeInfo)
 
