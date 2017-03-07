@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/reflection"
 	//"io/ioutil"
 	"bufio"
+	"github.com/lxmgo/config"
 	"io"
 	dp "ipd.org/containerfs/proto/dp"
 	vp "ipd.org/containerfs/proto/vp"
@@ -20,13 +21,6 @@ import (
 	"time"
 )
 
-type RpcConfigOpts struct {
-	ListenPort int32 `gcfg:"listen-port"`
-	ClientPort int32 `gcfg:"client-port"`
-}
-
-var g_RpcConfig RpcConfigOpts
-
 type DataNodeServer struct {
 	Mutex sync.Mutex
 }
@@ -38,15 +32,18 @@ type addr struct {
 	Port  int32
 	Path  string
 	Flag  string
+
+	VolMgrIp   string
+	VolMgrPort string
 }
 
 var DataNodeServerAddr addr
 
 func startDataService() {
-	g_RpcConfig.ListenPort = DataNodeServerAddr.Port
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", g_RpcConfig.ListenPort))
+
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", DataNodeServerAddr.Port))
 	if err != nil {
-		panic(fmt.Sprintf("Failed to listen on:%v", g_RpcConfig.ListenPort))
+		panic(fmt.Sprintf("Failed to listen on:%v", DataNodeServerAddr.Port))
 	}
 	s := grpc.NewServer()
 	dp.RegisterDataNodeServer(s, &DataNodeServer{})
@@ -58,8 +55,7 @@ func startDataService() {
 }
 
 func registryToVolMgr() {
-	fmt.Println(os.Args[4])
-	conn, err := grpc.Dial(os.Args[4]+":10001", grpc.WithInsecure())
+	conn, err := grpc.Dial(DataNodeServerAddr.VolMgrIp+":"+DataNodeServerAddr.VolMgrPort, grpc.WithInsecure())
 	if err != nil {
 		fmt.Printf("did not connect: %v", err)
 	}
@@ -93,7 +89,7 @@ func registryToVolMgr() {
 
 func heartbeatToVolMgr() {
 
-	conn, err := grpc.Dial(os.Args[4]+":10001", grpc.WithInsecure())
+	conn, err := grpc.Dial(DataNodeServerAddr.VolMgrIp+":"+DataNodeServerAddr.VolMgrPort, grpc.WithInsecure())
 	if err != nil {
 		fmt.Printf("did not connect: %v", err)
 	}
@@ -221,7 +217,7 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 	offset := in.Offset
 	readsize := in.Readsize
 
-	fmt.Printf("#### Hello read chunk:%v #####\n", chunkID)
+	//fmt.Printf("#### Hello read chunk:%v #####\n", chunkID)
 	chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
 	f, err := os.Open(chunkFileName)
 	defer f.Close()
@@ -283,7 +279,7 @@ func (s *DataNodeServer) DeleteChunk(ctx context.Context, in *dp.DeleteChunkReq)
 
 	err = os.Remove(chunkFileName)
 	if err != nil {
-		ack.Ret = -1
+		ack.Ret = 0
 		fmt.Println("file remove Error!")
 		fmt.Printf("%s", err)
 	} else {
@@ -295,22 +291,28 @@ func (s *DataNodeServer) DeleteChunk(ctx context.Context, in *dp.DeleteChunkReq)
 }
 
 func init() {
-	argNum := len(os.Args)
-	if argNum != 5 {
-		fmt.Println("data node statup failed : arg num err !")
-		fmt.Println(argNum)
+
+	c, err := config.NewConfig(os.Args[1])
+	if err != nil {
+		fmt.Println("NewConfig err")
 		os.Exit(1)
 	}
 
-	DataNodeServerAddr.IpStr = os.Args[1]
+
+	DataNodeServerAddr.IpStr = c.String("host")
 	ipnr := net.ParseIP(DataNodeServerAddr.IpStr)
+
 	DataNodeServerAddr.Ipnr = ipnr
 	ipint := utils.Inet_aton(ipnr)
 	DataNodeServerAddr.IpInt = ipint
-	port, _ := strconv.Atoi(os.Args[2])
+	port, _ := c.Int("port")
 	DataNodeServerAddr.Port = int32(port)
-	DataNodeServerAddr.Path = os.Args[3]
+	DataNodeServerAddr.Path = c.String("path")
 	DataNodeServerAddr.Flag = DataNodeServerAddr.Path + "/.registryflag"
+
+	DataNodeServerAddr.VolMgrIp = c.String("volmgr::volmgr.host")
+	DataNodeServerAddr.VolMgrPort = c.String("volmgr::volmgr.port")
+
 	if ok, _ := utils.LocalPathExists(DataNodeServerAddr.Flag); !ok {
 		fmt.Println("registy ...")
 		registryToVolMgr()
