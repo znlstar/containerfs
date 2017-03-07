@@ -496,12 +496,10 @@ func (cfile *CFile) Reads(dstFile string, offset int64, readsize int64) int64 {
 	}
 	var n int = 0
 	for i := range cfile.chunks[begin_chunk_num : end_chunk_num+1] {
-		//fmt.Printf("===Write the chunk:%v datasize:%v to dstfile ===\n", i, len(str))
-		var buf []byte
-		buf = make([]byte, 0)
+
 		buffer := new(bytes.Buffer)
 		buffer = <-ch[i]
-		buffer.Read(buf)
+		buf := buffer.Next(buffer.Len())
 		if n, err = w.Write(buf); err != nil {
 			fmt.Printf("Write CFSfile the %v-th chunk to Localfile err:%v !\n", i, err)
 			return -1
