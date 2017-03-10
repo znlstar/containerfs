@@ -15,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"syscall"
 )
 
 const (
@@ -31,6 +32,7 @@ const (
 	O_TRUNC  = os.O_TRUNC  // 512  00000000000000000000001000000000
 	O_DIRECT = 0x4000
 	O_MVOPT  = O_RDONLY | 0x20000
+	O_TAROPT = O_MVOPT | syscall.O_NONBLOCK
 )
 
 const (
@@ -195,7 +197,7 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 
 	cfile := CFile{}
 
-	if flags == O_RDONLY || flags == O_MVOPT {
+	if flags == O_RDONLY || flags == O_MVOPT || flags == O_TAROPT {
 		chunkInfos := make([]*mp.ChunkInfo, 0)
 		if ret, chunkInfos = cfs.GetFileChunks(path); ret != 0 {
 			return ret, nil
@@ -453,7 +455,8 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 
 	var buffer *bytes.Buffer
-	if cfile.OpenFlag != O_RDONLY && cfile.OpenFlag != O_MVOPT {
+	fmt.Println(cfile.OpenFlag)
+	if cfile.OpenFlag != O_RDONLY && cfile.OpenFlag != O_MVOPT && cfile.OpenFlag != O_TAROPT {
 		fmt.Println("Openflag bad parameter!\n")
 		return -1
 	}
@@ -663,7 +666,7 @@ func (cfile *CFile) flushChannel() {
 func (cfile *CFile) Flush() int32 {
 	fmt.Println("Flush  ... ")
 
-	if cfile.OpenFlag != O_RDONLY && cfile.OpenFlag != O_MVOPT {
+	if cfile.OpenFlag != O_RDONLY && cfile.OpenFlag != O_MVOPT && cfile.OpenFlag != O_TAROPT {
 		cfile.WriteChunk()
 	}
 	return 0
@@ -676,7 +679,7 @@ func (cfile *CFile) Sync() int32 {
 func (cfile *CFile) Close() int32 {
 	fmt.Println("Close  stat ... ")
 
-	if cfile.OpenFlag != O_RDONLY && cfile.OpenFlag != O_MVOPT {
+	if cfile.OpenFlag != O_RDONLY && cfile.OpenFlag != O_MVOPT && cfile.OpenFlag != O_TAROPT {
 		cfile.WriteChunk()
 		cfile.wg.Wait()
 
