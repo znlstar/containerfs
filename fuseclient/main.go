@@ -1,392 +1,280 @@
 package main
 
 import (
-	"errors"
+	"bufio"
 	"fmt"
-	"log"
+	fs "ipd.org/containerfs/fs"
+	"ipd.org/containerfs/utils"
 	"os"
-	"sync"
-	"time"
-
-	"bazil.org/fuse"
-	"bazil.org/fuse/fs"
-	"golang.org/x/net/context"
-
-	cfs "ipd.org/containerfs/fs"
+	"strconv"
 )
 
-type FS struct {
-	cfs *cfs.CFS
-}
-
-type Dir struct {
-	mu   sync.RWMutex
-	fs   *FS
-	path string
-}
-type File struct {
-	mu      sync.RWMutex
-	dir     *Dir
-	name    string
-	writers uint
-	cfile   *cfs.CFile
-}
-
 func main() {
-	err := mount(os.Args[1], os.Args[2])
-	if err != nil {
-		log.Fatal(err)
-	}
-}
 
-func mount(uuid, mountpoint string) error {
-	cfs := cfs.OpenFileSystem(uuid)
-	c, err := fuse.Mount(mountpoint,
-		fuse.FSName("ContainerFS-"+uuid),
-		fuse.LocalVolume(),
-		fuse.VolumeName("ContainerFS-"+uuid))
-	if err != nil {
-		return err
-	}
-	defer c.Close()
+	switch os.Args[1] {
 
-	filesys := &FS{
-		cfs: cfs,
-	}
-	if err := fs.Serve(c, filesys); err != nil {
-		return err
-	}
-	// check if the mount process has an error to report
-	<-c.Ready
-	if err := c.MountError; err != nil {
-		return err
-	}
-
-	return nil
-}
-
-var _ = fs.FS(&FS{})
-
-func (f *FS) Root() (fs.Node, error) {
-	n := &Dir{
-		fs:   f,
-		path: "/",
-	}
-	return n, nil
-}
-
-var _ = fs.Node(&Dir{})
-
-func (d *Dir) Attr(ctx context.Context, a *fuse.Attr) error {
-	a.Mode = os.ModeDir | 0755
-	return nil
-}
-
-func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	fmt.Println("ReadDirAll...")
-
-	var res []fuse.Dirent
-
-	ret, inodes := d.fs.cfs.List(d.path)
-
-	fmt.Println(d)
-
-	if ret == 2 {
-		return nil, errors.New("dir no longer exists")
-	}
-	if ret != 0 {
-		return nil, errors.New("error")
-	}
-	for _, v := range inodes {
-		de := fuse.Dirent{
-			Name: v.Name,
+	case "createvol":
+		argNum := len(os.Args)
+		if argNum != 4 {
+			fmt.Println("createvol [volname] [space GB]")
+			os.Exit(1)
 		}
-		if v.InodeType {
-			de.Type = fuse.DT_File
+		fs.CreateVol(os.Args[2], os.Args[3])
+
+	case "getvolinfo":
+		argNum := len(os.Args)
+		if argNum != 3 {
+			fmt.Println("getvolinfo [volUUID]")
+			os.Exit(1)
+		}
+		ret, vi := fs.GetVolInfo(os.Args[2])
+		if ret == 0 {
+			fmt.Println(vi)
 		} else {
-			de.Type = fuse.DT_Dir
-		}
-		res = append(res, de)
-	}
-	return res, nil
-}
-
-var _ = fs.NodeStringLookuper(&Dir{})
-
-func (d *Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
-	fmt.Println("Lookup...")
-
-	var fullPath string
-	if d.path == "/" {
-		fullPath = d.path + name
-	} else {
-		fullPath = d.path + "/" + name
-	}
-
-	fmt.Println(fullPath)
-
-	var n fs.Node
-	ret, inode := d.fs.cfs.Stat(fullPath)
-	fmt.Println(ret)
-
-	if ret == 2 {
-		return nil, fuse.ENOENT
-	}
-
-	if ret != 0 {
-		return nil, fuse.ENOENT
-	}
-	if inode.InodeType {
-		n = &File{
-			dir:  d,
-			name: name,
-		}
-	} else {
-		n = &Dir{
-			fs:   d.fs,
-			path: fullPath,
+			fmt.Printf("get volume info failed , ret :%d", ret)
 		}
 
-	}
-	return n, nil
-}
+	case "createdir":
+		argNum := len(os.Args)
+		if argNum != 4 {
+			fmt.Println("createdir [volUUID] [dirname]")
+			os.Exit(1)
+		}
+		cfs := fs.OpenFileSystem(os.Args[2])
+		ret := cfs.CreateDir(os.Args[3])
+		if ret == -1 {
+			fmt.Print("create dir failed\n")
+			return
+		}
+		if ret == 1 {
+			fmt.Print("not allowed\n")
+			return
+		}
+		if ret == 2 {
+			fmt.Print("no parent path\n")
+			return
+		}
+		if ret == 17 {
+			fmt.Print("already exist\n")
+			return
+		}
 
-var _ = fs.NodeMkdirer(&Dir{})
+	case "stat":
+		argNum := len(os.Args)
+		if argNum != 4 {
+			fmt.Println("stat [volUUID] [dir/filename]")
+			os.Exit(1)
+		}
+		cfs := fs.OpenFileSystem(os.Args[2])
+		ret, inode := cfs.Stat(os.Args[3])
+		if ret == 0 {
+			fmt.Println(inode)
+		} else if ret == 2 {
+			fmt.Println("not found")
+		} else {
+			fmt.Println("stat failed")
+		}
 
-func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
-	fmt.Println("mkdir...")
-	fmt.Println(req)
+	case "ls":
+		argNum := len(os.Args)
+		if argNum != 4 {
+			fmt.Println("ls [volUUID] [dir/filename]")
+			os.Exit(1)
+		}
+		cfs := fs.OpenFileSystem(os.Args[2])
+		ret, inodes := cfs.List(os.Args[3])
 
-	var fullPath string
+		if ret == 0 {
+			for _, value := range inodes {
+				fmt.Println(value.Name)
+			}
+		} else if ret == 2 {
+			fmt.Println("not found")
+		} else {
+			fmt.Println("ls failed")
+		}
 
-	if d.path == "/" {
-		fullPath = d.path + req.Name
-	} else {
-		fullPath = d.path + "/" + req.Name
-	}
+	case "ll":
+		argNum := len(os.Args)
+		if argNum != 4 {
+			fmt.Println("ls [volUUID] [dir/filename]")
+			os.Exit(1)
+		}
+		cfs := fs.OpenFileSystem(os.Args[2])
+		ret, inodes := cfs.List(os.Args[3])
 
-	ret := d.fs.cfs.CreateDir(fullPath)
-	if ret == -1 {
-		fmt.Print("create dir failed\n")
-		return nil, errors.New("create dir failed")
-	}
-	if ret == 1 {
-		fmt.Print("not allowed\n")
-		return nil, errors.New("not allowed")
-	}
-	if ret == 2 {
-		fmt.Print("no parent path\n")
-		return nil, errors.New("no parent path")
-	}
-	if ret == 17 {
-		fmt.Print("already exist\n")
-		return nil, errors.New("already exist")
-	}
+		if ret == 0 {
+			for _, value := range inodes {
+				fmt.Println(value)
+			}
+		} else if ret == 2 {
+			fmt.Println("not found")
+		} else {
+			fmt.Println("ls failed")
+		}
 
-	n := &Dir{
-		fs:   d.fs,
-		path: fullPath,
-	}
-	return n, nil
-}
-
-var _ = fs.NodeCreater(&Dir{})
-
-func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
-	fmt.Println("Create in dir ,req: ")
-	fmt.Println(req.Flags)
-	var fullPath string
-
-	if d.path == "/" {
-		fullPath = d.path + req.Name
-	} else {
-		fullPath = d.path + "/" + req.Name
-	}
-	ret, cfile := d.fs.cfs.OpenFile(fullPath, int(req.Flags))
-	if ret != 0 {
-		fmt.Println("Create file failed")
-		return nil, nil, errors.New("create file failed")
-	}
-
-	f := &File{
-		dir:     d,
-		name:    req.Name,
-		writers: 1,
-		cfile:   cfile,
-	}
-	return f, f, nil
-}
-
-var _ = fs.NodeRemover(&Dir{})
-
-func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
-	fmt.Println("remove...")
-	fmt.Println(req)
-
-	var fullPath string
-
-	if d.path == "/" {
-		fullPath = d.path + req.Name
-	} else {
-		fullPath = d.path + "/" + req.Name
-	}
-	if req.Dir {
-
-		ret := d.fs.cfs.DeleteDir(fullPath)
+	case "deletedir":
+		argNum := len(os.Args)
+		if argNum != 4 {
+			fmt.Println("deletedir [volUUID] [dirname]")
+			os.Exit(1)
+		}
+		cfs := fs.OpenFileSystem(os.Args[2])
+		ret := cfs.DeleteDir(os.Args[3])
 		if ret != 0 {
 			if ret == 2 {
 				fmt.Println("not allowed")
-				return errors.New("not allowed")
 			} else {
 				fmt.Println("delete dir failed")
-				return errors.New("delete dir failed")
 			}
 		}
-	} else {
-		ret := d.fs.cfs.DeleteFile(fullPath)
+
+	case "mv":
+		argNum := len(os.Args)
+		if argNum != 5 {
+			fmt.Println("mv [volUUID] [dirname1] [dirname2]")
+			os.Exit(1)
+		}
+		cfs := fs.OpenFileSystem(os.Args[2])
+		ret := cfs.Rename(os.Args[3], os.Args[4])
+		if ret == 2 {
+			fmt.Println("not existed")
+		}
+		if ret == 1 {
+			fmt.Println("not allowed")
+		}
+	case "touch":
+		argNum := len(os.Args)
+		if argNum != 4 {
+			fmt.Println("touch [volUUID] [filename]")
+			os.Exit(1)
+		}
+		cfs := fs.OpenFileSystem(os.Args[2])
+		ret, _ := cfs.OpenFile(os.Args[3], fs.O_WRONLY)
+		if ret != 0 {
+			fmt.Println("touch failed")
+		}
+
+	case "deletefile":
+		argNum := len(os.Args)
+		if argNum != 4 {
+			fmt.Println("deletedir [volUUID] [filename]")
+			os.Exit(1)
+		}
+		cfs := fs.OpenFileSystem(os.Args[2])
+		ret := cfs.DeleteFile(os.Args[3])
 		if ret != 0 {
 			if ret == 2 {
-				fmt.Println("not allowed")
-				return errors.New("not allowed")
+				fmt.Println("not found")
 			} else {
 				fmt.Println("delete file failed")
-				return errors.New("delete file failed")
 			}
 		}
+	case "allocatechunk":
+		argNum := len(os.Args)
+		if argNum != 4 {
+			fmt.Println("allocatechunk [volUUID] [filename]")
+			os.Exit(1)
+		}
+		cfs := fs.OpenFileSystem(os.Args[2])
+		ret, ack := cfs.AllocateChunk(os.Args[3])
+
+		if ret != 0 {
+			fmt.Println("allocatechunk failed")
+		} else {
+			fmt.Println(ack)
+		}
+
+	case "put":
+		argNum := len(os.Args)
+		if argNum != 5 {
+			fmt.Println("put [volUUID] [localfilename] [cfsfilename]")
+			os.Exit(1)
+		}
+		cfs := fs.OpenFileSystem(os.Args[2])
+		put(cfs, os.Args[3], os.Args[4])
+
+	case "get":
+		argNum := len(os.Args)
+		if argNum != 7 {
+			fmt.Println("get [voluuid] [cfsfilename] [dstfilename] [offset] [readsize(if read whole file,set readsize 0)]")
+			os.Exit(1)
+		}
+		offset, _ := strconv.ParseInt(os.Args[5], 10, 64)
+		size, _ := strconv.ParseInt(os.Args[6], 10, 64)
+
+		cfs := fs.OpenFileSystem(os.Args[2])
+		get(cfs, os.Args[3], os.Args[4], offset, size)
 	}
-	return nil
+
 }
 
-var _ = fs.Node(&File{})
-var _ = fs.Handle(&File{})
-
-func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	fmt.Println("Attr...")
-	fmt.Println(a)
-
-	var fullPath string
-
-	if f.dir.path == "/" {
-		fullPath = f.dir.path + f.name
-	} else {
-		fullPath = f.dir.path + "/" + f.name
-	}
-
-	ret, inode := f.dir.fs.cfs.Stat(fullPath)
-	fmt.Println(f.dir.path + f.name)
-	fmt.Println(ret)
-	fmt.Println(inode)
-
-	a.Ctime = time.Unix(inode.ModifiTime, 0)
-	a.Mtime = time.Unix(inode.ModifiTime, 0)
-	a.Atime = time.Unix(inode.AccessTime, 0)
-	a.Size = uint64(inode.FileSize)
-	a.Inode = uint64(inode.InodeID)
-	a.Blocks = uint64(len(inode.ChunkIDs))
-	a.BlockSize = 64 * 1024 * 1024
-	a.Mode = 0666
-
-	return nil
-}
-
-var _ = fs.NodeOpener(&File{})
-
-func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
-	var ret int32
-	fmt.Println("Open in file ...")
-	fmt.Println(req.Flags)
-	//if req.Flags.IsReadOnly() {
-	// we don't need to track read-only handles
-	//	return f, nil
-	//}
-	var fullPath string
-
-	if f.dir.path == "/" {
-		fullPath = f.dir.path + f.name
-	} else {
-		fullPath = f.dir.path + "/" + f.name
-	}
-
-	ret, f.cfile = f.dir.fs.cfs.OpenFile(fullPath, int(req.Flags))
+func get(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsize int64) {
+	ret, _ := cfs.Stat(cfsFile)
 	if ret != 0 {
-		fmt.Println("open file failed")
-		return nil, errors.New("open file failed")
-	}
-	f.writers++
-	return f, nil
-}
-
-var _ = fs.HandleReleaser(&File{})
-
-func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
-	fmt.Println("Release in file ...")
-	if req.Flags.IsReadOnly() {
-		// we don't need to track read-only handles
-		return nil
+		fmt.Print("Get Bad FilePath from CFS!\n")
+		os.Exit(1)
 	}
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
+	ret, cfile := cfs.OpenFile(cfsFile, fs.O_RDONLY)
+	defer cfile.Close()
 
-	f.writers--
-	f.cfile.Close()
-	return nil
-}
-
-var _ = fs.HandleReader(&File{})
-
-var d time.Duration
-var d1 time.Duration
-
-func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-
-	t1 := time.Now()
-	length := f.cfile.Readf(&resp.Data, req.Offset, int64(req.Size))
-	t2 := time.Now()
-
-	d += t2.Sub(t1)
-
-	if req.Offset == 4096 {
-		fmt.Println("first in Read ...")
-		fmt.Println(time.Now())
+	if readsize == 0 {
+		readsize = cfile.FileSize
 	}
-	if req.Offset == 64*1024*1024 {
-		fmt.Println("64MB in Read ...")
-		fmt.Println(time.Now())
-		fmt.Printf("Readf cost: %v\n", d)
+	freesize := readsize
+
+	var lastoffset int64=0
+	lastoffset = offset + readsize
+	var r int64=0
+	f, err := os.Create(dstFile)
+	if err != nil {
+		fmt.Println("Open local dstFile error!\n")
+		os.Exit(1)
 	}
+	defer f.Close()
+	w := bufio.NewWriter(f)
+	buf := make([]byte, 1024*1024)
 
-	if length == int64(req.Size) {
-		return nil
-	} else {
-		fmt.Printf("Read cfile reqsize:%v, have readsize:%v \n", req.Size, length)
+	for {
+		if freesize - int64(len(buf)) < 0 {
+			r = cfile.Read(&buf, offset, freesize)
+		} else {
+			r = cfile.Read(&buf, offset, int64(len(buf)))
+		}
+		freesize -= r
+		offset += r
+
+		if n, err := f.Write(buf[:r]); err != nil {
+			fmt.Printf("Get from CFSfile to Localfile err:%v !\n", err)
+			os.Exit(1)
+		} else if int64(n) != r {
+			fmt.Printf("Get from CFSfile to write Localfile incorrect, retsize:%v, writesize:%v !!!\n", r,n)
+			os.Exit(1)
+		}
+
+		if offset >= lastoffset  {
+			fmt.Printf("This Read Request size:%v from %v have finished!\n",readsize,cfsFile)
+			break
+		}
 	}
-	return nil
+	if err = w.Flush(); err != nil {
+                fmt.Println("Flush Localfile data err!\n")
+                os.Exit(1)
+        }
 }
 
-var _ = fs.HandleWriter(&File{})
+func put(cfs *fs.CFS, localFile string, cfsFile string) int32 {
+	if ok, _ := utils.LocalPathExists(localFile); !ok {
+		fmt.Println("local file not exist!")
+		os.Exit(1)
+	}
+	ret, cfile := cfs.OpenFile(cfsFile, fs.O_WRONLY)
+	if ret != 0 {
+		return ret
+	}
+	fs.ReadLocalAndWriteCFS(localFile, 1024*10, fs.ProcessLocalBuffer, cfile)
+	cfile.Close()
 
-func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	//fmt.Println("Write in file ...")
-	f.cfile.Write(req.Data, int32(len(req.Data)))
-	resp.Size = len(req.Data)
-	return nil
-}
-
-var _ = fs.HandleFlusher(&File{})
-
-func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
-	fmt.Println("Flush .... ")
-	//f.cfile.Flush()
-	return nil
-}
-
-var _ = fs.NodeSetattrer(&File{})
-
-func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
-
-	return nil
+	return 0
 }

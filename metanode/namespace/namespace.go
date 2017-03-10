@@ -291,6 +291,8 @@ func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
 		AccessTime:       pInodeInfo.AccessTime,
 		ModifiTime:       pInodeInfo.ModifiTime,
 		InodeType:        pInodeInfo.InodeType,
+		FileSize:         pInodeInfo.FileSize,
+		ChunkIDs:         pInodeInfo.ChunkIDs,
 		ChildrenInodeIDs: pInodeInfo.ChildrenInodeIDs}
 
 	tmpKey := strconv.FormatInt(pParentInodeInfo2.InodeID, 10) + "-" + name
