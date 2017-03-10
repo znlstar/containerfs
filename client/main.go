@@ -185,15 +185,6 @@ func main() {
 			fmt.Println(ack)
 		}
 
-	case "get1":
-		argNum := len(os.Args)
-		if argNum != 5 {
-			fmt.Println("get [voluuid] [cfsfilename] [dstfilename]")
-			os.Exit(1)
-		}
-		cfs := fs.OpenFileSystem(os.Args[2])
-		get(cfs, os.Args[3], os.Args[4])
-
 	case "put":
 		argNum := len(os.Args)
 		if argNum != 5 {
@@ -203,23 +194,22 @@ func main() {
 		cfs := fs.OpenFileSystem(os.Args[2])
 		put(cfs, os.Args[3], os.Args[4])
 
-	case "get2":
+	case "get":
 		argNum := len(os.Args)
 		if argNum != 7 {
-			fmt.Println("get [voluuid] [cfsfilename] [dstfilename] [offset] [readsize]")
+			fmt.Println("get [voluuid] [cfsfilename] [dstfilename] [offset] [readsize(if read whole file,set readsize 0)]")
 			os.Exit(1)
 		}
 		offset, _ := strconv.ParseInt(os.Args[5], 10, 64)
 		size, _ := strconv.ParseInt(os.Args[6], 10, 64)
 
 		cfs := fs.OpenFileSystem(os.Args[2])
-		getstream(cfs, os.Args[3], os.Args[4], offset, size)
+		get(cfs, os.Args[3], os.Args[4], offset, size)
 	}
 
-	fs.Wg.Wait()
 }
 
-func getstream(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsize int64) {
+func get(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsize int64) {
 	ret, _ := cfs.Stat(cfsFile)
 	if ret != 0 {
 		fmt.Print("Get Bad FilePath from CFS!\n")
@@ -229,21 +219,14 @@ func getstream(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsi
 	ret, cfile := cfs.OpenFile(cfsFile, fs.O_RDONLY)
 	defer cfile.Close()
 
-	var length int64 = 0
-	length = cfile.Reads(dstFile, offset, readsize)
-	fmt.Printf("Read %v bytes from %s have finised... !\n", length, cfsFile)
-}
-
-func get(cfs *fs.CFS, cfsFile string, dstFile string) {
-	ret, _ := cfs.Stat(cfsFile)
-	if ret != 0 {
-		fmt.Print("Get Bad FilePath from CFS!\n")
-		os.Exit(1)
+	if readsize == 0 {
+		readsize = cfile.FileSize
 	}
+	freesize := readsize
 
-	ret, cfile := cfs.OpenFile(cfsFile, fs.O_RDONLY)
-	defer cfile.Close()
-
+	var lastoffset int64=0
+	lastoffset = offset + readsize
+	var r int64=0
 	f, err := os.Create(dstFile)
 	if err != nil {
 		fmt.Println("Open local dstFile error!\n")
@@ -251,33 +234,34 @@ func get(cfs *fs.CFS, cfsFile string, dstFile string) {
 	}
 	defer f.Close()
 	w := bufio.NewWriter(f)
-
 	buf := make([]byte, 1024*1024)
-	var bytes int64 = 0
-	var length int64 = 0
+
 	for {
-		length = cfile.Read(&buf, int64(len(buf)))
-		if length <= 0 {
-			if length < 0 {
-				fmt.Println("Read from CFSFile fail!\n")
-				os.Exit(1)
-			}
-			break
+		if freesize - int64(len(buf)) < 0 {
+			r = cfile.Read(&buf, offset, freesize)
+		} else {
+			r = cfile.Read(&buf, offset, int64(len(buf)))
 		}
-		bytes += length
-		if n, err := w.Write(buf); err != nil {
+		freesize -= r
+		offset += r
+
+		if n, err := f.Write(buf[:r]); err != nil {
 			fmt.Printf("Get from CFSfile to Localfile err:%v !\n", err)
 			os.Exit(1)
-		} else if int64(n) != length {
-			fmt.Printf("Get from CFSfile to write Localfile incorrect, retsize:%v, writesize:%v !!!\n", length, n)
+		} else if int64(n) != r {
+			fmt.Printf("Get from CFSfile to write Localfile incorrect, retsize:%v, writesize:%v !!!\n", r,n)
 			os.Exit(1)
+		}
+
+		if offset >= lastoffset  {
+			fmt.Printf("This Read Request size:%v from %v have finished!\n",readsize,cfsFile)
+			break
 		}
 	}
 	if err = w.Flush(); err != nil {
-		fmt.Println("Flush Localfile data err!\n")
-		os.Exit(1)
-	}
-	fmt.Printf("Read %v bytes from %s have finised...\n", bytes, cfsFile)
+                fmt.Println("Flush Localfile data err!\n")
+                os.Exit(1)
+        }
 }
 
 func put(cfs *fs.CFS, localFile string, cfsFile string) int32 {

@@ -11,6 +11,7 @@ import (
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
 	"golang.org/x/net/context"
+	"syscall"
 
 	cfs "ipd.org/containerfs/fs"
 )
@@ -41,7 +42,11 @@ func main() {
 
 func mount(uuid, mountpoint string) error {
 	cfs := cfs.OpenFileSystem(uuid)
-	c, err := fuse.Mount(mountpoint,
+	c, err := fuse.Mount(
+		mountpoint,
+		fuse.MaxReadahead(128*1024),
+		//fuse.AsyncRead(),
+		fuse.WritebackCache(),
 		fuse.FSName("ContainerFS-"+uuid),
 		fuse.LocalVolume(),
 		fuse.VolumeName("ContainerFS-"+uuid))
@@ -257,6 +262,15 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	return nil
 }
 
+var _ = fs.NodeRenamer(&Dir{})
+
+func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Node) error {
+	if newDir != d {
+		return fuse.Errno(syscall.EXDEV)
+	}
+	return nil
+}
+
 var _ = fs.Node(&File{})
 var _ = fs.Handle(&File{})
 
@@ -338,32 +352,14 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 
 var _ = fs.HandleReader(&File{})
 
-var d time.Duration
-var d1 time.Duration
-
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-
-	t1 := time.Now()
-	length := f.cfile.Readf(&resp.Data, req.Offset, int64(req.Size))
-	t2 := time.Now()
-
-	d += t2.Sub(t1)
-
-	if req.Offset == 4096 {
-		fmt.Println("first in Read ...")
-		fmt.Println(time.Now())
-	}
-	if req.Offset == 64*1024*1024 {
-		fmt.Println("64MB in Read ...")
-		fmt.Println(time.Now())
-		fmt.Printf("Readf cost: %v\n", d)
-	}
-
+	length := f.cfile.Read(&resp.Data, req.Offset, int64(req.Size))
 	if length == int64(req.Size) {
 		return nil
 	} else {
 		fmt.Printf("Read cfile reqsize:%v, have readsize:%v \n", req.Size, length)
 	}
+
 	return nil
 }
 
@@ -381,6 +377,9 @@ var _ = fs.HandleFlusher(&File{})
 func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 	fmt.Println("Flush .... ")
 	//f.cfile.Flush()
+	return nil
+}
+func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 	return nil
 }
 
