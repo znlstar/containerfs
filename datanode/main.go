@@ -47,7 +47,6 @@ func startDataService() {
 	}
 	s := grpc.NewServer()
 	dp.RegisterDataNodeServer(s, &DataNodeServer{})
-	// Register reflection service on gRPC server.
 	reflection.Register(s)
 	if err := s.Serve(lis); err != nil {
 		panic("Failed to serve")
@@ -111,13 +110,6 @@ func heartbeatToVolMgr() {
 }
 
 /*
-func isFileExist(filename string) bool {
-	_, err := os.Stat(filename)
-	return err == nil || os.IsExist(err)
-}
-*/
-
-/*
 rpc GetChunks(GetChunksReq) returns (GetChunksAck){};
 */
 func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (*dp.WriteChunkAck, error) {
@@ -168,9 +160,7 @@ func (s *DataNodeServer) WriteChunkStream(stream dp.DataNode_WriteChunkStreamSer
 		chunkID := in.ChunkID
 		blockID := in.BlockID
 		chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
-		fmt.Println(chunkFileName)
 		f, err = os.OpenFile(chunkFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
-		fmt.Println(len(in.Databuf))
 		f.WriteString(in.Databuf)
 		f.Close()
 	}
@@ -203,7 +193,6 @@ func (s *DataNodeServer) ReadChunk(ctx context.Context, in *dp.ReadChunkReq) (*d
 			ack.Ret = -1
 			return &ack, nil
 		}
-		fmt.Printf("#### buflen:%v #### bufcap:%v ####\n", len(buf), cap(buf))
 		ack.Databuf = utils.B2S(buf)
 		ack.Ret = 1
 		ack.Readsize = int64(n)
@@ -217,7 +206,6 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 	offset := in.Offset
 	readsize := in.Readsize
 
-	//fmt.Printf("#### Hello read chunk:%v #####\n", chunkID)
 	chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
 	f, err := os.Open(chunkFileName)
 	defer f.Close()
@@ -291,17 +279,14 @@ func (s *DataNodeServer) DeleteChunk(ctx context.Context, in *dp.DeleteChunkReq)
 }
 
 func init() {
-
 	c, err := config.NewConfig(os.Args[1])
 	if err != nil {
 		fmt.Println("NewConfig err")
 		os.Exit(1)
 	}
 
-
 	DataNodeServerAddr.IpStr = c.String("host")
 	ipnr := net.ParseIP(DataNodeServerAddr.IpStr)
-
 	DataNodeServerAddr.Ipnr = ipnr
 	ipint := utils.Inet_aton(ipnr)
 	DataNodeServerAddr.IpInt = ipint
