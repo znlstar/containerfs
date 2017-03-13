@@ -121,6 +121,7 @@ func (d *Dir) Attr(ctx context.Context, a *fuse.Attr) error {
 }
 
 func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
+
 	fmt.Println("ReadDirAll...")
 
 	d.mu.Lock()
@@ -130,8 +131,6 @@ func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 
 	// todo : only need list name,not all inodeinfo
 	ret, inodes := d.fs.cfs.List(d.name)
-
-	fmt.Println(d)
 
 	if ret == 2 {
 		return nil, errors.New("dir no longer exists")
@@ -150,7 +149,7 @@ func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 		}
 		res = append(res, de)
 	}
-	fmt.Println(res)
+
 	return res, nil
 }
 
@@ -173,14 +172,9 @@ func (d *Dir) reviveNode(inode *mp.InodeInfo, name string, fullpath string) (nod
 }
 
 func (d *Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
-	fmt.Println("Lookup...")
-
 	if a, ok := d.active[name]; ok {
-		fmt.Println("Lookup...in map ")
-		fmt.Println(a.node)
 		return a.node, nil
 	}
-
 	var fullPath string
 	if d.name == "/" {
 		fullPath = d.name + name
@@ -188,22 +182,16 @@ func (d *Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
 		fullPath = d.name + "/" + name
 	}
 
-	fmt.Println(fullPath)
-
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
 	ret, inode := d.fs.cfs.Stat(fullPath)
-	fmt.Println(ret)
-
 	if ret == 2 {
 		return nil, fuse.ENOENT
 	}
-
 	if ret != 0 {
 		return nil, fuse.ENOENT
 	}
-
 	n, _ := d.reviveNode(inode, name, fullPath)
 	a := &refcount{node: n}
 	if inode.InodeType {
@@ -211,16 +199,12 @@ func (d *Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
 	} else {
 		d.active[fullPath] = a
 	}
-
 	return n, nil
 }
 
 var _ = fs.NodeMkdirer(&Dir{})
 
 func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
-	fmt.Println("mkdir...")
-	fmt.Println(req)
-
 	var fullPath string
 
 	if d.name == "/" {
@@ -251,10 +235,7 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 	}
 
 	ret, inode := d.fs.cfs.Stat(fullPath)
-	fmt.Println(ret)
-
 	child := newDir(d.fs, inode, fullPath)
-
 	d.active[fullPath] = &refcount{node: child}
 
 	return child, nil
@@ -263,9 +244,6 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 var _ = fs.NodeCreater(&Dir{})
 
 func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
-	fmt.Println("Create in dir ,req: ")
-	fmt.Println(req.Flags)
-
 	var fullPath string
 
 	if d.name == "/" {
@@ -300,9 +278,6 @@ func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 var _ = fs.NodeRemover(&Dir{})
 
 func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
-	fmt.Println("remove...")
-	fmt.Println(req)
-
 	var fullPath string
 
 	if d.name == "/" {
@@ -357,12 +332,8 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 var _ = fs.NodeRenamer(&Dir{})
 
 func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Node) error {
-	fmt.Println("Rename...in Dir")
-
-	fmt.Println("newDir:")
-
 	if newDir != d {
-		return fuse.Errno(syscall.EXDEV)
+		return errors.New("Not Allowed")
 	}
 
 	newDirInstant := newDir.(*Dir)
@@ -382,9 +353,6 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 		fullPath2 = newDirInstant.name + "/" + req.NewName
 	}
 
-	fmt.Println(fullPath1)
-	fmt.Println(fullPath2)
-
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -403,7 +371,6 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	}
 
 	ret, inodeNew := d.fs.cfs.Stat(fullPath2)
-	fmt.Println(ret)
 
 	if inodeNew.InodeType {
 		// tell overwritten node it's unlinked
@@ -424,15 +391,10 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 		}
 
 		// if the source inode is active, record its new name
-		fmt.Println("rename1 ... ")
-		fmt.Println(d.active[fullPath1])
-
 		if aOld, ok := d.active[fullPath1]; ok {
 			aOld.node.setName(fullPath2)
 			delete(d.active, fullPath1)
 			d.active[fullPath2] = aOld
-			fmt.Println("rename2 ... ")
-			fmt.Println(d.active[fullPath2])
 		}
 	}
 
@@ -452,10 +414,8 @@ func (f *File) setName(name string) {
 func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 
 	fmt.Println("Attr...")
-	fmt.Println(a)
 
 	var fullPath string
-
 	if f.parent.name == "/" {
 		fullPath = f.parent.name + f.name
 	} else {
@@ -464,9 +424,10 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	fmt.Println(fullPath)
+	fmt.Println("Stat...")
 	ret, inode := f.parent.fs.cfs.Stat(fullPath)
 	if ret != 0 {
+		fmt.Printf("Stat failed ...%v\n", ret)
 		return nil
 	}
 
@@ -476,7 +437,7 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Size = uint64(inode.FileSize)
 	a.Inode = uint64(inode.InodeID)
 	a.Blocks = uint64(len(inode.ChunkIDs))
-	a.BlockSize = 64 * 1024 * 1024
+	a.BlockSize = 4 * 1024 // this is for fuse attr quick update
 	a.Mode = 0666
 
 	return nil
@@ -486,12 +447,7 @@ var _ = fs.NodeOpener(&File{})
 
 func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
 	var ret int32
-	fmt.Println("Open in file ...")
-	fmt.Println(req)
-	//if req.Flags.IsReadOnly() {
-	// we don't need to track read-only handles
-	//	return f, nil
-	//}
+
 	var fullPath string
 
 	// we do not support trunc
@@ -517,7 +473,6 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 var _ = fs.HandleReleaser(&File{})
 
 func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
-	fmt.Println("Release in file ...")
 	if req.Flags.IsReadOnly() {
 		// we don't need to track read-only handles
 		return nil
@@ -547,7 +502,6 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 var _ = fs.HandleWriter(&File{})
 
 func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	//fmt.Println("Write in file ...")
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cfile.Write(req.Data, int32(len(req.Data)))
@@ -558,17 +512,11 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 var _ = fs.HandleFlusher(&File{})
 
 func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
-	fmt.Println("Flush .... ")
-	//f.cfile.Flush()
-	return nil
-}
-func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 	return nil
 }
 
 var _ = fs.NodeSetattrer(&File{})
 
 func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
-	fmt.Println("Setattr... ")
 	return nil
 }
