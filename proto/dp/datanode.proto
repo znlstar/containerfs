@@ -4,8 +4,9 @@ package dp;
 
 service DataNode {
     rpc WriteChunk(WriteChunkReq) returns (WriteChunkAck){};
-    rpc WriteChunkStream(stream WriteChunkReq) returns (WriteChunkAck){};
-    rpc ReadChunk(ReadChunkReq) returns (ReadChunkAck){};
+    //rpc ReadChunk(ReadChunkReq) returns (ReadChunkAck){};
+
+    //rpc StreamWriteChunk(stream StreamWriteChunkReq) returns (StreamWriteChunkAck){};
     rpc StreamReadChunk(StreamReadChunkReq) returns (stream StreamReadChunkAck){};
     rpc DeleteChunk(DeleteChunkReq) returns (DeleteChunkAck){};
 }
@@ -13,22 +14,10 @@ service DataNode {
 message WriteChunkReq{
     int64 ChunkID = 1;
     int32 BlockID = 2;
-    string Databuf = 3;
+    bytes Databuf = 3;
 }
 message WriteChunkAck{
     int32 Ret = 1;
-}
-
-message ReadChunkReq{
-    int64 ChunkID = 1;
-    int32 BlockID = 2;
-    int64 Readlen = 3;
-    int64 Offset = 4;
-}
-message ReadChunkAck{
-    int32 Ret = 1;
-    int64 Readsize = 2;
-    string Databuf = 3;
 }
 
 message StreamReadChunkReq{
@@ -39,10 +28,23 @@ message StreamReadChunkReq{
 }
 
 message StreamReadChunkAck{
-    //int32 Ret = 1;
-    //int64 Readsize = 2;
-    string Databuf = 1;
+    bytes Databuf = 1;
 }
+
+
+
+//message ReadChunkReq{
+//    int64 ChunkID = 1;
+//    int32 BlockID = 2;
+//    int64 Readlen = 3;
+//    int64 Offset = 4;
+//}
+
+//message ReadChunkAck{
+//    int32 Ret = 1;
+//    int64 Readsize = 2;
+//    bytes Databuf = 3;
+//}
 
 message DeleteChunkReq{
     int64 ChunkID = 1;

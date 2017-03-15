@@ -11,6 +11,11 @@ import (
 
 func main() {
 
+//	fs.VolMgrAddr = "172.28.96.125:10001"
+//	fs.MetaNodeAddr = "172.28.96.125:10002"
+fs.VolMgrAddr = "10.8.65.94:10001"
+fs.MetaNodeAddr = "10.8.65.94:10002"
+
 	switch os.Args[1] {
 
 	case "createvol":
@@ -224,9 +229,9 @@ func get(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsize int
 	}
 	freesize := readsize
 
-	var lastoffset int64=0
+	var lastoffset int64 = 0
 	lastoffset = offset + readsize
-	var r int64=0
+	var r int64 = 0
 	f, err := os.Create(dstFile)
 	if err != nil {
 		fmt.Println("Open local dstFile error!\n")
@@ -237,7 +242,7 @@ func get(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsize int
 	buf := make([]byte, 1024*1024)
 
 	for {
-		if freesize - int64(len(buf)) < 0 {
+		if freesize-int64(len(buf)) < 0 {
 			r = cfile.Read(&buf, offset, freesize)
 		} else {
 			r = cfile.Read(&buf, offset, int64(len(buf)))
@@ -249,19 +254,19 @@ func get(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsize int
 			fmt.Printf("Get from CFSfile to Localfile err:%v !\n", err)
 			os.Exit(1)
 		} else if int64(n) != r {
-			fmt.Printf("Get from CFSfile to write Localfile incorrect, retsize:%v, writesize:%v !!!\n", r,n)
+			fmt.Printf("Get from CFSfile to write Localfile incorrect, retsize:%v, writesize:%v !!!\n", r, n)
 			os.Exit(1)
 		}
 
-		if offset >= lastoffset  {
-			fmt.Printf("This Read Request size:%v from %v have finished!\n",readsize,cfsFile)
+		if offset >= lastoffset {
+			fmt.Printf("This Read Request size:%v from %v have finished!\n", readsize, cfsFile)
 			break
 		}
 	}
 	if err = w.Flush(); err != nil {
-                fmt.Println("Flush Localfile data err!\n")
-                os.Exit(1)
-        }
+		fmt.Println("Flush Localfile data err!\n")
+		os.Exit(1)
+	}
 }
 
 func put(cfs *fs.CFS, localFile string, cfsFile string) int32 {

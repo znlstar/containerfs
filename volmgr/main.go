@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -11,6 +12,7 @@ import (
 	vp "ipd.org/containerfs/proto/vp"
 	"ipd.org/containerfs/utils"
 	"net"
+	"os"
 	"runtime"
 	"sort"
 	"strconv"
@@ -18,19 +20,24 @@ import (
 	"sync"
 )
 
-type RpcConfigOpts struct {
-	ListenPort uint16 `gcfg:"listen-port"`
-	ClientPort uint16 `gcfg:"client-port"`
+type addr struct {
+	host string
+	port int
+	log  string
 }
 
-var (
-	dbhostip   = "127.0.0.1:3306"
-	dbusername = "root"
-	dbpassword = "root"
-	dbname     = "containerfs"
-)
+var VolMgrServerAddr addr
 
-var g_RpcConfig RpcConfigOpts
+type mysqlc struct {
+	dbhost     string
+	dbusername string
+	dbpassword string
+	dbname     string
+}
+
+var mysqlConf mysqlc
+
+//var g_RpcConfig RpcConfigOpts
 var Mutex sync.RWMutex
 var err string
 var blksize int32
@@ -38,21 +45,6 @@ var blksize int32
 type VolMgrServer struct{}
 
 var VolMgrDB *sql.DB
-
-func init() {
-	var err error
-
-	logger.SetConsole(true)
-	logger.SetRollingFile("/var/log/containerfs", "volmgr.log", 10, 100, logger.MB) //each 100M rolling
-	logger.SetLevel(logger.DEBUG)
-
-	VolMgrDB, err = sql.Open("mysql", dbusername+":"+dbpassword+"@tcp("+dbhostip+")/"+dbname+"?charset=utf8")
-	checkErr(err)
-
-	err = VolMgrDB.Ping()
-	checkErr(err)
-	blksize = 10 //each blk size(G)
-}
 
 func checkErr(err error) {
 	if err != nil {
@@ -305,10 +297,10 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 }
 
 func StartVolMgrService() {
-	g_RpcConfig.ListenPort = 10001
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", g_RpcConfig.ListenPort))
+
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", VolMgrServerAddr.port))
 	if err != nil {
-		panic(fmt.Sprintf("Failed to listen on:%v", g_RpcConfig.ListenPort))
+		panic(fmt.Sprintf("Failed to listen on:%v", VolMgrServerAddr.port))
 	}
 	s := grpc.NewServer()
 	vp.RegisterVolMgrServer(s, &VolMgrServer{})
@@ -319,6 +311,40 @@ func StartVolMgrService() {
 	}
 }
 
+func init() {
+	c, err := config.NewConfig(os.Args[1])
+	if err != nil {
+		fmt.Println("NewConfig err")
+		os.Exit(1)
+	}
+	port, _ := c.Int("port")
+	VolMgrServerAddr.port = port
+	VolMgrServerAddr.log = c.String("log")
+	VolMgrServerAddr.host = c.String("host")
+
+	os.MkdirAll(VolMgrServerAddr.log, 0777)
+
+	fmt.Println(VolMgrServerAddr)
+
+	mysqlConf.dbhost = c.String("mysql::mysql.host")
+	mysqlConf.dbusername = c.String("mysql::mysql.user")
+	mysqlConf.dbpassword = c.String("mysql::mysql.passwd")
+	mysqlConf.dbname = c.String("mysql::mysql.db")
+
+	fmt.Println(mysqlConf)
+
+	logger.SetConsole(true)
+	logger.SetRollingFile(VolMgrServerAddr.log, "volmgr.log", 10, 100, logger.MB) //each 100M rolling
+	logger.SetLevel(logger.DEBUG)
+
+	VolMgrDB, err = sql.Open("mysql", mysqlConf.dbusername+":"+mysqlConf.dbpassword+"@tcp("+mysqlConf.dbhost+")/"+mysqlConf.dbname+"?charset=utf8")
+	checkErr(err)
+
+	err = VolMgrDB.Ping()
+	checkErr(err)
+	blksize = 10 //each blk size(G)
+
+}
 func main() {
 
 	//for multi-cpu scheduling
