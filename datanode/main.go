@@ -9,7 +9,6 @@ import (
 	//"io/ioutil"
 	"bufio"
 	"github.com/lxmgo/config"
-	"io"
 	dp "ipd.org/containerfs/proto/dp"
 	vp "ipd.org/containerfs/proto/vp"
 	"ipd.org/containerfs/utils"
@@ -122,21 +121,23 @@ func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (
 	blockID := in.BlockID
 
 	chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
-	fmt.Println(chunkFileName)
 
-	f, err = os.OpenFile(chunkFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	f, err = os.OpenFile(chunkFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0660)
 	defer f.Close()
 	if err != nil {
 		ack.Ret = -1
 		return &ack, nil
 	}
-	fmt.Println(len(in.Databuf))
-	f.WriteString(in.Databuf)
+	w := bufio.NewWriter(f)
+	w.Write(in.Databuf)
+	w.Flush()
+
 	ack.Ret = 0
 	return &ack, nil
 }
 
 /*rpc WriteChunkStream(stream WriteChunkReq) returns (WriteChunkAck){}; */
+/*
 func (s *DataNodeServer) WriteChunkStream(stream dp.DataNode_WriteChunkStreamServer) error {
 
 	var f *os.File
@@ -165,6 +166,8 @@ func (s *DataNodeServer) WriteChunkStream(stream dp.DataNode_WriteChunkStreamSer
 		f.Close()
 	}
 }
+*/
+/*
 func (s *DataNodeServer) ReadChunk(ctx context.Context, in *dp.ReadChunkReq) (*dp.ReadChunkAck, error) {
 	ack := dp.ReadChunkAck{}
 	chunkID := in.ChunkID
@@ -199,7 +202,7 @@ func (s *DataNodeServer) ReadChunk(ctx context.Context, in *dp.ReadChunkReq) (*d
 		return &ack, nil
 	}
 }
-
+*/
 func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.DataNode_StreamReadChunkServer) error {
 	chunkID := in.ChunkID
 	blockID := in.BlockID
@@ -231,7 +234,7 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 		if totalsize <= 0 {
 			var m int64
 			m = int64(n) + totalsize
-			ack.Databuf = utils.B2S(buf[:m])
+			ack.Databuf = buf[:m]
 			if err := stream.Send(&ack); err != nil {
 				fmt.Printf("+++++++ error:%v +++++\n", err)
 				return err
@@ -239,7 +242,7 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 			break
 		}
 
-		ack.Databuf = utils.B2S(buf[:n])
+		ack.Databuf = buf[:n]
 
 		if err := stream.Send(&ack); err != nil {
 			fmt.Printf("+++++++ error:%v +++++\n", err)
@@ -294,7 +297,6 @@ func init() {
 	DataNodeServerAddr.Port = int32(port)
 	DataNodeServerAddr.Path = c.String("path")
 	DataNodeServerAddr.Flag = DataNodeServerAddr.Path + "/.registryflag"
-
 	DataNodeServerAddr.VolMgrIp = c.String("volmgr::volmgr.host")
 	DataNodeServerAddr.VolMgrPort = c.String("volmgr::volmgr.port")
 

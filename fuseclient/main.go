@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"sync"
 	"syscall"
@@ -11,11 +12,15 @@ import (
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
+	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 
 	cfs "ipd.org/containerfs/fs"
 	mp "ipd.org/containerfs/proto/mp"
 )
+
+var uuid string
+var mountPoint string
 
 type FS struct {
 	cfs *cfs.CFS
@@ -48,16 +53,26 @@ type File struct {
 }
 
 func main() {
-	err := mount(os.Args[1], os.Args[2])
+
+	c, err := config.NewConfig(os.Args[1])
+	if err != nil {
+		fmt.Println("NewConfig err")
+		os.Exit(1)
+	}
+	uuid = c.String("uuid")
+	mountPoint = c.String("mountpoint")
+	cfs.VolMgrAddr = c.String("volmgr")
+	cfs.MetaNodeAddr = c.String("metanode")
+	err = mount(uuid, mountPoint)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func mount(uuid, mountpoint string) error {
+func mount(uuid, mountPoint string) error {
 	cfs := cfs.OpenFileSystem(uuid)
 	c, err := fuse.Mount(
-		mountpoint,
+		mountPoint,
 		fuse.MaxReadahead(128*1024),
 		//fuse.AsyncRead(),
 		fuse.WritebackCache(),
@@ -436,8 +451,9 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Atime = time.Unix(inode.AccessTime, 0)
 	a.Size = uint64(inode.FileSize)
 	a.Inode = uint64(inode.InodeID)
-	a.Blocks = uint64(len(inode.ChunkIDs))
-	a.BlockSize = 4 * 1024 // this is for fuse attr quick update
+
+	a.BlockSize = 128 * 1024 // this is for fuse attr quick update
+	a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
 	a.Mode = 0666
 
 	return nil
@@ -488,12 +504,16 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 
 var _ = fs.HandleReader(&File{})
 
+//var ln int64 = 0
+
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
 	length := f.cfile.Read(&resp.Data, req.Offset, int64(req.Size))
+	//fmt.Printf("**** This ReqOffset:%v -- ReqSize:%v -- RetSize:%v ***\n", req.Offset, req.Size, length)
+	//ln += length
 	if length == int64(req.Size) {
 		return nil
 	} else {
-		fmt.Printf("Read cfile reqsize:%v, have readsize:%v \n", req.Size, length)
+		//fmt.Printf("Read cfile reqsize:%v, have readsize:%v, total length:%v \n", req.Size, length, ln)
 	}
 
 	return nil

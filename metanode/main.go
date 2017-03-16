@@ -2,23 +2,26 @@ package main
 
 import (
 	"fmt"
+	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	ns "ipd.org/containerfs/metanode/namespace"
 	mp "ipd.org/containerfs/proto/mp"
 	"net"
+	"os"
 	"runtime"
 	"sync"
 	"time"
 )
 
-type RpcConfigOpts struct {
-	ListenPort uint16 `gcfg:"listen-port"`
-	ClientPort uint16 `gcfg:"client-port"`
+type addr struct {
+	host string
+	port int
+	log  string
 }
 
-var g_RpcConfig RpcConfigOpts
+var MetaNodeServerAddr addr
 
 type MetaNodeServer struct {
 	Mutex sync.Mutex
@@ -216,10 +219,10 @@ func (s *MetaNodeServer) SyncChunk(ctx context.Context, in *mp.SyncChunkReq) (*m
 }
 
 func startMetaDataService() {
-	g_RpcConfig.ListenPort = 10002
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", g_RpcConfig.ListenPort))
+
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", MetaNodeServerAddr.port))
 	if err != nil {
-		panic(fmt.Sprintf("Failed to listen on:%v", g_RpcConfig.ListenPort))
+		panic(fmt.Sprintf("Failed to listen on:%v", MetaNodeServerAddr.port))
 	}
 	s := grpc.NewServer()
 	mp.RegisterMetaNodeServer(s, &MetaNodeServer{})
@@ -315,6 +318,18 @@ func loadMetaData() {
 func init() {
 	ns.CreateGNameSpace()
 	//loadMetaData()
+
+	c, err := config.NewConfig(os.Args[1])
+	if err != nil {
+		fmt.Println("NewConfig err")
+		os.Exit(1)
+	}
+	port, _ := c.Int("port")
+	MetaNodeServerAddr.port = port
+	MetaNodeServerAddr.log = c.String("log")
+	MetaNodeServerAddr.host = c.String("host")
+
+	ns.VolMgrAddress = c.String("volmgr::volmgr.host")
 
 	/*
 		var inodeID int64
