@@ -15,10 +15,7 @@ import (
 	"time"
 )
 
-const (
-	volMgrAddress   = "10.8.65.94:10001"
-	mataNodeAddress = "10.8.65.94:10002"
-)
+var VolMgrAddress string
 
 type nameSpace struct {
 	InodeDB      map[string]*mp.InodeInfo
@@ -85,7 +82,7 @@ func GetNameSpace(UUID string) (int32, *nameSpace) {
 
 func (ns *nameSpace) GetVolInfo(name string) (int32, []*vp.BlockGroup) {
 	//fmt.Println("GetVolInfo ... ")
-	conn, err := grpc.Dial(volMgrAddress, grpc.WithInsecure())
+	conn, err := grpc.Dial(VolMgrAddress, grpc.WithInsecure())
 	if err != nil {
 		fmt.Printf("did not connect: %v", err)
 	}
@@ -523,7 +520,7 @@ func (ns *nameSpace) SyncChunk(path string, chunkinfo *mp.ChunkInfo) int32 {
 			ns.CMutex.Lock()
 			lastChunkInfo = ns.ChunkDB[chunkinfo.ChunkID]
 			ns.CMutex.Unlock()
-			pTmpInodeInfo.FileSize = pTmpInodeInfo.FileSize - int64(lastChunkInfo.ChunkSize) + int64(chunkinfo.ChunkSize)
+			pTmpInodeInfo.FileSize = pTmpInodeInfo.FileSize + int64(chunkinfo.ChunkSize) - int64(lastChunkInfo.ChunkSize)
 		} else {
 			pTmpInodeInfo.ChunkIDs = append(pTmpInodeInfo.ChunkIDs, chunkinfo.ChunkID)
 			pTmpInodeInfo.FileSize += int64(chunkinfo.ChunkSize)
@@ -539,8 +536,6 @@ func (ns *nameSpace) SyncChunk(path string, chunkinfo *mp.ChunkInfo) int32 {
 	ns.CMutex.Lock()
 	ns.ChunkDB[chunkinfo.ChunkID] = chunkinfo
 	ns.CMutex.Unlock()
-	//fmt.Println("update chunkinfo to chunkDB ... ")
-	//fmt.Println(ns.ChunkDB[chunkinfo.ChunkID])
 	return 0
 
 }
@@ -548,7 +543,7 @@ func (ns *nameSpace) SyncChunk(path string, chunkinfo *mp.ChunkInfo) int32 {
 func (ns *nameSpace) blockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 	var mpBlockGroup = mp.BlockGroup{}
 
-	mpBlockInfos := make([]*mp.BlockInfo, 1)
+	mpBlockInfos := make([]*mp.BlockInfo, len(in.BlockInfos))
 
 	mpBlockGroup.BlockGroupID = in.BlockGroupID
 	mpBlockGroup.FreeCnt = in.FreeCnt
