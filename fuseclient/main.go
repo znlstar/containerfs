@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -148,10 +147,10 @@ func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	ret, inodes := d.fs.cfs.List(d.name)
 
 	if ret == 2 {
-		return nil, errors.New("dir no longer exists")
+		return nil, fuse.Errno(syscall.ENOENT)
 	}
 	if ret != 0 {
-		return nil, errors.New("error")
+		return nil, fuse.Errno(syscall.EIO)
 	}
 	for _, v := range inodes {
 		de := fuse.Dirent{
@@ -234,19 +233,19 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 	ret := d.fs.cfs.CreateDir(fullPath)
 	if ret == -1 {
 		fmt.Print("create dir failed\n")
-		return nil, errors.New("create dir failed")
+		return nil, fuse.Errno(syscall.EIO)
 	}
 	if ret == 1 {
 		fmt.Print("not allowed\n")
-		return nil, errors.New("not allowed")
+		return nil, fuse.Errno(syscall.EPERM)
 	}
 	if ret == 2 {
 		fmt.Print("no parent path\n")
-		return nil, errors.New("no parent path")
+		return nil, fuse.Errno(syscall.ENOENT)
 	}
 	if ret == 17 {
 		fmt.Print("already exist\n")
-		return nil, errors.New("already exist")
+		return nil, fuse.Errno(syscall.EEXIST)
 	}
 
 	ret, inode := d.fs.cfs.Stat(fullPath)
@@ -272,7 +271,7 @@ func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 	ret, cfile := d.fs.cfs.OpenFile(fullPath, int(req.Flags))
 	if ret != 0 {
 		fmt.Println("Create file failed")
-		return nil, nil, errors.New("create file failed")
+		return nil, nil, fuse.Errno(syscall.EIO)
 	}
 
 	ret, inode := d.fs.cfs.Stat(fullPath)
@@ -310,10 +309,10 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 		if ret != 0 {
 			if ret == 2 {
 				fmt.Println("not allowed")
-				return errors.New("not allowed")
+				return fuse.Errno(syscall.EPERM)
 			} else {
 				fmt.Println("delete dir failed")
-				return errors.New("delete dir failed")
+				return fuse.Errno(syscall.EIO)
 			}
 		}
 	} else {
@@ -321,10 +320,10 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 		if ret != 0 {
 			if ret == 2 {
 				fmt.Println("not allowed")
-				return errors.New("not allowed")
+				return fuse.Errno(syscall.EPERM)
 			} else {
 				fmt.Println("delete file failed")
-				return errors.New("delete file failed")
+				return fuse.Errno(syscall.EIO)
 			}
 		}
 	}
@@ -348,7 +347,7 @@ var _ = fs.NodeRenamer(&Dir{})
 
 func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Node) error {
 	if newDir != d {
-		return errors.New("Not Allowed")
+		return fuse.Errno(syscall.EPERM)
 	}
 
 	newDirInstant := newDir.(*Dir)
@@ -360,6 +359,11 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 		fullPath1 = d.name + req.OldName
 	} else {
 		fullPath1 = d.name + "/" + req.OldName
+	}
+
+	_, inode := d.fs.cfs.Stat(fullPath1)
+	if !inode.InodeType {
+		return fuse.Errno(syscall.EPERM)
 	}
 
 	if newDirInstant.name == "/" {
@@ -375,13 +379,13 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	if ret != 0 {
 		if ret == 2 {
 			fmt.Println("not found")
-			return errors.New("not found")
+			return fuse.Errno(syscall.ENOENT)
 		} else if ret == 1 || ret == 17 {
 			fmt.Println("not allowd")
-			return errors.New("not allowd")
+			return fuse.Errno(syscall.EPERM)
 		} else {
-			fmt.Println("delete dir failed")
-			return errors.New("delete dir failed")
+			fmt.Println("Rename dir failed")
+			return fuse.Errno(syscall.EIO)
 		}
 	}
 
@@ -468,7 +472,7 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 
 	// we do not support trunc
 	if int(req.Flags)&cfs.O_TRUNC != 0 {
-		return nil, fuse.Errno(syscall.EXDEV)
+		return nil, fuse.Errno(syscall.EPERM)
 	}
 	if f.parent.name == "/" {
 		fullPath = f.parent.name + f.name
@@ -480,7 +484,7 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 	ret, f.cfile = f.parent.fs.cfs.OpenFile(fullPath, int(req.Flags))
 	if ret != 0 {
 		fmt.Println("open file failed")
-		return nil, errors.New("open file failed")
+		return nil, fuse.Errno(syscall.EIO)
 	}
 	f.writers++
 	return f, nil
@@ -504,18 +508,17 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 
 var _ = fs.HandleReader(&File{})
 
-//var ln int64 = 0
+var ln int64 = 0
 
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
 	length := f.cfile.Read(&resp.Data, req.Offset, int64(req.Size))
-	//fmt.Printf("**** This ReqOffset:%v -- ReqSize:%v -- RetSize:%v ***\n", req.Offset, req.Size, length)
-	//ln += length
+	fmt.Printf("**** This ReqOffset:%v -- ReqSize:%v -- RetSize:%v ***\n", req.Offset, req.Size, length)
+	ln += length
 	if length == int64(req.Size) {
 		return nil
 	} else {
-		//fmt.Printf("Read cfile reqsize:%v, have readsize:%v, total length:%v \n", req.Size, length, ln)
+		fmt.Printf("Read cfile reqsize:%v, have readsize:%v, total length:%v \n", req.Size, length, ln)
 	}
-
 	return nil
 }
 
@@ -532,6 +535,11 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 var _ = fs.HandleFlusher(&File{})
 
 func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
+	return nil
+}
+
+func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
+	fmt.Println("Fsync ... ")
 	return nil
 }
 

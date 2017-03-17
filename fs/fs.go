@@ -16,7 +16,6 @@ import (
 	"strconv"
 	"sync"
 	"syscall"
-	"time"
 )
 
 var VolMgrAddr string
@@ -44,8 +43,6 @@ type CFS struct {
 }
 
 func CreateVol(name string, capacity string) int32 {
-	//fmt.Println("createVol...")
-	// send to volmgr to allcate a new vol
 	conn, err := grpc.Dial(VolMgrAddr, grpc.WithInsecure())
 	if err != nil {
 		fmt.Printf("did not connect: %v", err)
@@ -414,9 +411,8 @@ type CFile struct {
 	// for read
 	lastoffset int64
 	RMutex     sync.Mutex
-	//rChannel    chan []byte
-	chunks  []*mp.ChunkInfo // chunkinfo
-	readBuf []byte
+	chunks     []*mp.ChunkInfo // chunkinfo
+	readBuf    []byte
 }
 
 func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64, size int64) {
@@ -426,7 +422,7 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 			fmt.Printf("Connect Datanode error: %v\n", err)
 			continue
 		}
-		defer conn.Close()
+
 		dc := dp.NewDataNodeClient(conn)
 		streamreadChunkReq := &dp.StreamReadChunkReq{
 			ChunkID:  cfile.chunks[chunkidx].ChunkID,
@@ -443,6 +439,7 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 		for {
 			ack, err := stream.Recv()
 			if err == io.EOF {
+				conn.Close()
 				//fmt.Printf("Stream read the chunkid:%v have finished!\n", cfile.chunks[chunkidx].ChunkID)
 				break
 			}
@@ -453,6 +450,7 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 			buffer.Write(ack.Databuf)
 		}
 		ch <- buffer
+		conn.Close()
 	}
 }
 
@@ -540,18 +538,11 @@ func (cfile *CFile) Seek(offset int64, whence int32) int64 {
 	return 0
 }
 
-// this is for write < 128Kb and not close in 50ms
-func (cfile *CFile) pushOldBuffer(c <-chan time.Time) {
-	for _ = range c {
-		cfile.sync2Channel()
-	}
-}
 func (cfile *CFile) Write(buf []byte, len int32) int32 {
 	cfile.WMutex.Lock()
 	defer cfile.WMutex.Unlock()
 	var w int32
 	w = 0
-	fmt.Println(len)
 	for w < len {
 		if (cfile.FileSize % chunkSize) == 0 {
 			_, cfile.wBuffer.chunkInfo = cfile.cfs.AllocateChunk(cfile.Path)
@@ -587,50 +578,78 @@ func (cfile *CFile) push2Channel() int32 {
 	if cfile.wBuffer.chunkInfo == nil {
 		return 0
 	}
-	//cfile.wBuffer.chunkInfo.ChunkSize = chunkSize - cfile.wBuffer.freeSize
 	wBuffer := cfile.wBuffer   // record cur buffer
 	cfile.wChannel <- &wBuffer // push to channel
 	cfile.wg.Add(1)
 	return 0
 }
 
-func (cfile *CFile) sync2Channel() int32 {
+func (cfile *CFile) close2Channel() int32 {
 	if cfile.wBuffer.chunkInfo == nil {
 		return 0
 	}
 	if cfile.wBuffer.freeSize != 0 {
-		//cfile.wBuffer.chunkInfo.ChunkSize = chunkSize - cfile.wBuffer.freeSize
 		wBuffer := cfile.wBuffer   // record cur buffer
 		cfile.wChannel <- &wBuffer // push to channel
 		cfile.wg.Add(1)
 	}
+
+	var wEndBuffer wBuffer
+	wEndBuffer.buffer = nil
+	wEndBuffer.freeSize = 0
+	wEndBuffer.chunkInfo = nil
+
+	cfile.wChannel <- &wEndBuffer // send the end flag to channel
+	cfile.wg.Add(1)
+
 	return 0
 }
 
 func (cfile *CFile) flushChannel() {
 	var addr [3]string
+	var connD [3]*grpc.ClientConn
 	var dc [3]dp.DataNodeClient
+
 	// update chunkinfo to metanode
-	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
+	connM, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
 		fmt.Printf("did not connect: %v", err)
 	}
-	defer conn.Close()
+	defer connM.Close()
 
 	for {
 		v := <-cfile.wChannel
+
+		if v.buffer == nil && v.chunkInfo == nil && v.freeSize == 0 {
+			if connD[0] != nil {
+				connD[0].Close()
+			}
+			if connD[1] != nil {
+				connD[1].Close()
+			}
+			if connD[2] != nil {
+				connD[2].Close()
+			}
+			cfile.wg.Add(-1)
+			fmt.Println("file close so go out of goroutine!")
+			break
+		}
 
 		dataBuf := v.buffer.Next(v.buffer.Len())
 
 		for i := range v.chunkInfo.BlockGroup.BlockInfos {
 			addr[i] = utils.Inet_ntoa(v.chunkInfo.BlockGroup.BlockInfos[i].DataNodeIP).String() + ":" + strconv.Itoa(int(v.chunkInfo.BlockGroup.BlockInfos[i].DataNodePort))
 			if addr[i] != cfile.wLastDataNode[i] {
-				conn1, err := grpc.Dial(addr[i], grpc.WithInsecure())
+				if connD[i] != nil {
+					connD[i].Close()
+				}
+				var err error
+				connD[i], err = grpc.Dial(addr[i], grpc.WithInsecure())
 				if err != nil {
 					fmt.Printf("did not connect: %v", err)
+					return
 				}
-				dc[i] = dp.NewDataNodeClient(conn1)
-
+				dc[i] = dp.NewDataNodeClient(connD[i])
 				cfile.wLastDataNode[i] = addr[i]
 			}
 
@@ -645,11 +664,11 @@ func (cfile *CFile) flushChannel() {
 			pWriteChunkAck, _ := dc[i].WriteChunk(context.Background(), pWriteChunkReq)
 			if pWriteChunkAck.Ret != 0 {
 				fmt.Print("WriteChunk Failed!\n")
-				return
+				//return
 			}
 
 		}
-		mc := mp.NewMetaNodeClient(conn)
+		mc := mp.NewMetaNodeClient(connM)
 		pSyncChunkReq := &mp.SyncChunkReq{
 			FileName:  cfile.Path,
 			VolID:     cfile.cfs.volID,
@@ -666,23 +685,11 @@ func (cfile *CFile) flushChannel() {
 
 func (cfile *CFile) Flush() int32 {
 	fmt.Println("Flush  ... ")
-	/*
-		if cfile.OpenFlag != O_RDONLY && cfile.OpenFlag != O_MVOPT && cfile.OpenFlag != O_TAROPT {
-			cfile.push2Channel()
-		}
-	*/
 	return 0
 }
 
 func (cfile *CFile) Sync() int32 {
-	fmt.Println("Close  stat ... ")
-	/*
-		if cfile.OpenFlag != O_RDONLY && cfile.OpenFlag != O_MVOPT && cfile.OpenFlag != O_TAROPT {
-			cfile.push2Channel()
-			cfile.wg.Wait()
-			fmt.Println("Close  end ... ")
-		}
-	*/
+	fmt.Println("Sync ... ")
 	return 0
 }
 
@@ -690,10 +697,10 @@ func closeP(cfile *CFile) {
 	cfile = nil
 }
 func (cfile *CFile) Close() int32 {
-	fmt.Println("Close  stat ... ")
+	fmt.Println("Close  start ... ")
 
 	if cfile.OpenFlag != O_RDONLY && cfile.OpenFlag != O_MVOPT && cfile.OpenFlag != O_TAROPT {
-		cfile.sync2Channel()
+		cfile.close2Channel()
 		cfile.wg.Wait()
 
 		fmt.Println("Close  end ... ")
@@ -704,7 +711,6 @@ func (cfile *CFile) Close() int32 {
 }
 
 func ProcessLocalBuffer(buffer []byte, cfile *CFile) {
-	//fmt.Println("ProcessLocalBuffer...")
 	cfile.Write(buffer, int32(len(buffer)))
 }
 
