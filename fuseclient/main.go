@@ -105,6 +105,29 @@ func (fs *FS) Root() (fs.Node, error) {
 	return n, nil
 }
 
+/*
+   Blocks  uint64 // Total data blocks in file system.
+   Bfree   uint64 // Free blocks in file system.
+   Bavail  uint64 // Free blocks in file system if you're not root.
+   Files   uint64 // Total files in file system.
+   Ffree   uint64 // Free files in file system.
+   Bsize   uint32 // Block size
+   Namelen uint32 // Maximum file name length?
+   Frsize  uint32 // Fragment size, smallest addressable data size in the file system.
+*/
+func (fs *FS) Statfs(ctx context.Context, req *fuse.StatfsRequest, resp *fuse.StatfsResponse) error {
+	fmt.Println("Statfs...")
+
+	_, ret := cfs.GetFSInfo(fs.cfs.VolID)
+	fmt.Println(ret)
+	resp.Bsize = 64 * 1024 * 1024
+	resp.Frsize = resp.Bsize
+	resp.Blocks = ret.TotalSpace / (64 * 1024 * 1024)
+	resp.Bfree = ret.FreeSpace / (64 * 1024 * 1024)
+	resp.Bavail = ret.FreeSpace / (64 * 1024 * 1024)
+	return nil
+}
+
 var _ node = (*Dir)(nil)
 var _ = fs.Node(&Dir{})
 
@@ -512,7 +535,7 @@ var ln int64 = 0
 
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
 	length := f.cfile.Read(&resp.Data, req.Offset, int64(req.Size))
-	fmt.Printf("**** This ReqOffset:%v -- ReqSize:%v -- RetSize:%v ***\n", req.Offset, req.Size, length)
+	//fmt.Printf("**** This ReqOffset:%v -- ReqSize:%v -- RetSize:%v ***\n", req.Offset, req.Size, length)
 	ln += length
 	if length == int64(req.Size) {
 		return nil
@@ -527,8 +550,15 @@ var _ = fs.HandleWriter(&File{})
 func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.cfile.Write(req.Data, int32(len(req.Data)))
-	resp.Size = len(req.Data)
+	w := f.cfile.Write(req.Data, int32(len(req.Data)))
+	if w != int32(len(req.Data)) {
+		if w == -1 {
+			return fuse.Errno(syscall.ENOSPC)
+		} else {
+			return fuse.Errno(syscall.EIO)
+		}
+	}
+	resp.Size = int(w)
 	return nil
 }
 

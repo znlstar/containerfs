@@ -39,7 +39,7 @@ const (
 )
 
 type CFS struct {
-	volID string
+	VolID string
 }
 
 func CreateVol(name string, capacity string) int32 {
@@ -78,8 +78,8 @@ func CreateVol(name string, capacity string) int32 {
 	return 0
 }
 
-func GetVolInfo(name string) (int32, *vp.VolInfo) {
-	//fmt.Println("GetVolInfo...")
+func GetVolInfo(name string) (int32, *vp.GetVolInfoAck) {
+
 	conn, err := grpc.Dial(VolMgrAddr, grpc.WithInsecure())
 	if err != nil {
 		fmt.Printf("did not connect: %v", err)
@@ -90,15 +90,32 @@ func GetVolInfo(name string) (int32, *vp.VolInfo) {
 		UUID: name,
 	}
 	pGetVolInfoAck, _ := vc.GetVolInfo(context.Background(), pGetVolInfoReq)
-
 	if pGetVolInfoAck.Ret != 0 {
 		return 1, nil
 	}
-	return 0, pGetVolInfoAck.VolInfo
+	return 0, pGetVolInfoAck
+}
+
+func GetFSInfo(name string) (int32, *mp.GetFSInfoAck) {
+
+	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
+	if err != nil {
+		fmt.Printf("did not connect: %v", err)
+	}
+	defer conn.Close()
+	mc := mp.NewMetaNodeClient(conn)
+	pGetFSInfoReq := &mp.GetFSInfoReq{
+		VolID: name,
+	}
+	pGetFSInfoAck, _ := mc.GetFSInfo(context.Background(), pGetFSInfoReq)
+	if pGetFSInfoAck.Ret != 0 {
+		return 1, nil
+	}
+	return 0, pGetFSInfoAck
 }
 
 func OpenFileSystem(UUID string) *CFS {
-	cfs := CFS{volID: UUID}
+	cfs := CFS{VolID: UUID}
 	return &cfs
 }
 
@@ -112,7 +129,7 @@ func (cfs *CFS) CreateDir(path string) int32 {
 	mc := mp.NewMetaNodeClient(conn)
 	pCreateDirReq := &mp.CreateDirReq{
 		FullPathName: path,
-		VolID:        cfs.volID,
+		VolID:        cfs.VolID,
 	}
 	pCreateDirAck, _ := mc.CreateDir(context.Background(), pCreateDirReq)
 
@@ -128,7 +145,7 @@ func (cfs *CFS) Stat(path string) (int32, *mp.InodeInfo) {
 	mc := mp.NewMetaNodeClient(conn)
 	pStatReq := &mp.StatReq{
 		FullPathName: path,
-		VolID:        cfs.volID,
+		VolID:        cfs.VolID,
 	}
 	pStatAck, _ := mc.Stat(context.Background(), pStatReq)
 
@@ -144,7 +161,7 @@ func (cfs *CFS) List(path string) (int32, []*mp.InodeInfo) {
 	mc := mp.NewMetaNodeClient(conn)
 	pListReq := &mp.ListReq{
 		FullPathName: path,
-		VolID:        cfs.volID,
+		VolID:        cfs.VolID,
 	}
 	pListAck, _ := mc.List(context.Background(), pListReq)
 
@@ -160,7 +177,7 @@ func (cfs *CFS) DeleteDir(path string) int32 {
 	mc := mp.NewMetaNodeClient(conn)
 	pDeleteDirReq := &mp.DeleteDirReq{
 		FullPathName: path,
-		VolID:        cfs.volID,
+		VolID:        cfs.VolID,
 	}
 	pDeleteDirAck, _ := mc.DeleteDir(context.Background(), pDeleteDirReq)
 
@@ -177,7 +194,7 @@ func (cfs *CFS) Rename(path1 string, path2 string) int32 {
 	pRenameReq := &mp.RenameReq{
 		FullPathName1: path1,
 		FullPathName2: path2,
-		VolID:         cfs.volID,
+		VolID:         cfs.VolID,
 	}
 	pRenameAck, _ := mc.Rename(context.Background(), pRenameReq)
 
@@ -284,7 +301,7 @@ func (cfs *CFS) CreateFile(path string) int32 {
 	mc := mp.NewMetaNodeClient(conn)
 	pCreateFileReq := &mp.CreateFileReq{
 		FullPathName: path,
-		VolID:        cfs.volID,
+		VolID:        cfs.VolID,
 	}
 	pCreateFileAck, _ := mc.CreateFile(context.Background(), pCreateFileReq)
 	if pCreateFileAck.Ret == 1 {
@@ -340,7 +357,7 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 	mc := mp.NewMetaNodeClient(conn)
 	mpDeleteFileReq := &mp.DeleteFileReq{
 		FullPathName: path,
-		VolID:        cfs.volID,
+		VolID:        cfs.VolID,
 	}
 	mpDeleteFileAck, _ := mc.DeleteFile(context.Background(), mpDeleteFileReq)
 
@@ -356,7 +373,7 @@ func (cfs *CFS) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 	mc := mp.NewMetaNodeClient(conn)
 	pAllocateChunkReq := &mp.AllocateChunkReq{
 		FileName: path,
-		VolID:    cfs.volID,
+		VolID:    cfs.VolID,
 	}
 	fmt.Println(pAllocateChunkReq)
 	pAllocateChunkAck, _ := mc.AllocateChunk(context.Background(), pAllocateChunkReq)
@@ -378,7 +395,7 @@ func (cfs *CFS) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
 	mc := mp.NewMetaNodeClient(conn)
 	pGetFileChunksReq := &mp.GetFileChunksReq{
 		FileName: path,
-		VolID:    cfs.volID,
+		VolID:    cfs.VolID,
 	}
 	pGetFileChunksAck, _ := mc.GetFileChunks(context.Background(), pGetFileChunksReq)
 	if pGetFileChunksAck.Ret != 0 {
@@ -545,7 +562,16 @@ func (cfile *CFile) Write(buf []byte, len int32) int32 {
 	w = 0
 	for w < len {
 		if (cfile.FileSize % chunkSize) == 0 {
-			_, cfile.wBuffer.chunkInfo = cfile.cfs.AllocateChunk(cfile.Path)
+			var ret int32
+			ret, cfile.wBuffer.chunkInfo = cfile.cfs.AllocateChunk(cfile.Path)
+			if ret != 0 {
+				if ret == 28 /*ENOSPC*/ {
+					return -1
+				} else {
+					return -2
+				}
+			}
+
 		}
 		if cfile.wBuffer.freeSize == 0 {
 			cfile.wBuffer.buffer = new(bytes.Buffer)
@@ -585,10 +611,10 @@ func (cfile *CFile) push2Channel() int32 {
 }
 
 func (cfile *CFile) close2Channel() int32 {
-	if cfile.wBuffer.chunkInfo == nil {
-		return 0
-	}
-	if cfile.wBuffer.freeSize != 0 {
+	/*
+	   1. avoid repeat push for integer file ETC. 64MB , the last push has already done in Write func
+	*/
+	if cfile.wBuffer.freeSize != 0 && cfile.wBuffer.chunkInfo != nil {
 		wBuffer := cfile.wBuffer   // record cur buffer
 		cfile.wChannel <- &wBuffer // push to channel
 		cfile.wg.Add(1)
@@ -671,7 +697,7 @@ func (cfile *CFile) flushChannel() {
 		mc := mp.NewMetaNodeClient(connM)
 		pSyncChunkReq := &mp.SyncChunkReq{
 			FileName:  cfile.Path,
-			VolID:     cfile.cfs.volID,
+			VolID:     cfile.cfs.VolID,
 			ChunkInfo: v.chunkInfo,
 		}
 		pSyncChunkAck, _ := mc.SyncChunk(context.Background(), pSyncChunkReq)

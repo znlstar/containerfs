@@ -15,6 +15,10 @@ import (
 	"time"
 )
 
+const (
+	Blksize = 10 /*G*/
+)
+
 var VolMgrAddress string
 
 type nameSpace struct {
@@ -51,7 +55,7 @@ func CreateNameSpace(UUID string, inodenum int64, chunknum int64) int32 {
 	}
 	for _, v := range tmpBlockGroups {
 		nameSpace.BGMutex.Lock()
-		v.FreeCnt = 320
+		v.FreeCnt = 160
 		nameSpace.BlockBroupDB[v.BlockGroupID] = v
 		nameSpace.BGMutex.Unlock()
 	}
@@ -78,6 +82,25 @@ func GetNameSpace(UUID string) (int32, *nameSpace) {
 	} else {
 		return -1, nil
 	}
+}
+
+func (ns *nameSpace) GetFSInfo(volID string) mp.GetFSInfoAck {
+	ack := mp.GetFSInfoAck{}
+	var totalSpace uint64 = 0
+	var freeSpace uint64 = 0
+	ns.BGMutex.Lock()
+	for _, v := range ns.BlockBroupDB {
+		fmt.Println(v.FreeCnt)
+		fmt.Println(freeSpace)
+		totalSpace = totalSpace + (Blksize * 1073741824)
+		freeSpace = freeSpace + 64*1024*1024*uint64(v.FreeCnt)
+		fmt.Println(freeSpace)
+	}
+	ns.BGMutex.Unlock()
+	ack.TotalSpace = totalSpace
+	ack.FreeSpace = freeSpace
+	ack.Ret = 0
+	return ack
 }
 
 func (ns *nameSpace) GetVolInfo(name string) (int32, []*vp.BlockGroup) {
@@ -458,13 +481,13 @@ func (ns *nameSpace) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 
 	if ok, _ := ns.Get(keys[keysNum-1]); !ok {
 		ret = 2 /*ENOENT*/
-		return -1, nil
+		return ret, nil
 	}
 
 	var chunkInfo = mp.ChunkInfo{}
 	ret, _, blockGroup := ns.ChooseBlockGroup()
 	if ret != 0 {
-		return -1, nil
+		return 28 /*ENOSPC*/, nil
 	}
 	chunkInfo.BlockGroup = ns.blockGroupVp2Mp(blockGroup)
 	chunkInfo.ChunkSize = 0
@@ -491,8 +514,6 @@ func (ns *nameSpace) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
 		chunkInfos = append(chunkInfos, ns.ChunkDB[chunkID])
 	}
 	ns.CMutex.RUnlock()
-	//fmt.Println("getfilechunks in ... ")
-	//fmt.Println(chunkInfos)
 	return 0, chunkInfos
 
 }
@@ -612,7 +633,6 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 		}
 	}
 	if flag {
-
 		return 0, blockGroupID, blockGroup
 	} else {
 		return 1, -1, nil

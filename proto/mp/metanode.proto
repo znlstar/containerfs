@@ -4,6 +4,8 @@ package mp;
 
 service MetaNode {
     rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
+    rpc GetFSInfo(GetFSInfoReq) returns (GetFSInfoAck){};
+
     rpc CreateDir(CreateDirReq) returns (CreateDirAck){};
     rpc Stat(StatReq) returns (StatAck){};
     rpc List(ListReq) returns (ListAck){};
@@ -13,12 +15,10 @@ service MetaNode {
     rpc CreateFile(CreateFileReq) returns (CreateFileAck){};
     rpc DeleteFile(DeleteFileReq) returns (DeleteFileAck){};
 
-
     rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
     rpc GetFileChunks(GetFileChunksReq) returns (GetFileChunksAck){};
-
     rpc SyncChunk(SyncChunkReq) returns (SyncChunkAck){};
-    //rpc RemoveChunk(RemoveChunkReq) returns (RemoveChunkAck){};
+
 }
 
 message NULL{
@@ -29,6 +29,16 @@ message CreateNameSpaceReq{
 message CreateNameSpaceAck{
     int32 Ret = 1;
 }
+
+message GetFSInfoReq {
+    string VolID = 1;
+}
+message GetFSInfoAck {
+    int32 Ret = 1;
+    uint64 TotalSpace = 2;
+    uint64 FreeSpace = 3;
+}
+
 message CreateDirReq{
     string VolID = 1;
     string FullPathName = 2;
@@ -129,14 +139,6 @@ message FinishChunkReq {
     bool CloseWithError = 5;
 }
 message FinishChunkAck {
-    int32 Ret = 1;
-    int64 SequenceID = 2;
-}
-message RemoveChunkReq {
-    int64 SequenceID = 1;
-    int64 ChunkID = 2;
-}
-message RemoveChunkAck {
     int32 Ret = 1;
     int64 SequenceID = 2;
 }

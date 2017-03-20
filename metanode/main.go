@@ -46,6 +46,22 @@ func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameS
 }
 
 /*
+rpc GetFSInfo(GetFSInfoReq) returns (GetFSInfoAck){};
+*/
+func (s *MetaNodeServer) GetFSInfo(ctx context.Context, in *mp.GetFSInfoReq) (*mp.GetFSInfoAck, error) {
+	ack := mp.GetFSInfoAck{}
+
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+
+	ack = nameSpace.GetFSInfo(in.VolID)
+	return &ack, nil
+}
+
+/*
 rpc CreateDir(CreateDirReq) returns (CreateDirAck){};
 */
 func (s *MetaNodeServer) CreateDir(ctx context.Context, in *mp.CreateDirReq) (*mp.CreateDirAck, error) {
