@@ -6,6 +6,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+	"ipd.org/containerfs/logger"
 	ns "ipd.org/containerfs/metanode/namespace"
 	mp "ipd.org/containerfs/proto/mp"
 	"net"
@@ -65,7 +66,6 @@ func (s *MetaNodeServer) GetFSInfo(ctx context.Context, in *mp.GetFSInfoReq) (*m
 rpc CreateDir(CreateDirReq) returns (CreateDirAck){};
 */
 func (s *MetaNodeServer) CreateDir(ctx context.Context, in *mp.CreateDirReq) (*mp.CreateDirAck, error) {
-	//fmt.Printf("CreateDir...")
 	ack := mp.CreateDirAck{}
 	fullPathName := in.FullPathName
 	volID := in.VolID
@@ -167,7 +167,6 @@ rpc DeleteFile(DeleteFileReq) returns (DeleteFileAck){};
 */
 func (s *MetaNodeServer) DeleteFile(ctx context.Context, in *mp.DeleteFileReq) (*mp.DeleteFileAck, error) {
 
-	fmt.Println("DeleteFile in main ...")
 	ack := mp.DeleteFileAck{}
 	fullPathName := in.FullPathName
 	volID := in.VolID
@@ -185,7 +184,6 @@ func (s *MetaNodeServer) DeleteFile(ctx context.Context, in *mp.DeleteFileReq) (
 rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
 */
 func (s *MetaNodeServer) AllocateChunk(ctx context.Context, in *mp.AllocateChunkReq) (*mp.AllocateChunkAck, error) {
-	//fmt.Println("AllocateChunk...")
 	ack := mp.AllocateChunkAck{}
 	fileName := in.FileName
 	volID := in.VolID
@@ -212,8 +210,6 @@ func (s *MetaNodeServer) GetFileChunks(ctx context.Context, in *mp.GetFileChunks
 		return &ack, nil
 	}
 	ack.Ret, ack.ChunkInfos = nameSpace.GetFileChunks(fileName)
-	//fmt.Println("getfilechunks ... ")
-	//fmt.Println(ack)
 	return &ack, nil
 }
 
@@ -251,84 +247,11 @@ func startMetaDataService() {
 
 // todo:save all vol meta
 func saveMetaData() {
-	/*
-		nameSpace := ns.GetNameSpace("UUID1")
-		//fmt.Println(nameSpace.InodeDB)
-		nameSpace.Mutex.RLock()
-		b, _ := json.Marshal(nameSpace.InodeDB)
-		nameSpace.Mutex.RUnlock()
-		err := ioutil.WriteFile("/home/meta.data", b, 0666)
-		if err != nil {
-			panic(err)
-		}
-
-		b1, _ := json.Marshal(nameSpace.BaseInodeID.Cur)
-		err1 := ioutil.WriteFile("/home/inodenum.data", b1, 0666)
-		if err1 != nil {
-			panic(err1)
-		}
-
-		b2, _ := json.Marshal(nameSpace.BaseChunkID.Cur)
-		err2 := ioutil.WriteFile("/home/chunknum.data", b2, 0666)
-		if err1 != nil {
-			panic(err2)
-		}
-	*/
 }
 
 // todo:load all vol meta
 func loadMetaData() {
-
 	ns.CreateGNameSpace()
-	/*
-		dir, err := ioutil.ReadDir(metaPath)
-		if err != nil {
-			return
-		}
-		for i := range dir {
-			// etc. 27727e1040b9f5278062646fe6b74cbf
-			if len(dir[i]) != 32 {
-				continue
-			}
-			b1, err1 := ioutil.ReadFile(metaPath + "/" + dir[i] + inodeMetafile)
-			if err1 != nil {
-				continue
-			}
-			b2, err2 := ioutil.ReadFile(metaPath + "/" + dir[i] + blkgrpMetafile)
-			if err2 != nil {
-				continue
-			}
-			b3, err3 := ioutil.ReadFile(metaPath + "/" + dir[i] + chunkMetafile)
-			if err3 != nil {
-				continue
-			}
-			b4, err4 := ioutil.ReadFile(metaPath + "/" + dir[i] + baseinodeNumfile)
-			if err4 != nil {
-				continue
-			}
-			b5, err5 := ioutil.ReadFile(metaPath + "/" + dir[i] + basechunkNumfile)
-			if err5 != nil {
-				continue
-			}
-			var inodenum int64
-			var chunknum int64
-			json.Unmarshal(b4, &inodenum)
-			json.Unmarshal(b5, &chunknum)
-
-			ret1 := ns.CreateNameSpace(dir[i], inodenum+1, chunknum+1)
-			if ret1 != 0 {
-				return
-			}
-
-			re2t, nameSpace := ns.GetNameSpace(dir[i])
-			if ret != 0 {
-				return
-			}
-			json.Unmarshal(b1, &nameSpace.InodeDB)
-			json.Unmarshal(b2, &nameSpace.BlockBroupDB)
-			json.Unmarshal(b3, &nameSpace.ChunkDB)
-		}
-	*/
 }
 
 func init() {
@@ -347,16 +270,9 @@ func init() {
 
 	ns.VolMgrAddress = c.String("volmgr::volmgr.host")
 
-	/*
-		var inodeID int64
-		fmt.Println("CreateNameSpace...")
-		ns.CreateNameSpace("UUID1", 1, 1)
-		fmt.Println("CreateNameSpace......")
-		nameSpace := ns.GetNameSpace("UUID1")
-		inodeID = 0
-		tmpInodeInfo := mp.InodeInfo{InodeID: inodeID, Name: "/", AccessTime: time.Now().Unix(), ModifiTime: time.Now().Unix(), InodeType: false}
-		nameSpace.Set("0", &tmpInodeInfo)
-	*/
+	logger.SetConsole(true)
+	logger.SetRollingFile(MetaNodeServerAddr.log, "metanode.log", 10, 100, logger.MB) //each 100M rolling
+	logger.SetLevel(logger.DEBUG)
 }
 
 func main() {
@@ -368,7 +284,6 @@ func main() {
 	ticker := time.NewTicker(time.Second * 60)
 	go func() {
 		for _ = range ticker.C {
-			//fmt.Printf("ticked at %v", time.Now())
 			saveMetaData()
 		}
 	}()

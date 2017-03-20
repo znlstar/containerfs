@@ -3,15 +3,15 @@ package cfs
 import (
 	"bufio"
 	"bytes"
-	//"encoding/json"
-	"fmt"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"io"
+	"ipd.org/containerfs/logger"
 	dp "ipd.org/containerfs/proto/dp"
 	mp "ipd.org/containerfs/proto/mp"
 	vp "ipd.org/containerfs/proto/vp"
 	"ipd.org/containerfs/utils"
+
 	"os"
 	"strconv"
 	"sync"
@@ -45,7 +45,9 @@ type CFS struct {
 func CreateVol(name string, capacity string) int32 {
 	conn, err := grpc.Dial(VolMgrAddr, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("CreateVol failed,Dial to volmgr fail :%v\n", err)
+		return -1
+
 	}
 	defer conn.Close()
 	vc := vp.NewVolMgrClient(conn)
@@ -56,12 +58,10 @@ func CreateVol(name string, capacity string) int32 {
 	}
 	pCreateVolAck, _ := vc.CreateVol(context.Background(), pCreateVolReq)
 
-	fmt.Println(pCreateVolAck)
-
 	// send to metadata to registry a new map
 	conn2, err2 := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err2 != nil {
-		fmt.Printf("did not connect: %v", err2)
+		logger.Debug("CreateVol failed,Dial to metanode fail :%v\n", err2)
 		return -1
 	}
 	defer conn2.Close()
@@ -71,7 +71,7 @@ func CreateVol(name string, capacity string) int32 {
 	}
 	pmCreateNameSpaceAck, _ := mc.CreateNameSpace(context.Background(), pmCreateNameSpaceReq)
 	if pmCreateNameSpaceAck.Ret != 0 {
-		fmt.Println("CreateNameSpace failed ...")
+		logger.Debug("CreateNameSpace failed :%v\n", pmCreateNameSpaceAck.Ret)
 		return -1
 	}
 
@@ -82,7 +82,8 @@ func GetVolInfo(name string) (int32, *vp.GetVolInfoAck) {
 
 	conn, err := grpc.Dial(VolMgrAddr, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("GetVolInfo failed,Dial to volmgr fail :%v\n", err)
+		return -1, nil
 	}
 	defer conn.Close()
 	vc := vp.NewVolMgrClient(conn)
@@ -100,7 +101,8 @@ func GetFSInfo(name string) (int32, *mp.GetFSInfoAck) {
 
 	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("GetFSInfo failed,Dial to metanode fail :%v\n", err)
+		return -1, nil
 	}
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
@@ -123,7 +125,8 @@ func (cfs *CFS) CreateDir(path string) int32 {
 	//fmt.Println("CreateDir...")
 	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("CreateDir failed,Dial to metanode fail :%v\n", err)
+		return -1
 	}
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
@@ -139,7 +142,8 @@ func (cfs *CFS) CreateDir(path string) int32 {
 func (cfs *CFS) Stat(path string) (int32, *mp.InodeInfo) {
 	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("Stat failed,Dial to metanode fail :%v\n", err)
+		return -1, nil
 	}
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
@@ -155,7 +159,8 @@ func (cfs *CFS) Stat(path string) (int32, *mp.InodeInfo) {
 func (cfs *CFS) List(path string) (int32, []*mp.InodeInfo) {
 	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("List failed,Dial to metanode fail :%v\n", err)
+		return -1, nil
 	}
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
@@ -171,7 +176,8 @@ func (cfs *CFS) List(path string) (int32, []*mp.InodeInfo) {
 func (cfs *CFS) DeleteDir(path string) int32 {
 	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("DeleteDir failed,Dial to metanode fail :%v\n", err)
+		return -1
 	}
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
@@ -187,7 +193,8 @@ func (cfs *CFS) DeleteDir(path string) int32 {
 func (cfs *CFS) Rename(path1 string, path2 string) int32 {
 	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("Rename failed,Dial to metanode fail :%v\n", err)
+		return -1
 	}
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
@@ -202,9 +209,6 @@ func (cfs *CFS) Rename(path1 string, path2 string) int32 {
 }
 
 func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
-	fmt.Println("OpenFile ...")
-	fmt.Println(flags)
-
 	var ret int32
 	var writer int32 = 0
 	var tmpFileSize int64 = 0
@@ -242,9 +246,6 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 			tmpFileSize += int64(chunkInfos[i].ChunkSize)
 		}
 		lastChunk := chunkInfos[len(chunkInfos)-1]
-
-		fmt.Printf("lastChunk:%v\n", lastChunk)
-
 		tmpBuffer := wBuffer{
 			buffer:    new(bytes.Buffer),
 			freeSize:  bufferSize,
@@ -295,7 +296,8 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 func (cfs *CFS) CreateFile(path string) int32 {
 	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("CreateFile failed,Dial to metanode fail :%v\n", err)
+		return -1
 	}
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
@@ -305,15 +307,12 @@ func (cfs *CFS) CreateFile(path string) int32 {
 	}
 	pCreateFileAck, _ := mc.CreateFile(context.Background(), pCreateFileReq)
 	if pCreateFileAck.Ret == 1 {
-		fmt.Print("not allowed\n")
 		return 1
 	}
 	if pCreateFileAck.Ret == 2 {
-		fmt.Print("no parent path\n")
 		return 2
 	}
 	if pCreateFileAck.Ret == 17 {
-		fmt.Print("already exist\n")
 		return 17
 	}
 	return 0
@@ -332,7 +331,8 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 			addr := utils.Inet_ntoa(v2.DataNodeIP).String() + ":" + strconv.Itoa(int(v2.DataNodePort))
 			conn, err := grpc.Dial(addr, grpc.WithInsecure())
 			if err != nil {
-				fmt.Printf("did not connect: %v", err)
+				logger.Debug("DeleteFile failed,Dial to datanode fail :%v\n", err)
+				return -1
 			}
 
 			dc := dp.NewDataNodeClient(conn)
@@ -351,7 +351,8 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 
 	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("DeleteFile failed,Dial to metanode fail :%v\n", err)
+		return -1
 	}
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
@@ -367,7 +368,8 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 func (cfs *CFS) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("AllocateChunk failed,Dial to metanode fail :%v\n", err)
+		return -1, nil
 	}
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
@@ -375,10 +377,8 @@ func (cfs *CFS) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 		FileName: path,
 		VolID:    cfs.VolID,
 	}
-	fmt.Println(pAllocateChunkReq)
 	pAllocateChunkAck, _ := mc.AllocateChunk(context.Background(), pAllocateChunkReq)
 	if pAllocateChunkAck.Ret != 0 {
-		fmt.Print("AllocateChunk Failed!\n")
 		return pAllocateChunkAck.Ret, nil
 	}
 
@@ -386,10 +386,10 @@ func (cfs *CFS) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 }
 
 func (cfs *CFS) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
-	fmt.Println("GetFileChunks...")
 	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("GetFileChunks failed,Dial to metanode fail :%v\n", err)
+		return -1, nil
 	}
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
@@ -399,7 +399,6 @@ func (cfs *CFS) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
 	}
 	pGetFileChunksAck, _ := mc.GetFileChunks(context.Background(), pGetFileChunksReq)
 	if pGetFileChunksAck.Ret != 0 {
-		fmt.Print("GetFileChunks Failed!\n")
 		return pGetFileChunksAck.Ret, nil
 	}
 	return pGetFileChunksAck.Ret, pGetFileChunksAck.ChunkInfos
@@ -436,7 +435,7 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 	for i, _ := range cfile.chunks[chunkidx].BlockGroup.BlockInfos {
 		conn, err := grpc.Dial(utils.Inet_ntoa(cfile.chunks[chunkidx].BlockGroup.BlockInfos[i].DataNodeIP).String()+":"+strconv.Itoa(int(cfile.chunks[chunkidx].BlockGroup.BlockInfos[i].DataNodePort)), grpc.WithInsecure())
 		if err != nil {
-			fmt.Printf("Connect Datanode error: %v\n", err)
+			logger.Debug("streamread failed,Dial to datanode fail :%v\n", err)
 			continue
 		}
 
@@ -449,7 +448,6 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 		}
 		stream, err := dc.StreamReadChunk(context.Background(), streamreadChunkReq)
 		if err != nil {
-			fmt.Printf("Stream read the chunk:%v err:%v\n", cfile.chunks[chunkidx].ChunkID, err)
 			close(ch)
 		}
 		buffer := new(bytes.Buffer)
@@ -457,11 +455,9 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 			ack, err := stream.Recv()
 			if err == io.EOF {
 				conn.Close()
-				//fmt.Printf("Stream read the chunkid:%v have finished!\n", cfile.chunks[chunkidx].ChunkID)
 				break
 			}
 			if err != nil {
-				fmt.Printf("Recv stream the chunkid:%v from chunksever err:%v\n", cfile.chunks[chunkidx].ChunkID, err)
 				close(ch)
 			}
 			buffer.Write(ack.Databuf)
@@ -549,7 +545,7 @@ func (cfile *CFile) Seek(offset int64, whence int32) int64 {
 	} else if whence == 2 {
 		cfile.lastoffset = cfile.FileSize - offset
 	} else {
-		fmt.Printf("Seek file for read/write invalid whence:%v\n", whence)
+		logger.Debug("Seek file for read/write invalid whence:%v\n", whence)
 		return -1
 	}
 	return 0
@@ -639,7 +635,7 @@ func (cfile *CFile) flushChannel() {
 	// update chunkinfo to metanode
 	connM, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("flushChannel,Dial failed:%v\n", err)
 	}
 	defer connM.Close()
 
@@ -657,7 +653,6 @@ func (cfile *CFile) flushChannel() {
 				connD[2].Close()
 			}
 			cfile.wg.Add(-1)
-			fmt.Println("file close so go out of goroutine!")
 			break
 		}
 
@@ -672,7 +667,7 @@ func (cfile *CFile) flushChannel() {
 				var err error
 				connD[i], err = grpc.Dial(addr[i], grpc.WithInsecure())
 				if err != nil {
-					fmt.Printf("did not connect: %v", err)
+					logger.Debug("flushChannel to datanode failed,Dial failed:%v\n", err)
 					return
 				}
 				dc[i] = dp.NewDataNodeClient(connD[i])
@@ -689,8 +684,8 @@ func (cfile *CFile) flushChannel() {
 			}
 			pWriteChunkAck, _ := dc[i].WriteChunk(context.Background(), pWriteChunkReq)
 			if pWriteChunkAck.Ret != 0 {
-				fmt.Print("WriteChunk Failed!\n")
-				//return
+				logger.Debug("flushChannel WriteChunk Failed :%v\n", pWriteChunkAck.Ret)
+				return
 			}
 
 		}
@@ -702,7 +697,7 @@ func (cfile *CFile) flushChannel() {
 		}
 		pSyncChunkAck, _ := mc.SyncChunk(context.Background(), pSyncChunkReq)
 		if pSyncChunkAck.Ret != 0 {
-			fmt.Print("SyncChunk Failed!\n")
+			logger.Debug("flushChannel SyncChunk Failed :%v\n", pSyncChunkAck.Ret)
 			return
 		}
 		cfile.wg.Add(-1)
@@ -710,12 +705,10 @@ func (cfile *CFile) flushChannel() {
 }
 
 func (cfile *CFile) Flush() int32 {
-	fmt.Println("Flush  ... ")
 	return 0
 }
 
 func (cfile *CFile) Sync() int32 {
-	fmt.Println("Sync ... ")
 	return 0
 }
 
@@ -723,14 +716,9 @@ func closeP(cfile *CFile) {
 	cfile = nil
 }
 func (cfile *CFile) Close() int32 {
-	fmt.Println("Close  start ... ")
-
 	if cfile.OpenFlag != O_RDONLY && cfile.OpenFlag != O_MVOPT && cfile.OpenFlag != O_TAROPT {
 		cfile.close2Channel()
 		cfile.wg.Wait()
-
-		fmt.Println("Close  end ... ")
-
 	}
 	defer closeP(cfile)
 	return 0

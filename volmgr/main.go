@@ -327,14 +327,10 @@ func init() {
 
 	os.MkdirAll(VolMgrServerAddr.log, 0777)
 
-	fmt.Println(VolMgrServerAddr)
-
 	mysqlConf.dbhost = c.String("mysql::mysql.host")
 	mysqlConf.dbusername = c.String("mysql::mysql.user")
 	mysqlConf.dbpassword = c.String("mysql::mysql.passwd")
 	mysqlConf.dbname = c.String("mysql::mysql.db")
-
-	fmt.Println(mysqlConf)
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(VolMgrServerAddr.log, "volmgr.log", 10, 100, logger.MB) //each 100M rolling
