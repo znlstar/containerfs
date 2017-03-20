@@ -66,7 +66,7 @@ func main() {
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(c.String("log"), "fuse.log", 10, 100, logger.MB) //each 100M rolling
-	logger.SetLevel(logger.DEBUG)
+	logger.SetLevel(logger.ERROR)
 
 	err = mount(uuid, mountPoint)
 	if err != nil {

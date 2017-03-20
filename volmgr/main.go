@@ -334,7 +334,7 @@ func init() {
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(VolMgrServerAddr.log, "volmgr.log", 10, 100, logger.MB) //each 100M rolling
-	logger.SetLevel(logger.DEBUG)
+	logger.SetLevel(logger.ERROR)
 
 	VolMgrDB, err = sql.Open("mysql", mysqlConf.dbusername+":"+mysqlConf.dbpassword+"@tcp("+mysqlConf.dbhost+")/"+mysqlConf.dbname+"?charset=utf8")
 	checkErr(err)

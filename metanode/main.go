@@ -272,7 +272,7 @@ func init() {
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(MetaNodeServerAddr.log, "metanode.log", 10, 100, logger.MB) //each 100M rolling
-	logger.SetLevel(logger.DEBUG)
+	logger.SetLevel(logger.ERROR)
 }
 
 func main() {

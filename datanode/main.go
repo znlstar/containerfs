@@ -295,7 +295,7 @@ func init() {
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(DataNodeServerAddr.Log, "datanode.log", 10, 100, logger.MB) //each 100M rolling
-	logger.SetLevel(logger.DEBUG)
+	logger.SetLevel(logger.ERROR)
 
 	if ok, _ := utils.LocalPathExists(DataNodeServerAddr.Flag); !ok {
 		logger.Debug("Start registy to volmgr ...")
