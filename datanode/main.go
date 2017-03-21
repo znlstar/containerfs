@@ -9,6 +9,7 @@ import (
 	//"io/ioutil"
 	"bufio"
 	"github.com/lxmgo/config"
+	"ipd.org/containerfs/logger"
 	dp "ipd.org/containerfs/proto/dp"
 	vp "ipd.org/containerfs/proto/vp"
 	"ipd.org/containerfs/utils"
@@ -31,6 +32,7 @@ type addr struct {
 	Port  int32
 	Path  string
 	Flag  string
+	Log   string
 
 	VolMgrIp   string
 	VolMgrPort string
@@ -55,7 +57,8 @@ func startDataService() {
 func registryToVolMgr() {
 	conn, err := grpc.Dial(DataNodeServerAddr.VolMgrIp+":"+DataNodeServerAddr.VolMgrPort, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("data node statup failed : Dial to volmgr failed !")
+		os.Exit(1)
 	}
 	defer conn.Close()
 	c := vp.NewVolMgrClient(conn)
@@ -70,14 +73,13 @@ func registryToVolMgr() {
 
 	pDatanodeRegistryAck, _ := c.DatanodeRegistry(context.Background(), &datanodeRegistryReq)
 	if pDatanodeRegistryAck.Ret == 0 {
-		fmt.Println(pDatanodeRegistryAck)
-		fmt.Println("registry success!")
+		logger.Debug("registry success!")
 		os.Create(DataNodeServerAddr.Flag)
 		for i := pDatanodeRegistryAck.StartBlockID; i <= pDatanodeRegistryAck.EndBlockID; i++ {
 			os.MkdirAll(DataNodeServerAddr.Path+"/block-"+strconv.Itoa(int(i)), 0777)
 		}
 	} else {
-		fmt.Println("data node statup failed : registry to volmgr failed !")
+		logger.Debug("data node statup failed : registry to volmgr failed !")
 		os.Exit(1)
 	}
 
@@ -89,7 +91,7 @@ func heartbeatToVolMgr() {
 
 	conn, err := grpc.Dial(DataNodeServerAddr.VolMgrIp+":"+DataNodeServerAddr.VolMgrPort, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("HearBeat failed : Dial to volmgr failed !")
 	}
 	defer conn.Close()
 	c := vp.NewVolMgrClient(conn)
@@ -115,7 +117,6 @@ func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (
 	var f *os.File
 	var err error
 
-	//fmt.Println("writechunking in datanode ...")
 	ack := dp.WriteChunkAck{}
 	chunkID := in.ChunkID
 	blockID := in.BlockID
@@ -236,16 +237,12 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 			m = int64(n) + totalsize
 			ack.Databuf = buf[:m]
 			if err := stream.Send(&ack); err != nil {
-				fmt.Printf("+++++++ error:%v +++++\n", err)
 				return err
 			}
 			break
 		}
-
 		ack.Databuf = buf[:n]
-
 		if err := stream.Send(&ack); err != nil {
-			fmt.Printf("+++++++ error:%v +++++\n", err)
 			return err
 		}
 	}
@@ -260,22 +257,17 @@ rpc DeleteChunks(eleteChunksReq) returns (eleteChunksAck){};
 func (s *DataNodeServer) DeleteChunk(ctx context.Context, in *dp.DeleteChunkReq) (*dp.DeleteChunkAck, error) {
 	var err error
 
-	fmt.Println("DeleteChunk in datanode ...")
 	ack := dp.DeleteChunkAck{}
 	chunkID := in.ChunkID
 	blockID := in.BlockID
 
 	chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
-	fmt.Println(chunkFileName)
 
 	err = os.Remove(chunkFileName)
 	if err != nil {
 		ack.Ret = 0
-		fmt.Println("file remove Error!")
-		fmt.Printf("%s", err)
 	} else {
 		ack.Ret = 0
-		fmt.Print("file remove OK!")
 	}
 	ack.Ret = 0
 	return &ack, nil
@@ -296,16 +288,21 @@ func init() {
 	port, _ := c.Int("port")
 	DataNodeServerAddr.Port = int32(port)
 	DataNodeServerAddr.Path = c.String("path")
+	DataNodeServerAddr.Log = c.String("log")
 	DataNodeServerAddr.Flag = DataNodeServerAddr.Path + "/.registryflag"
 	DataNodeServerAddr.VolMgrIp = c.String("volmgr::volmgr.host")
 	DataNodeServerAddr.VolMgrPort = c.String("volmgr::volmgr.port")
 
+	logger.SetConsole(true)
+	logger.SetRollingFile(DataNodeServerAddr.Log, "datanode.log", 10, 100, logger.MB) //each 100M rolling
+	logger.SetLevel(logger.ERROR)
+
 	if ok, _ := utils.LocalPathExists(DataNodeServerAddr.Flag); !ok {
-		fmt.Println("registy ...")
+		logger.Debug("Start registy to volmgr ...")
 		registryToVolMgr()
-		fmt.Println("registy end ...")
+		logger.Debug("registy to volmgr sucess")
 	} else {
-		fmt.Println("already registied")
+		logger.Debug("already registied")
 	}
 
 }
@@ -318,7 +315,6 @@ func main() {
 	ticker := time.NewTicker(time.Second * 60)
 	go func() {
 		for _ = range ticker.C {
-			////fmt.Printf("ticked at %v", time.Now())
 			heartbeatToVolMgr()
 		}
 	}()

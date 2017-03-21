@@ -37,10 +37,13 @@ type mysqlc struct {
 
 var mysqlConf mysqlc
 
+const (
+	Blksize = 10 /*G*/
+)
+
 //var g_RpcConfig RpcConfigOpts
 var Mutex sync.RWMutex
 var err string
-var blksize int32
 
 type VolMgrServer struct{}
 
@@ -67,7 +70,7 @@ func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegi
 	_, err = disk.Exec(ip, dn_port, dn_mount, dn_capacity)
 	checkErr(err)
 
-	blkcount := dn_capacity / blksize
+	blkcount := dn_capacity / Blksize
 
 	hostip := ip
 	hostport := strconv.Itoa(int(dn_port))
@@ -140,12 +143,12 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 
 	//the volume need block group total numbers
 	var blkgrpnum int32
-	if volsize < blksize {
+	if volsize < Blksize {
 		blkgrpnum = 1
-	} else if volsize%blksize == 0 {
-		blkgrpnum = volsize / blksize
+	} else if volsize%Blksize == 0 {
+		blkgrpnum = volsize / Blksize
 	} else {
-		blkgrpnum = volsize/blksize + 1
+		blkgrpnum = volsize/Blksize + 1
 	}
 
 	// insert the volume info to volumes tables
@@ -324,25 +327,20 @@ func init() {
 
 	os.MkdirAll(VolMgrServerAddr.log, 0777)
 
-	fmt.Println(VolMgrServerAddr)
-
 	mysqlConf.dbhost = c.String("mysql::mysql.host")
 	mysqlConf.dbusername = c.String("mysql::mysql.user")
 	mysqlConf.dbpassword = c.String("mysql::mysql.passwd")
 	mysqlConf.dbname = c.String("mysql::mysql.db")
 
-	fmt.Println(mysqlConf)
-
 	logger.SetConsole(true)
 	logger.SetRollingFile(VolMgrServerAddr.log, "volmgr.log", 10, 100, logger.MB) //each 100M rolling
-	logger.SetLevel(logger.DEBUG)
+	logger.SetLevel(logger.ERROR)
 
 	VolMgrDB, err = sql.Open("mysql", mysqlConf.dbusername+":"+mysqlConf.dbpassword+"@tcp("+mysqlConf.dbhost+")/"+mysqlConf.dbname+"?charset=utf8")
 	checkErr(err)
 
 	err = VolMgrDB.Ping()
 	checkErr(err)
-	blksize = 10 //each blk size(G)
 
 }
 func main() {

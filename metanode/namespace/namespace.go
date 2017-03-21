@@ -2,17 +2,21 @@ package namespace
 
 import (
 	"bytes"
-	"fmt"
 	mp "ipd.org/containerfs/proto/mp"
 	vp "ipd.org/containerfs/proto/vp"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"ipd.org/containerfs/logger"
 	"ipd.org/containerfs/utils"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+)
+
+const (
+	Blksize = 10 /*G*/
 )
 
 var VolMgrAddress string
@@ -44,18 +48,17 @@ func CreateNameSpace(UUID string, inodenum int64, chunknum int64) int32 {
 	nameSpace.BaseInodeID = utils.New(inodenum, 1)
 	nameSpace.BaseChunkID = utils.New(chunknum, 1)
 
-	//fmt.Println("CreateNameSpace in namespace ...")
 	ret, tmpBlockGroups := nameSpace.GetVolInfo(UUID)
 	if ret != 0 {
 		return ret
 	}
 	for _, v := range tmpBlockGroups {
 		nameSpace.BGMutex.Lock()
-		v.FreeCnt = 320
+		v.FreeCnt = 160
 		nameSpace.BlockBroupDB[v.BlockGroupID] = v
 		nameSpace.BGMutex.Unlock()
 	}
-	fmt.Println(nameSpace.BlockBroupDB)
+
 	gMutex.Lock()
 	AllNameSpace[UUID] = &nameSpace
 	gMutex.Unlock()
@@ -80,17 +83,34 @@ func GetNameSpace(UUID string) (int32, *nameSpace) {
 	}
 }
 
+func (ns *nameSpace) GetFSInfo(volID string) mp.GetFSInfoAck {
+	ack := mp.GetFSInfoAck{}
+	var totalSpace uint64 = 0
+	var freeSpace uint64 = 0
+	ns.BGMutex.Lock()
+	for _, v := range ns.BlockBroupDB {
+		totalSpace = totalSpace + (Blksize * 1073741824)
+		freeSpace = freeSpace + 64*1024*1024*uint64(v.FreeCnt)
+	}
+	ns.BGMutex.Unlock()
+	ack.TotalSpace = totalSpace
+	ack.FreeSpace = freeSpace
+	ack.Ret = 0
+	return ack
+}
+
 func (ns *nameSpace) GetVolInfo(name string) (int32, []*vp.BlockGroup) {
-	//fmt.Println("GetVolInfo ... ")
 	conn, err := grpc.Dial(VolMgrAddress, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Debug("Dial failed: %v", err)
+		return -1, nil
 	}
 	defer conn.Close()
 	vc := vp.NewVolMgrClient(conn)
 	pGetVolInfoReq := &vp.GetVolInfoReq{UUID: name}
 	pGetVolInfoAck, _ := vc.GetVolInfo(context.Background(), pGetVolInfoReq)
 	if pGetVolInfoAck.Ret != 0 {
+		logger.Debug("GetVolInfo failed: %v", pGetVolInfoAck.Ret)
 		return pGetVolInfoAck.Ret, nil
 	}
 	return 0, pGetVolInfoAck.VolInfo.BlockGroups
@@ -101,7 +121,6 @@ func (ns *nameSpace) CreateDir(path string) int32 {
 	ret = 0
 	keys := ns.GetAllKeyByFullPath(path)
 	keysNum := len(keys)
-	//fmt.Println(keys)
 	var pParentInodeInfo *mp.InodeInfo
 	var ok bool
 	if ok, pParentInodeInfo = ns.Get(keys[keysNum-2]); !ok {
@@ -228,7 +247,6 @@ func (ns *nameSpace) DeleteDir(path string) int32 {
 	_, pTmpParentInodeInfo = ns.Get(keys[keysNum-2])
 	for index, value := range pTmpParentInodeInfo.ChildrenInodeIDs {
 		if value == pInodeInfo.InodeID {
-			//fmt.Println("find the child index:")
 			pTmpParentInodeInfo.ChildrenInodeIDs = append(pTmpParentInodeInfo.ChildrenInodeIDs[:index], pTmpParentInodeInfo.ChildrenInodeIDs[index+1:]...)
 			break
 		}
@@ -305,7 +323,6 @@ func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
 		_, pTmpParentInodeInfo1 = ns.Get(key1s[key1sNum-2])
 		for index, value := range pTmpParentInodeInfo1.ChildrenInodeIDs {
 			if value == pInodeInfo.InodeID {
-				//fmt.Println("find the child index:")
 				pTmpParentInodeInfo1.ChildrenInodeIDs = append(pTmpParentInodeInfo1.ChildrenInodeIDs[:index], pTmpParentInodeInfo1.ChildrenInodeIDs[index+1:]...)
 				break
 			}
@@ -337,7 +354,6 @@ func (ns *nameSpace) CreateFile(path string) int32 {
 	keys := ns.GetAllKeyByFullPath(path)
 	keysNum := len(keys)
 
-	//fmt.Println(keys)
 	var ok bool
 	var pParentInodeInfo *mp.InodeInfo
 	if ok, pParentInodeInfo = ns.Get(keys[keysNum-2]); !ok {
@@ -386,23 +402,17 @@ func (ns *nameSpace) CreateFile(path string) int32 {
 }
 
 func (ns *nameSpace) DeleteFile(path string) int32 {
-
-	fmt.Println("DeleteFile in namespace ...")
-
 	var ret int32
 	ret = 0
-
 	if path == "/" {
 		ret = 1
 		return ret
 	}
-
 	keys := ns.GetAllKeyByFullPath(path)
 	keysNum := len(keys)
 
 	var ok bool
 	var pInodeInfo *mp.InodeInfo
-
 	if ok, pInodeInfo = ns.Get(keys[keysNum-1]); !ok {
 		ret = 0 /*ENOENT*/
 		return ret
@@ -411,13 +421,11 @@ func (ns *nameSpace) DeleteFile(path string) int32 {
 		ret = 1 /*EPERM*/
 		return ret
 	}
-
 	/*update patent inode info*/
 	var pTmpParentInodeInfo *mp.InodeInfo
 	_, pTmpParentInodeInfo = ns.Get(keys[keysNum-2])
 	for index, value := range pTmpParentInodeInfo.ChildrenInodeIDs {
 		if value == pInodeInfo.InodeID {
-			//fmt.Println("find the child index:")
 			pTmpParentInodeInfo.ChildrenInodeIDs = append(pTmpParentInodeInfo.ChildrenInodeIDs[:index], pTmpParentInodeInfo.ChildrenInodeIDs[index+1:]...)
 			break
 		}
@@ -444,13 +452,9 @@ func (ns *nameSpace) DeleteFile(path string) int32 {
 	/*delete inode info*/
 	ns.Delete(strconv.FormatInt(pInodeInfo.InodeID, 10))
 	ns.Delete(strconv.FormatInt(pInodeInfo.ParentInodeID, 10) + "-" + utils.GetSelfName(path))
-
-	fmt.Println("DeleteFile in namespace end ...")
-
 	return ret
 }
 func (ns *nameSpace) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
-	//fmt.Println("AllocateChunk in ...")
 	var ret int32
 
 	keys := ns.GetAllKeyByFullPath(path)
@@ -458,13 +462,13 @@ func (ns *nameSpace) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 
 	if ok, _ := ns.Get(keys[keysNum-1]); !ok {
 		ret = 2 /*ENOENT*/
-		return -1, nil
+		return ret, nil
 	}
 
 	var chunkInfo = mp.ChunkInfo{}
 	ret, _, blockGroup := ns.ChooseBlockGroup()
 	if ret != 0 {
-		return -1, nil
+		return 28 /*ENOSPC*/, nil
 	}
 	chunkInfo.BlockGroup = ns.blockGroupVp2Mp(blockGroup)
 	chunkInfo.ChunkSize = 0
@@ -491,8 +495,6 @@ func (ns *nameSpace) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
 		chunkInfos = append(chunkInfos, ns.ChunkDB[chunkID])
 	}
 	ns.CMutex.RUnlock()
-	//fmt.Println("getfilechunks in ... ")
-	//fmt.Println(chunkInfos)
 	return 0, chunkInfos
 
 }
@@ -548,8 +550,6 @@ func (ns *nameSpace) blockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 	mpBlockGroup.BlockGroupID = in.BlockGroupID
 	mpBlockGroup.FreeCnt = in.FreeCnt
 	mpBlockGroup.Status = in.Status
-	//fmt.Println("blockGroupVp2Mp")
-	//fmt.Println(in.BlockInfos)
 
 	for i := range in.BlockInfos {
 		var pVpBlockInfo *vp.BlockInfo
@@ -569,13 +569,11 @@ func (ns *nameSpace) blockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 }
 
 func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
-	//fmt.Println("ChooseBlockGroup in ...")
 	ns.BGMutex.Lock()
 	defer ns.BGMutex.Unlock()
 	var blockGroupID int32
 	var blockGroup *vp.BlockGroup
 	flag := false
-	// find the using blockgroup
 	for k, v := range ns.BlockBroupDB {
 		if v.Status == 1 {
 			blockGroupID = v.BlockGroupID
@@ -585,8 +583,7 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 			}
 			ns.BlockBroupDB[k] = v
 			blockGroup = v
-			fmt.Println("find a using blockgroup !!!")
-			//fmt.Println(blockGroup)
+			logger.Debug("find a using blockgroup,blgid:%v\n", v.BlockGroupID)
 			flag = true
 			break
 		}
@@ -604,15 +601,13 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 				}
 				ns.BlockBroupDB[k] = v
 				blockGroup = v
-				fmt.Println("find a free blockgroup !!!")
-				//fmt.Println(blockGroup)
+				logger.Debug("find a free blockgroup,blgid:%v\n", v.BlockGroupID)
 				flag = true
 				break
 			}
 		}
 	}
 	if flag {
-
 		return 0, blockGroupID, blockGroup
 	} else {
 		return 1, -1, nil
@@ -621,7 +616,6 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 }
 
 func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
-	fmt.Println("ReleaseBlockGroup in ...")
 	ns.BGMutex.Lock()
 	defer ns.BGMutex.Unlock()
 
@@ -637,11 +631,8 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 
 }
 func (ns *nameSpace) GetAllKeyByFullPath(in string) (keys []string) {
-
 	tmp := strings.Split(in, "/")
-	//fmt.Println(tmp)
 	keys = make([]string, 1)
-
 	for i, v := range tmp {
 		if i == 0 {
 			keys[i] = "0"
