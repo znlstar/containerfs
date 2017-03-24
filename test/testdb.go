@@ -1,18 +1,18 @@
 package main
 
 import (
-	"fmt"
-	"strconv"
-	"time"
 	"database/sql"
+	"fmt"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 	//"os"
-	"ipd.org/containerfs/logger"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/ipdcode/containerfs/logger"
+	"math/rand"
 	"reflect"
 	"unsafe"
-	"math/rand"
 )
 
 func init() {
@@ -47,12 +47,12 @@ func insert(db *sql.DB) {
 	//db.Exec("unlock tables")
 }
 
-func convert( b []byte ) string {
-    s := make([]string,len(b))
-    for i := range b {
-        s[i] = strconv.Itoa(int(b[i]))
-    }
-    return strings.Join(s,",")
+func convert(b []byte) string {
+	s := make([]string, len(b))
+	for i := range b {
+		s[i] = strconv.Itoa(int(b[i]))
+	}
+	return strings.Join(s, ",")
 }
 
 func B2S(buf []byte) string {
@@ -68,7 +68,7 @@ func rand_test() chan int {
 	rand.Seed(int64(time.Now().Nanosecond())) // set time, otherwise each the same randint value
 	go func() {
 		for {
-			out<-rand.Int()
+			out <- rand.Int()
 		}
 	}()
 	return out
@@ -84,27 +84,27 @@ func main() {
 	//uuid, err := utils.GenUUID()
 	//log.Printf("====== uuid:%s ====", uuid)
 	var ss string
-	bytes := [4]byte{'a','b','c','d'}
+	bytes := [4]byte{'a', 'b', 'c', 'd'}
 	str1 := convert(bytes[:])
 	str2 := B2S(bytes[:])
 	str := "sdkngklkkklkl"
 	buf := S2B(&str)
 	str3 := B2S(buf)
 	out := rand_test()
-	
-	var a int64=1
-	var b int=5
+
+	var a int64 = 1
+	var b int = 5
 	a -= int64(b)
 	if a <= 0 {
-		fmt.Println("xxxxxxx",int64(b)-a,int64(b)+a)
+		fmt.Println("xxxxxxx", int64(b)-a, int64(b)+a)
 	}
-	fmt.Printf("********* str1:%s *** str2:%s **** str3:%s ***** outchannel:%d ****\n",str1,str2,str3,<-out)
-	fmt.Printf("----- buf:%v ------\n",buf)
+	fmt.Printf("********* str1:%s *** str2:%s **** str3:%s ***** outchannel:%d ****\n", str1, str2, str3, <-out)
+	fmt.Printf("----- buf:%v ------\n", buf)
 
-	nums := []int{2, 3, 4,5,6,7,8,9}
+	nums := []int{2, 3, 4, 5, 6, 7, 8, 9}
 	for i := range nums[3:] {
-		cur := i+3
-		fmt.Printf("^^^^^^^^ the %v-th value is %v \n",cur,nums[cur])
+		cur := i + 3
+		fmt.Printf("^^^^^^^^ the %v-th value is %v \n", cur, nums[cur])
 	}
 	ss = "5,6,7,"
 	ll := strings.Split(ss, ",")
@@ -116,7 +116,7 @@ func main() {
 	logger.Debug("= j1:%d == j2:%d == j3:%d ==", j1, j2, j3)
 	intList := []int{2, 4, 3, 5, 7, 6, 9, 8, 1, 0}
 	sort.Ints(intList)
-	fmt.Printf("### %v ###  %v  ### %v  ### %v ### %v ### %v ####\n", intList[9:],intList[:],intList[:3],intList[3:],intList[3:len(intList)-1],intList[10:])
+	fmt.Printf("### %v ###  %v  ### %v  ### %v ### %v ### %v ####\n", intList[9:], intList[:], intList[:3], intList[3:], intList[3:len(intList)-1], intList[10:])
 	fmt.Printf("%v %d %d\n", intList, intList[0], intList[len(intList)-1])
 	return
 	db, err := sql.Open("mysql", "root:root@tcp(127.0.0.1:3306)/jls?charset=utf8")

@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
+	"github.com/ipdcode/containerfs/logger"
+	ns "github.com/ipdcode/containerfs/metanode/namespace"
+	mp "github.com/ipdcode/containerfs/proto/mp"
 	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
-	"ipd.org/containerfs/logger"
-	ns "ipd.org/containerfs/metanode/namespace"
-	mp "ipd.org/containerfs/proto/mp"
 	"net"
 	"os"
 	"runtime"

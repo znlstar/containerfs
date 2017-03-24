@@ -2,13 +2,13 @@ package namespace
 
 import (
 	"bytes"
-	mp "ipd.org/containerfs/proto/mp"
-	vp "ipd.org/containerfs/proto/vp"
+	mp "github.com/ipdcode/containerfs/proto/mp"
+	vp "github.com/ipdcode/containerfs/proto/vp"
 
+	"github.com/ipdcode/containerfs/logger"
+	"github.com/ipdcode/containerfs/utils"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"ipd.org/containerfs/logger"
-	"ipd.org/containerfs/utils"
 	"strconv"
 	"strings"
 	"sync"
