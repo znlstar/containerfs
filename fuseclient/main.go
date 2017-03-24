@@ -14,9 +14,9 @@ import (
 	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 
-	cfs "ipd.org/containerfs/fs"
-	"ipd.org/containerfs/logger"
-	mp "ipd.org/containerfs/proto/mp"
+	cfs "github.com/ipdcode/containerfs/fs"
+	"github.com/ipdcode/containerfs/logger"
+	mp "github.com/ipdcode/containerfs/proto/mp"
 )
 
 var uuid string
