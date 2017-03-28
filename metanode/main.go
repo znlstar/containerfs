@@ -3,8 +3,12 @@ package main
 import (
 	"fmt"
 	"github.com/ipdcode/containerfs/logger"
+
 	ns "github.com/ipdcode/containerfs/metanode/namespace"
+	mRaft "github.com/ipdcode/containerfs/metanode/raft"
 	mp "github.com/ipdcode/containerfs/proto/mp"
+
+	"github.com/ipdcode/containerfs/utils"
 	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -12,14 +16,19 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
 type addr struct {
-	host string
-	port int
-	log  string
+	host     string
+	port     int
+	peer     []string
+	domain   string
+	log      string
+	hadesurl string
 }
 
 var MetaNodeServerAddr addr
@@ -28,21 +37,39 @@ type MetaNodeServer struct {
 	Mutex sync.Mutex
 }
 
-const (
-	metaPath         = "/home/metadata"
-	blkgrpMetafile   = "blkgrp.meta"
-	chunkMetafile    = "chunk.meta"
-	inodeMetafile    = "inode.meta"
-	basechunkNumfile = "basechunk.num"
-	baseinodeNumfile = "baseinode.num"
-)
-
 /*
 rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
 */
 func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameSpaceReq) (*mp.CreateNameSpaceAck, error) {
+	fmt.Println("CreateNameSpace...")
 	ack := mp.CreateNameSpaceAck{}
-	ack.Ret = ns.CreateNameSpace(in.VolID, 1, 1)
+	ns.Wg.Add(1)
+	ack.Ret = ns.CreateNameSpace(in.VolID, false)
+
+	if mRaft.RaftInfo.R.IsLeader() {
+		// send to follower metadatas to registry a new map
+
+		for _, addr := range MetaNodeServerAddr.peer {
+			conn2, err2 := grpc.Dial(addr, grpc.WithInsecure())
+			if err2 != nil {
+				logger.Error("CreateVol failed,Dial to metanode fail :%v\n", err2)
+				ack.Ret = -1
+				return &ack, nil
+			}
+			defer conn2.Close()
+			mc := mp.NewMetaNodeClient(conn2)
+			pmCreateNameSpaceReq := &mp.CreateNameSpaceReq{
+				VolID: in.VolID,
+			}
+			pmCreateNameSpaceAck, _ := mc.CreateNameSpace(context.Background(), pmCreateNameSpaceReq)
+			if pmCreateNameSpaceAck.Ret != 0 {
+				logger.Error("CreateNameSpace failed :%v\n", pmCreateNameSpaceAck.Ret)
+				ack.Ret = -1
+				return &ack, nil
+			}
+		}
+
+	}
 	return &ack, nil
 }
 
@@ -245,34 +272,76 @@ func startMetaDataService() {
 	}
 }
 
-// todo:save all vol meta
-func saveMetaData() {
-}
-
-// todo:load all vol meta
 func loadMetaData() {
 	ns.CreateGNameSpace()
+	ret, vols := ns.GetVolList()
+	if ret != 0 {
+		logger.Error("loadMetaData,GetVolList failed,ret:%v", ret)
+	}
+	fmt.Println(vols)
+	for _, v := range vols {
+		ns.Wg.Add(1)
+		go ns.CreateNameSpace(v, true)
+	}
+	ns.Wg.Wait()
+}
+
+func loadNewMetaData() {
+
+	ret, vols := ns.GetVolList()
+	if ret != 0 {
+		logger.Error("loadMetaData,GetVolList failed,ret:%v", ret)
+	}
+	fmt.Println(vols)
+	for _, v := range vols {
+		ns.Wg.Add(1)
+		go ns.LoadNewVolMeta(v)
+	}
+	ns.Wg.Wait()
 }
 
 func init() {
-	ns.CreateGNameSpace()
-	//loadMetaData()
+	//ns.CreateGNameSpace()
 
 	c, err := config.NewConfig(os.Args[1])
 	if err != nil {
 		fmt.Println("NewConfig err")
 		os.Exit(1)
 	}
+
+	MetaNodeServerAddr.host = c.String("host")
 	port, _ := c.Int("port")
 	MetaNodeServerAddr.port = port
+	MetaNodeServerAddr.peer = c.Strings("peer")
+	MetaNodeServerAddr.domain = c.String("hades::domain") + ".hades.local"
+	ns.Domain = MetaNodeServerAddr.domain
 	MetaNodeServerAddr.log = c.String("log")
-	MetaNodeServerAddr.host = c.String("host")
-
+	url := "http://" + c.String("hades::host") + "/hades/api/" + c.String("hades::domain") + "?token=" + c.String("hades::token")
+	fmt.Println("hades url:")
+	fmt.Println(url)
+	MetaNodeServerAddr.hadesurl = url
 	ns.VolMgrAddress = c.String("volmgr::volmgr.host")
+
+	mRaft.RaftInfo.Me = c.String("raft::raft.me")
+	s := strings.Split(mRaft.RaftInfo.Me, ":")
+	mRaft.RaftInfo.MePort, _ = strconv.Atoi(s[1])
+	mRaft.RaftInfo.Peer = c.Strings("raft::raft.peer")
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(MetaNodeServerAddr.log, "metanode.log", 10, 100, logger.MB) //each 100M rolling
 	logger.SetLevel(logger.ERROR)
+
+	endPoints := strings.Split(c.String("etcd::etcd.endpoints"), ",")
+	fmt.Println(endPoints)
+	err = ns.EtcdClient.InitEtcd(endPoints)
+	if err != nil {
+		fmt.Println("connect etcd failed")
+		os.Exit(0)
+	}
+
+	mRaft.StartRaftService()
+	loadMetaData()
+
 }
 
 func main() {
@@ -281,12 +350,43 @@ func main() {
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
 
-	ticker := time.NewTicker(time.Second * 60)
+	ticker1 := time.NewTicker(time.Millisecond * 100)
+	var myRole bool = true
+	var count int64
 	go func() {
-		for _ = range ticker.C {
-			saveMetaData()
+		for _ = range ticker1.C {
+			if mRaft.RaftInfo.R.IsLeader() {
+				count += 1
+				if count == 1 {
+					utils.DelHades(MetaNodeServerAddr.hadesurl)
+					utils.PostHades(MetaNodeServerAddr.hadesurl, MetaNodeServerAddr.host, MetaNodeServerAddr.port)
+				}
+				if myRole != mRaft.RaftInfo.R.IsLeader() {
+					// role change , load new meta immediately
+					//loadNewMetaData()
+					utils.DelHades(MetaNodeServerAddr.hadesurl)
+					loadMetaData()
+					utils.PostHades(MetaNodeServerAddr.hadesurl, MetaNodeServerAddr.host, MetaNodeServerAddr.port)
+				}
+				myRole = true
+			} else {
+				myRole = false
+			}
 		}
 	}()
 
+	ticker2 := time.NewTicker(time.Second * 5)
+	go func() {
+		for _ = range ticker2.C {
+			if mRaft.RaftInfo.R.IsLeader() {
+				fmt.Println("I'm leader...")
+			} else {
+				fmt.Println("I'm follower...")
+				//fmt.Println("I'm follower, I will watch etcd again ...")
+				// time to load new meta
+				//loadNewMetaData()
+			}
+		}
+	}()
 	startMetaDataService()
 }

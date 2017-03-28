@@ -11,7 +11,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"io"
-
+	"fmt"
 	"os"
 	"strconv"
 	"sync"
@@ -39,7 +39,8 @@ const (
 )
 
 type CFS struct {
-	VolID string
+	VolID  string
+	Status int // 0 ok , 1 readonly 2 invaild
 }
 
 func CreateVol(name string, capacity string) int32 {
@@ -55,10 +56,13 @@ func CreateVol(name string, capacity string) int32 {
 	pCreateVolReq := &vp.CreateVolReq{
 		VolName:    name,
 		SpaceQuota: int32(spaceQuota),
+		MetaDomain: MetaNodeAddr,
 	}
 	pCreateVolAck, _ := vc.CreateVol(context.Background(), pCreateVolReq)
 
 	// send to metadata to registry a new map
+	fmt.Println("-------")
+	fmt.Println(MetaNodeAddr)
 	conn2, err2 := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err2 != nil {
 		logger.Error("CreateVol failed,Dial to metanode fail :%v\n", err2)
@@ -117,7 +121,7 @@ func GetFSInfo(name string) (int32, *mp.GetFSInfoAck) {
 }
 
 func OpenFileSystem(UUID string) *CFS {
-	cfs := CFS{VolID: UUID}
+	cfs := CFS{VolID: UUID, Status: 0}
 	return &cfs
 }
 
@@ -685,6 +689,7 @@ func (cfile *CFile) flushChannel() {
 			pWriteChunkAck, _ := dc[i].WriteChunk(context.Background(), pWriteChunkReq)
 			if pWriteChunkAck.Ret != 0 {
 				logger.Error("flushChannel WriteChunk Failed :%v\n", pWriteChunkAck.Ret)
+				cfile.cfs.Status = 1
 				return
 			}
 
@@ -697,7 +702,7 @@ func (cfile *CFile) flushChannel() {
 		}
 		pSyncChunkAck, _ := mc.SyncChunk(context.Background(), pSyncChunkReq)
 		if pSyncChunkAck.Ret != 0 {
-			logger.Error("flushChannel SyncChunk Failed :%v\n", pSyncChunkAck.Ret)
+			cfile.cfs.Status = 1
 			return
 		}
 		cfile.wg.Add(-1)

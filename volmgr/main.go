@@ -139,6 +139,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	ack := vp.CreateVolAck{}
 	volname := in.VolName
 	volsize := in.SpaceQuota
+	metadomain := in.MetaDomain
 	voluuid, err := utils.GenUUID()
 
 	//the volume need block group total numbers
@@ -152,14 +153,14 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	}
 
 	// insert the volume info to volumes tables
-	vol, err := VolMgrDB.Prepare("INSERT INTO volumes(uuid, name, size) VALUES(?, ?, ?)")
+	vol, err := VolMgrDB.Prepare("INSERT INTO volumes(uuid, name, size,metadomain) VALUES(?, ?, ?, ?)")
 	if err != nil {
 		logger.Error("Create volume(%s -- %s) insert db error:%s", volname, voluuid, err)
 		ack.Ret = 1 // db error
 		return &ack, nil
 	}
 	defer vol.Close()
-	vol.Exec(voluuid, volname, volsize)
+	vol.Exec(voluuid, volname, volsize, metadomain)
 
 	//allocate block group for the volume
 	for i := int32(0); i < blkgrpnum; i++ {
@@ -221,7 +222,8 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 
 	var name string
 	var size int32
-	vols, err := VolMgrDB.Query("SELECT name,size FROM volumes WHERE uuid = ?", voluuid)
+	var metadomain string
+	vols, err := VolMgrDB.Query("SELECT name,size,metadomain FROM volumes WHERE uuid = ?", voluuid)
 	if err != nil {
 		logger.Error("Get volume(%s) from db error:%s", voluuid, err)
 		ack.Ret = 1
@@ -229,7 +231,7 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 	}
 	defer vols.Close()
 	for vols.Next() {
-		err = vols.Scan(&name, &size)
+		err = vols.Scan(&name, &size, &metadomain)
 		if err != nil {
 			ack.Ret = 1
 			return &ack, nil
@@ -237,6 +239,7 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 		volInfo.VolID = voluuid
 		volInfo.VolName = name
 		volInfo.SpaceQuota = size
+		volInfo.MetaDomain = metadomain
 	}
 
 	var blkgrpid int
@@ -296,6 +299,30 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 	volInfo.BlockGroups = pBlockGroups
 	logger.Debug("Get info:%v for the volume(%s)", volInfo, voluuid)
 	ack = vp.GetVolInfoAck{Ret: 0, VolInfo: &volInfo}
+	return &ack, nil
+}
+
+func (s *VolMgrServer) GetVolList(ctx context.Context, in *vp.GetVolListReq) (*vp.GetVolListAck, error) {
+	ack := vp.GetVolListAck{}
+
+	vols, err := VolMgrDB.Query("SELECT uuid FROM volumes")
+	if err != nil {
+		logger.Error("Get volumes from db error:%v", err)
+		ack.Ret = 1
+		return &ack, nil
+	}
+	defer vols.Close()
+
+	var name string
+	for vols.Next() {
+		err = vols.Scan(&name)
+		if err != nil {
+			ack.Ret = 1
+			return &ack, nil
+		}
+		ack.VolIDs = append(ack.VolIDs, name)
+	}
+	ack.Ret = 0
 	return &ack, nil
 }
 
