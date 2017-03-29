@@ -11,7 +11,6 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"io"
-	"fmt"
 	"os"
 	"strconv"
 	"sync"
@@ -29,8 +28,10 @@ const (
 	O_CREATE = os.O_CREATE // 64   00000000000000000000000001000000
 	O_TRUNC  = os.O_TRUNC  // 512  00000000000000000000001000000000
 	O_DIRECT = 0x4000
+
 	O_MVOPT  = O_RDONLY | 0x20000
 	O_TAROPT = O_MVOPT | syscall.O_NONBLOCK
+	O_SCPOPT = O_RDONLY | syscall.O_NONBLOCK
 )
 
 const (
@@ -219,7 +220,7 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 
 	cfile := CFile{}
 
-	if flags == O_RDONLY || flags == O_MVOPT || flags == O_TAROPT {
+	if flags == O_RDONLY || flags == O_MVOPT || flags == O_TAROPT || flags == O_SCPOPT {
 		chunkInfos := make([]*mp.ChunkInfo, 0)
 		if ret, chunkInfos = cfs.GetFileChunks(path); ret != 0 {
 			return ret, nil
@@ -269,7 +270,7 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 		}
 		go cfile.flushChannel()
 
-	} else {
+	} else if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
 
 		writer = 1
 		cfs.DeleteFile(path)
@@ -293,6 +294,8 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 			wBuffer:  tmpBuffer,
 		}
 		go cfile.flushChannel()
+	} else {
+		return -1, nil
 	}
 	return 0, &cfile
 }
@@ -531,7 +534,7 @@ func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 			cfile.readBuf = buffer.Next(buffer.Len())
 			buffer.Reset()
 		}
-		*data = cfile.readBuf[cur_offset : cur_offset+each_read_len]
+		*data = append(*data,cfile.readBuf[cur_offset : cur_offset+each_read_len]...)
 		cur_offset += each_read_len
 		if cur_offset == int64(len(cfile.readBuf)) {
 			cur_offset = 0
@@ -721,7 +724,7 @@ func closeP(cfile *CFile) {
 	cfile = nil
 }
 func (cfile *CFile) Close() int32 {
-	if cfile.OpenFlag != O_RDONLY && cfile.OpenFlag != O_MVOPT && cfile.OpenFlag != O_TAROPT {
+	if cfile.OpenFlag != O_RDONLY && cfile.OpenFlag != O_MVOPT && cfile.OpenFlag != O_TAROPT && cfile.OpenFlag != O_SCPOPT {
 		cfile.close2Channel()
 		cfile.wg.Wait()
 	}
