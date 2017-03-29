@@ -5,6 +5,7 @@ package vp;
 service VolMgr {
     rpc CreateVol(CreateVolReq) returns (CreateVolAck){};
     rpc GetVolInfo(GetVolInfoReq) returns (GetVolInfoAck){};
+    rpc GetVolList(GetVolListReq) returns (GetVolListAck){};
     //rpc ListVol(ListVolReq) returns (ListVolAck){};
     //rpc DeleteVol(DeleteVolReq) returns (DeleteVolAck){};
     rpc DatanodeRegistry(DatanodeRegistryReq) returns (DatanodeRegistryAck){};
@@ -16,6 +17,7 @@ message CreateVolReq {
     string VolName = 1 ;
     int32  SpaceQuota = 2 ;
     int32  InodeQuota = 3 ;
+    string MetaDomain = 4 ;
 }
 message CreateVolAck {
     int32 Ret = 1;
@@ -30,12 +32,21 @@ message GetVolInfoAck {
     VolInfo VolInfo = 2;
 }
 
+message GetVolListReq {
+}
+
+message GetVolListAck {
+    int32 Ret = 1;
+    repeated string volIDs = 2;
+}
+
 message VolInfo {
     string VolID = 1;
     string VolName = 2;
-    int32  SpaceQuota = 3 ;
-    int32  InodeQuota = 4 ;
-    repeated BlockGroup BlockGroups = 5;
+    string MetaDomain = 3;
+    int32  SpaceQuota = 4 ;
+    int32  InodeQuota = 5 ;
+    repeated BlockGroup BlockGroups = 6;
 }
 message BlockGroup{
     int32 BlockGroupID = 1;

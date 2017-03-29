@@ -14,7 +14,7 @@ func main() {
 	//	fs.VolMgrAddr = "172.28.96.125:10001"
 	//	fs.MetaNodeAddr = "172.28.96.125:10002"
 	fs.VolMgrAddr = "10.8.65.94:10001"
-	fs.MetaNodeAddr = "10.8.65.94:10002"
+	fs.MetaNodeAddr = "srv-test100.hades.local:10002"
 
 	switch os.Args[1] {
 
