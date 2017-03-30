@@ -248,7 +248,10 @@ func (ns *nameSpace) List(path string) ([]*mp.InodeInfo, int32) {
 
 	var pTmpInodeInfo *mp.InodeInfo
 	for _, value := range pInodeInfo.ChildrenInodeIDs {
-		_, pTmpInodeInfo = ns.InodeDBGet(strconv.FormatInt(value, 10))
+		ok, pTmpInodeInfo = ns.InodeDBGet(strconv.FormatInt(value, 10))
+		if !ok {
+			continue
+		}
 		tmpInodeInfos = append(tmpInodeInfos, pTmpInodeInfo)
 	}
 	return tmpInodeInfos, ret
@@ -284,7 +287,10 @@ func (ns *nameSpace) DeleteDir(path string) int32 {
 
 	/*update patent inode info*/
 	var pTmpParentInodeInfo *mp.InodeInfo
-	_, pTmpParentInodeInfo = ns.InodeDBGet(keys[keysNum-2])
+	ok, pTmpParentInodeInfo = ns.InodeDBGet(keys[keysNum-2])
+	if !ok {
+		return 1
+	}
 	for index, value := range pTmpParentInodeInfo.ChildrenInodeIDs {
 		if value == pInodeInfo.InodeID {
 			pTmpParentInodeInfo.ChildrenInodeIDs = append(pTmpParentInodeInfo.ChildrenInodeIDs[:index], pTmpParentInodeInfo.ChildrenInodeIDs[index+1:]...)
@@ -490,7 +496,10 @@ func (ns *nameSpace) DeleteFile(path string) int32 {
 	}
 	/*update patent inode info*/
 	var pTmpParentInodeInfo *mp.InodeInfo
-	_, pTmpParentInodeInfo = ns.InodeDBGet(keys[keysNum-2])
+	ok, pTmpParentInodeInfo = ns.InodeDBGet(keys[keysNum-2])
+	if !ok {
+		return 1
+	}
 	for index, value := range pTmpParentInodeInfo.ChildrenInodeIDs {
 		if value == pInodeInfo.InodeID {
 			pTmpParentInodeInfo.ChildrenInodeIDs = append(pTmpParentInodeInfo.ChildrenInodeIDs[:index], pTmpParentInodeInfo.ChildrenInodeIDs[index+1:]...)
@@ -562,7 +571,10 @@ func (ns *nameSpace) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
 
 	for i := range pTmpInodeInfo.ChunkIDs {
 		chunkID := pTmpInodeInfo.ChunkIDs[i]
-		_, tmpChunkInfo := ns.ChunkDBGet(chunkID)
+		ok, tmpChunkInfo := ns.ChunkDBGet(chunkID)
+		if !ok {
+			continue
+		}
 		chunkInfos = append(chunkInfos, tmpChunkInfo)
 	}
 
@@ -590,7 +602,10 @@ func (ns *nameSpace) SyncChunk(path string, chunkinfo *mp.ChunkInfo) int32 {
 		// for appned write
 		lastChunkID = pTmpInodeInfo.ChunkIDs[len(pTmpInodeInfo.ChunkIDs)-1]
 		if lastChunkID == chunkinfo.ChunkID {
-			_, lastChunkInfo = ns.ChunkDBGet(chunkinfo.ChunkID)
+			ok, lastChunkInfo = ns.ChunkDBGet(chunkinfo.ChunkID)
+			if !ok {
+				return 1
+			}
 			pTmpInodeInfo.FileSize = pTmpInodeInfo.FileSize + int64(chunkinfo.ChunkSize) - int64(lastChunkInfo.ChunkSize)
 		} else {
 			pTmpInodeInfo.ChunkIDs = append(pTmpInodeInfo.ChunkIDs, chunkinfo.ChunkID)
@@ -691,7 +706,10 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 
 func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 
-	_, blockGroup := ns.BlockGroupDBGet(blockGroupID)
+	ok, blockGroup := ns.BlockGroupDBGet(blockGroupID)
+	if !ok {
+		return
+	}
 	blockGroup.FreeCnt += 1
 	if blockGroup.FreeCnt > 0 {
 		blockGroup.Status = 1

@@ -3,6 +3,7 @@ package cfs
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"github.com/ipdcode/containerfs/logger"
 	dp "github.com/ipdcode/containerfs/proto/dp"
 	mp "github.com/ipdcode/containerfs/proto/mp"
