@@ -324,10 +324,10 @@ func init() {
 	MetaNodeServerAddr.hadesurl = url
 	ns.VolMgrAddress = c.String("volmgr::volmgr.host")
 
-	mRaft.RaftInfo.Me = c.String("raft::raft.me")
+	mRaft.RaftInfo.Me = c.String("raft::me")
 	s := strings.Split(mRaft.RaftInfo.Me, ":")
 	mRaft.RaftInfo.MePort, _ = strconv.Atoi(s[1])
-	mRaft.RaftInfo.Peer = c.Strings("raft::raft.peer")
+	mRaft.RaftInfo.Peer = c.Strings("raft::peer")
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(MetaNodeServerAddr.log, "metanode.log", 10, 100, logger.MB) //each 100M rolling
