@@ -290,12 +290,22 @@ func init() {
 	DataNodeServerAddr.Path = c.String("path")
 	DataNodeServerAddr.Log = c.String("log")
 	DataNodeServerAddr.Flag = DataNodeServerAddr.Path + "/.registryflag"
-	DataNodeServerAddr.VolMgrIp = c.String("volmgr::volmgr.host")
-	DataNodeServerAddr.VolMgrPort = c.String("volmgr::volmgr.port")
+	DataNodeServerAddr.VolMgrIp = c.String("volmgr::host")
+	DataNodeServerAddr.VolMgrPort = c.String("volmgr::port")
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(DataNodeServerAddr.Log, "datanode.log", 10, 100, logger.MB) //each 100M rolling
-	logger.SetLevel(logger.ERROR)
+
+	switch level := c.String("loglevel"); level {
+	case "error":
+		logger.SetLevel(logger.ERROR)
+	case "debug":
+		logger.SetLevel(logger.DEBUG)
+	case "info":
+		logger.SetLevel(logger.INFO)
+	default:
+		logger.SetLevel(logger.ERROR)
+	}
 
 	if ok, _ := utils.LocalPathExists(DataNodeServerAddr.Flag); !ok {
 		logger.Debug("Start registy to volmgr ...")

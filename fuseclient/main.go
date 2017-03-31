@@ -66,7 +66,16 @@ func main() {
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(c.String("log"), "fuse.log", 10, 100, logger.MB) //each 100M rolling
-	logger.SetLevel(logger.ERROR)
+	switch level := c.String("loglevel"); level {
+	case "error":
+		logger.SetLevel(logger.ERROR)
+	case "debug":
+		logger.SetLevel(logger.DEBUG)
+	case "info":
+		logger.SetLevel(logger.INFO)
+	default:
+		logger.SetLevel(logger.ERROR)
+	}
 
 	err = mount(uuid, mountPoint)
 	if err != nil {
@@ -274,8 +283,10 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 var _ = fs.NodeCreater(&Dir{})
 
 func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
-	var fullPath string
 
+	logger.Debug("Create...,Flag:%v", req.Flags)
+
+	var fullPath string
 	if d.name == "/" {
 		fullPath = d.name + req.Name
 	} else {
@@ -468,6 +479,8 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 
 	var fullPath string
 
+	logger.Debug("OpenFlag:%v", req.Flags)
+
 	// we do not support trunc
 	if int(req.Flags)&cfs.O_TRUNC != 0 {
 		return nil, fuse.Errno(syscall.EPERM)
@@ -490,6 +503,7 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 var _ = fs.HandleReleaser(&File{})
 
 func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
+	logger.Debug("Release...")
 	if req.Flags.IsReadOnly() {
 		// we don't need to track read-only handles
 		return nil
@@ -506,9 +520,11 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 var _ = fs.HandleReader(&File{})
 
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
+	logger.Debug("Read....")
 	length := f.cfile.Read(&resp.Data, req.Offset, int64(req.Size))
-	if length == int64(req.Size) {
-		return nil
+	//fmt.Printf("Read#### reqoffset:%v -- reqsize:%v -- length:%v --- databuflen:%v ==\n",req.Offset,req.Size, length, len(resp.Data))
+	if length != int64(req.Size) {
+		//fmt.Printf("== Read reqsize:%v, but return datasize:%v ==\n",req.Size,length) 
 	}
 	return nil
 }
@@ -516,6 +532,8 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 var _ = fs.HandleWriter(&File{})
 
 func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
+	logger.Debug("Write...")
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	w := f.cfile.Write(req.Data, int32(len(req.Data)))

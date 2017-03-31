@@ -52,20 +52,22 @@ func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameS
 		for _, addr := range MetaNodeServerAddr.peer {
 			conn2, err2 := grpc.Dial(addr, grpc.WithInsecure())
 			if err2 != nil {
-				logger.Error("CreateVol failed,Dial to metanode fail :%v\n", err2)
-				ack.Ret = -1
-				return &ack, nil
+				logger.Error("Leader told Follower to create NameSpace Failed ...")
+				continue
 			}
 			defer conn2.Close()
 			mc := mp.NewMetaNodeClient(conn2)
 			pmCreateNameSpaceReq := &mp.CreateNameSpaceReq{
 				VolID: in.VolID,
 			}
-			pmCreateNameSpaceAck, _ := mc.CreateNameSpace(context.Background(), pmCreateNameSpaceReq)
+			pmCreateNameSpaceAck, ret := mc.CreateNameSpace(context.Background(), pmCreateNameSpaceReq)
+			if ret != nil {
+				logger.Error("Leader told Follower to create NameSpace Failed ...")
+				continue
+			}
 			if pmCreateNameSpaceAck.Ret != 0 {
-				logger.Error("CreateNameSpace failed :%v\n", pmCreateNameSpaceAck.Ret)
-				ack.Ret = -1
-				return &ack, nil
+				logger.Error("Leader told Follower to create NameSpace Failed ...")
+				continue
 			}
 		}
 
@@ -322,14 +324,23 @@ func init() {
 	MetaNodeServerAddr.hadesurl = url
 	ns.VolMgrAddress = c.String("volmgr::volmgr.host")
 
-	mRaft.RaftInfo.Me = c.String("raft::raft.me")
+	mRaft.RaftInfo.Me = c.String("raft::me")
 	s := strings.Split(mRaft.RaftInfo.Me, ":")
 	mRaft.RaftInfo.MePort, _ = strconv.Atoi(s[1])
-	mRaft.RaftInfo.Peer = c.Strings("raft::raft.peer")
+	mRaft.RaftInfo.Peer = c.Strings("raft::peer")
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(MetaNodeServerAddr.log, "metanode.log", 10, 100, logger.MB) //each 100M rolling
-	logger.SetLevel(logger.ERROR)
+	switch level := c.String("loglevel"); level {
+	case "error":
+		logger.SetLevel(logger.ERROR)
+	case "debug":
+		logger.SetLevel(logger.DEBUG)
+	case "info":
+		logger.SetLevel(logger.INFO)
+	default:
+		logger.SetLevel(logger.ERROR)
+	}
 
 	endPoints := strings.Split(c.String("etcd::etcd.endpoints"), ",")
 	fmt.Println(endPoints)

@@ -354,14 +354,23 @@ func init() {
 
 	os.MkdirAll(VolMgrServerAddr.log, 0777)
 
-	mysqlConf.dbhost = c.String("mysql::mysql.host")
-	mysqlConf.dbusername = c.String("mysql::mysql.user")
-	mysqlConf.dbpassword = c.String("mysql::mysql.passwd")
-	mysqlConf.dbname = c.String("mysql::mysql.db")
+	mysqlConf.dbhost = c.String("mysql::host")
+	mysqlConf.dbusername = c.String("mysql::user")
+	mysqlConf.dbpassword = c.String("mysql::passwd")
+	mysqlConf.dbname = c.String("mysql::db")
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(VolMgrServerAddr.log, "volmgr.log", 10, 100, logger.MB) //each 100M rolling
-	logger.SetLevel(logger.ERROR)
+	switch level := c.String("loglevel"); level {
+	case "error":
+		logger.SetLevel(logger.ERROR)
+	case "debug":
+		logger.SetLevel(logger.DEBUG)
+	case "info":
+		logger.SetLevel(logger.INFO)
+	default:
+		logger.SetLevel(logger.ERROR)
+	}
 
 	VolMgrDB, err = sql.Open("mysql", mysqlConf.dbusername+":"+mysqlConf.dbpassword+"@tcp("+mysqlConf.dbhost+")/"+mysqlConf.dbname+"?charset=utf8")
 	checkErr(err)
