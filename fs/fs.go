@@ -1,6 +1,7 @@
 package cfs
 
 import (
+	"bazil.org/fuse"
 	"bufio"
 	"bytes"
 	"fmt"
@@ -28,7 +29,7 @@ const (
 	O_APPEND = os.O_APPEND // 1024 00000000000000000000010000000000
 	O_CREATE = os.O_CREATE // 64   00000000000000000000000001000000
 	O_TRUNC  = os.O_TRUNC  // 512  00000000000000000000001000000000
-	O_DIRECT = 0x4000
+	O_EXCL   = os.O_EXCL   // 0x4000
 
 	O_MVOPT  = O_RDONLY | 0x20000
 	O_TAROPT = O_MVOPT | syscall.O_NONBLOCK
@@ -214,6 +215,46 @@ func (cfs *CFS) Rename(path1 string, path2 string) int32 {
 	return pRenameAck.Ret
 }
 
+func (cfs *CFS) CreateFile(path string, flags int) (int32, *CFile) {
+
+	if flags&O_TRUNC != 0 {
+		if ret, _ := cfs.Stat(path); ret == 0 {
+			cfs.DeleteFile(path)
+		}
+	}
+
+	if flags&O_EXCL != 0 {
+		if ret, _ := cfs.Stat(path); ret == 0 {
+			return 17, nil
+		}
+	}
+
+	cfile := CFile{}
+	if ret := cfs.createFile(path); ret != 0 {
+		return ret, nil
+	}
+
+	tmpBuffer := wBuffer{
+		buffer:   new(bytes.Buffer),
+		freeSize: bufferSize,
+	}
+
+	wChannel := make(chan *wBuffer, 128)
+	cfile = CFile{
+		Path:      path,
+		OpenFlag:  flags,
+		cfs:       cfs,
+		FileSize:  0,
+		ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
+
+		wChannel: wChannel,
+		wBuffer:  tmpBuffer,
+	}
+	go cfile.flushChannel()
+
+	return 0, &cfile
+}
+
 func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 	var ret int32
 	var writer int32 = 0
@@ -221,90 +262,150 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 
 	cfile := CFile{}
 
-	if flags == O_RDONLY || flags == O_MVOPT || flags == O_TAROPT || flags == O_SCPOPT {
+	if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
+
+		if (flags & O_APPEND) != 0 {
+			chunkInfos := make([]*mp.ChunkInfo, 0)
+
+			if ret, chunkInfos = cfs.GetFileChunks(path); ret != 0 {
+				return ret, nil
+			}
+
+			for i := range chunkInfos {
+				tmpFileSize += int64(chunkInfos[i].ChunkSize)
+			}
+			lastChunk := chunkInfos[len(chunkInfos)-1]
+
+			tmpBuffer := wBuffer{
+				buffer:    new(bytes.Buffer),
+				freeSize:  bufferSize - (lastChunk.ChunkSize % bufferSize),
+				chunkInfo: lastChunk,
+			}
+
+			fmt.Println("freeSize:")
+			fmt.Println(tmpBuffer.freeSize)
+
+			wChannel := make(chan *wBuffer, 128)
+			cfile = CFile{
+				Path:      path,
+				OpenFlag:  flags,
+				cfs:       cfs,
+				Writer:    writer,
+				FileSize:  tmpFileSize,
+				wChannel:  wChannel,
+				wBuffer:   tmpBuffer,
+				chunks:    chunkInfos,
+				ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
+			}
+			go cfile.flushChannel()
+		} else {
+
+			cfs.DeleteFile(path)
+			if ret = cfs.createFile(path); ret != 0 {
+				return ret, nil
+			}
+
+			tmpBuffer := wBuffer{
+				buffer:   new(bytes.Buffer),
+				freeSize: bufferSize,
+			}
+
+			wChannel := make(chan *wBuffer, 128)
+			cfile = CFile{
+				Path:      path,
+				OpenFlag:  flags,
+				cfs:       cfs,
+				Writer:    writer,
+				FileSize:  0,
+				wChannel:  wChannel,
+				wBuffer:   tmpBuffer,
+				chunks:    nil,
+				ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
+			}
+			go cfile.flushChannel()
+		}
+	} else {
 		chunkInfos := make([]*mp.ChunkInfo, 0)
 		if ret, chunkInfos = cfs.GetFileChunks(path); ret != 0 {
 			return ret, nil
 		}
-
 		for i := range chunkInfos {
 			tmpFileSize += int64(chunkInfos[i].ChunkSize)
-		}
-		cfile = CFile{
-			Path:       path,
-			OpenFlag:   flags,
-			cfs:        cfs,
-			Writer:     writer,
-			FileSize:   tmpFileSize,
-			chunks:     chunkInfos,
-			lastoffset: 0,
-			readBuf:    []byte{},
-		}
-	} else if (flags&O_APPEND) != 0 && (flags&O_CREATE) == 0 {
-
-		chunkInfos := make([]*mp.ChunkInfo, 0)
-
-		if ret, chunkInfos = cfs.GetFileChunks(path); ret != 0 {
-			return ret, nil
-		}
-
-		for i := range chunkInfos {
-			tmpFileSize += int64(chunkInfos[i].ChunkSize)
-		}
-		lastChunk := chunkInfos[len(chunkInfos)-1]
-		tmpBuffer := wBuffer{
-			buffer:    new(bytes.Buffer),
-			freeSize:  bufferSize,
-			chunkInfo: lastChunk,
-		}
-
-		wChannel := make(chan *wBuffer, 128)
-		cfile = CFile{
-			Path:     path,
-			OpenFlag: flags,
-			cfs:      cfs,
-			Writer:   writer,
-			FileSize: tmpFileSize,
-			chunks:   chunkInfos,
-			wChannel: wChannel,
-			wBuffer:  tmpBuffer,
-		}
-		go cfile.flushChannel()
-
-	} else if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
-
-		writer = 1
-		cfs.DeleteFile(path)
-		if ret = cfs.CreateFile(path); ret != 0 {
-			return ret, nil
 		}
 
 		tmpBuffer := wBuffer{
 			buffer:   new(bytes.Buffer),
 			freeSize: bufferSize,
 		}
-
 		wChannel := make(chan *wBuffer, 128)
+
 		cfile = CFile{
-			Path:     path,
-			OpenFlag: flags,
-			cfs:      cfs,
-			Writer:   writer,
-			FileSize: tmpFileSize,
-			wChannel: wChannel,
-			wBuffer:  tmpBuffer,
+			Path:      path,
+			OpenFlag:  flags,
+			cfs:       cfs,
+			Writer:    writer,
+			FileSize:  tmpFileSize,
+			wChannel:  wChannel,
+			wBuffer:   tmpBuffer,
+			chunks:    chunkInfos,
+			ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
 		}
+
 		go cfile.flushChannel()
-	} else {
-		return -1, nil
 	}
 	return 0, &cfile
 }
 
-func (cfs *CFS) CreateFile(path string) int32 {
+func (cfs *CFS) UpdateOpenFile(cfile *CFile, flags int) int32 {
+
+	fmt.Println("UpdateOpenFile ...")
+	fmt.Println("flags:")
+	fmt.Println(flags)
+
+	if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
+
+		if (flags & O_APPEND) != 0 {
+			chunkInfos := make([]*mp.ChunkInfo, 0)
+
+			var ret int32
+			if ret, chunkInfos = cfs.GetFileChunks(cfile.Path); ret != 0 {
+				return ret
+			}
+			lastChunk := chunkInfos[len(chunkInfos)-1]
+			tmpBuffer := wBuffer{
+				buffer:    new(bytes.Buffer),
+				freeSize:  bufferSize - (lastChunk.ChunkSize % bufferSize),
+				chunkInfo: lastChunk,
+			}
+			cfile.wBuffer = tmpBuffer
+
+			//go cfile.flushChannel()
+
+		} else {
+			cfs.DeleteFile(cfile.Path)
+			if ret := cfs.createFile(cfile.Path); ret != 0 {
+				return ret
+			}
+
+			tmpBuffer := wBuffer{
+				buffer:   new(bytes.Buffer),
+				freeSize: bufferSize,
+			}
+
+			cfile.wBuffer = tmpBuffer
+			cfile.chunks = nil
+			cfile.ReaderMap = make(map[fuse.HandleID]*ReaderInfo)
+
+			//go cfile.flushChannel()
+		}
+	}
+	return 0
+}
+
+func (cfs *CFS) createFile(path string) int32 {
 	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
-		logger.Error("CreateFile failed,Dial to metanode fail :%v\n", err)
+		logger.Error("createFile failed,Dial to metanode fail :%v\n", err)
 		return -1
 	}
 	defer conn.Close()
@@ -417,6 +518,13 @@ type wBuffer struct {
 	chunkInfo *mp.ChunkInfo // chunk info
 	buffer    *bytes.Buffer // chunk data
 }
+
+type ReaderInfo struct {
+	LastOffset int64
+	readBuf    []byte
+	Ch         chan *bytes.Buffer
+}
+
 type CFile struct {
 	cfs      *CFS
 	Path     string
@@ -433,10 +541,11 @@ type CFile struct {
 	wLastDataNode [3]string
 
 	// for read
-	lastoffset int64
-	RMutex     sync.Mutex
-	chunks     []*mp.ChunkInfo // chunkinfo
-	readBuf    []byte
+	//lastoffset int64
+	RMutex sync.Mutex
+	chunks []*mp.ChunkInfo // chunkinfo
+	//readBuf    []byte
+	ReaderMap map[fuse.HandleID]*ReaderInfo
 }
 
 func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64, size int64) {
@@ -475,15 +584,18 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 	}
 }
 
-func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
+func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, readsize int64) int64 {
 
-	var buffer *bytes.Buffer
+	if cfile.chunks == nil || len(cfile.chunks) == 0 {
+		return -1
+	}
+	//fmt.Printf("======offset=%v,readsize=%v \n", offset, readsize)
 
-	cfile.lastoffset = offset
+	//var buffer *bytes.Buffer
+
+	//cfile.ReaderMap[handleId].lastoffset = offset
 	if offset+readsize > cfile.FileSize {
 		readsize = cfile.FileSize - offset
-	} else {
-		readsize = readsize
 	}
 
 	var length int64 = 0
@@ -494,7 +606,7 @@ func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 	cur_offset := offset
 	for i := range cfile.chunks {
 		free_offset = cur_offset - int64(cfile.chunks[i].ChunkSize)
-		if free_offset < 0 {
+		if free_offset <= 0 {
 			begin_chunk_num = i
 			break
 		} else {
@@ -503,8 +615,10 @@ func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 	}
 
 	cur_size := offset + readsize
+	//fmt.Printf("======cur_size:%v,offset=%v,readsize=%v \n", cur_size, offset, readsize)
 
 	for i := range cfile.chunks {
+		//fmt.Printf("======chunksize:%v \n", cfile.chunks[i].ChunkSize)
 		free_size = cur_size - int64(cfile.chunks[i].ChunkSize)
 		if free_size <= 0 {
 			end_chunk_num = i
@@ -524,22 +638,34 @@ func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 		} else {
 			each_read_len = int64(cfile.chunks[index].ChunkSize) - cur_offset
 		}
-		if len(cfile.readBuf) == 0 {
-			if buffer == nil {
-				buffer = new(bytes.Buffer)
-			}
-			var ch chan *bytes.Buffer
-			ch = make(chan *bytes.Buffer)
-			go cfile.streamread(index, ch, 0, int64(cfile.chunks[index].ChunkSize))
-			buffer = <-ch
-			cfile.readBuf = buffer.Next(buffer.Len())
+		if len(cfile.ReaderMap[handleId].readBuf) == 0 {
+			//if buffer == nil {
+			buffer := new(bytes.Buffer)
+			//}
+			//var ch chan *bytes.Buffer
+			//ch = make(chan *bytes.Buffer)
+			//go cfile.streamread(index, ch, 0, int64(cfile.chunks[index].ChunkSize))
+			cfile.ReaderMap[handleId].Ch = make(chan *bytes.Buffer)
+			go cfile.streamread(index, cfile.ReaderMap[handleId].Ch, 0, int64(cfile.chunks[index].ChunkSize))
+			buffer = <-cfile.ReaderMap[handleId].Ch
+			cfile.ReaderMap[handleId].readBuf = buffer.Next(buffer.Len())
 			buffer.Reset()
+			buffer = nil
 		}
-		*data = append(*data,cfile.readBuf[cur_offset : cur_offset+each_read_len]...)
+
+		/*var ch chan *bytes.Buffer
+		//ch = make(chan *bytes.Buffer)
+		//go cfile.streamread(index, ch, cur_offset, each_read_len)
+		//buffer = <-ch
+		*data = append(*data, buffer.Next(buffer.Len())...)
+		buffer.Reset()*/
+		*data = append(*data, cfile.ReaderMap[handleId].readBuf[cur_offset:cur_offset+each_read_len]...)
+		//fmt.Printf("### The handle:%v read chunk-%v -- offset:%v -- eachsize:%v -- totalbuflen:%v -- retbuflen:%v ===\n", handleId, index, cur_offset, each_read_len, len(*data), len(cfile.ReaderMap[handleId].readBuf))
 		cur_offset += each_read_len
-		if cur_offset == int64(len(cfile.readBuf)) {
+		if cur_offset == int64(len(cfile.ReaderMap[handleId].readBuf)) {
+			//if cur_offset == int64(cfile.chunks[index].ChunkSize) {
 			cur_offset = 0
-			cfile.readBuf = []byte{}
+			cfile.ReaderMap[handleId].readBuf = []byte{}
 		}
 		freesize = freesize - each_read_len
 		length += each_read_len
@@ -547,7 +673,7 @@ func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 	return length
 }
 
-func (cfile *CFile) Seek(offset int64, whence int32) int64 {
+/*func (cfile *CFile) Seek(offset int64, whence int32) int64 {
 	if whence <= 1 {
 		cfile.lastoffset = offset
 	} else if whence == 2 {
@@ -558,14 +684,17 @@ func (cfile *CFile) Seek(offset int64, whence int32) int64 {
 	}
 	return 0
 }
+*/
 
 func (cfile *CFile) Write(buf []byte, len int32) int32 {
 	cfile.WMutex.Lock()
 	defer cfile.WMutex.Unlock()
 	var w int32
 	w = 0
+
 	for w < len {
 		if (cfile.FileSize % chunkSize) == 0 {
+			fmt.Println("need a new chunk...")
 			var ret int32
 			ret, cfile.wBuffer.chunkInfo = cfile.cfs.AllocateChunk(cfile.Path)
 			if ret != 0 {
@@ -623,7 +752,10 @@ func (cfile *CFile) close2Channel() int32 {
 		cfile.wChannel <- &wBuffer // push to channel
 		cfile.wg.Add(1)
 	}
+	return 0
+}
 
+func (cfile *CFile) DestroyChannel() {
 	var wEndBuffer wBuffer
 	wEndBuffer.buffer = nil
 	wEndBuffer.freeSize = 0
@@ -631,8 +763,6 @@ func (cfile *CFile) close2Channel() int32 {
 
 	cfile.wChannel <- &wEndBuffer // send the end flag to channel
 	cfile.wg.Add(1)
-
-	return 0
 }
 
 func (cfile *CFile) flushChannel() {
@@ -704,11 +834,25 @@ func (cfile *CFile) flushChannel() {
 			VolID:     cfile.cfs.VolID,
 			ChunkInfo: v.chunkInfo,
 		}
+
 		pSyncChunkAck, _ := mc.SyncChunk(context.Background(), pSyncChunkReq)
 		if pSyncChunkAck.Ret != 0 {
 			cfile.cfs.Status = 1
 			return
 		}
+
+		chunkNum := len(cfile.chunks)
+
+		if chunkNum == 0 {
+			cfile.chunks = append(cfile.chunks, v.chunkInfo)
+		} else {
+			if cfile.chunks[chunkNum-1].ChunkID == v.chunkInfo.ChunkID {
+				cfile.chunks[chunkNum-1].ChunkSize = v.chunkInfo.ChunkSize
+			} else {
+				cfile.chunks = append(cfile.chunks, v.chunkInfo)
+			}
+		}
+
 		cfile.wg.Add(-1)
 	}
 }
@@ -721,15 +865,14 @@ func (cfile *CFile) Sync() int32 {
 	return 0
 }
 
-func closeP(cfile *CFile) {
-	cfile = nil
-}
-func (cfile *CFile) Close() int32 {
-	if cfile.OpenFlag != O_RDONLY && cfile.OpenFlag != O_MVOPT && cfile.OpenFlag != O_TAROPT && cfile.OpenFlag != O_SCPOPT {
+//func closeP(cfile *CFile) {
+//cfile = nil
+//}
+func (cfile *CFile) Close(flags int) int32 {
+	if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
 		cfile.close2Channel()
 		cfile.wg.Wait()
 	}
-	defer closeP(cfile)
 	return 0
 }
 

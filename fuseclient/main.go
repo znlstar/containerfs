@@ -5,6 +5,7 @@ import (
 	"log"
 	"math"
 	"os"
+	//	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -13,10 +14,12 @@ import (
 	"bazil.org/fuse/fs"
 	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
+	//"math/rand"
 
 	cfs "github.com/ipdcode/containerfs/fs"
 	"github.com/ipdcode/containerfs/logger"
 	mp "github.com/ipdcode/containerfs/proto/mp"
+	//	"github.com/ipdcode/containerfs/utils"
 )
 
 var uuid string
@@ -37,17 +40,18 @@ type refcount struct {
 }
 
 type Dir struct {
-	mu     sync.RWMutex
+	mu     sync.Mutex
 	fs     *FS
 	name   string // root to this dir
 	inode  *mp.InodeInfo
 	active map[string]*refcount // for fuse rename update f.name immediately , otherwise f.name will be old name after rename in about 30s
 }
 type File struct {
-	mu      sync.RWMutex
+	mu      sync.Mutex
 	parent  *Dir
 	name    string
 	writers uint
+	handles uint32
 	cfile   *cfs.CFile
 	inode   *mp.InodeInfo
 }
@@ -88,7 +92,7 @@ func mount(uuid, mountPoint string) error {
 	c, err := fuse.Mount(
 		mountPoint,
 		fuse.MaxReadahead(128*1024),
-		//fuse.AsyncRead(),
+		fuse.AsyncRead(),
 		fuse.WritebackCache(),
 		fuse.FSName("ContainerFS-"+uuid),
 		fuse.LocalVolume(),
@@ -294,16 +298,24 @@ func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	ret, cfile := d.fs.cfs.OpenFile(fullPath, int(req.Flags))
+	ret, cfile := d.fs.cfs.CreateFile(fullPath, int(req.Flags))
 	if ret != 0 {
-		return nil, nil, fuse.Errno(syscall.EIO)
+		if ret == 17 {
+			return nil, nil, fuse.Errno(syscall.EEXIST)
+
+		} else {
+			return nil, nil, fuse.Errno(syscall.EIO)
+
+		}
 	}
 	ret, inode := d.fs.cfs.Stat(fullPath)
 	child := &File{
-		inode:  inode,
-		name:   req.Name,
-		parent: d,
-		cfile:  cfile,
+		inode:   inode,
+		name:    req.Name,
+		parent:  d,
+		cfile:   cfile,
+		handles: 1,
+		writers: 1,
 	}
 
 	d.active[req.Name] = &refcount{node: child}
@@ -481,10 +493,6 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 
 	logger.Debug("OpenFlag:%v", req.Flags)
 
-	// we do not support trunc
-	if int(req.Flags)&cfs.O_TRUNC != 0 {
-		return nil, fuse.Errno(syscall.EPERM)
-	}
 	if f.parent.name == "/" {
 		fullPath = f.parent.name + f.name
 	} else {
@@ -492,11 +500,31 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	ret, f.cfile = f.parent.fs.cfs.OpenFile(fullPath, int(req.Flags))
-	if ret != 0 {
-		return nil, fuse.Errno(syscall.EIO)
+
+	if f.writers > 0 {
+		if int(req.Flags)&cfs.O_WRONLY != 0 || int(req.Flags)&cfs.O_RDWR != 0 {
+			return nil, fuse.Errno(syscall.EPERM)
+		}
 	}
-	f.writers++
+
+	if f.cfile == nil && f.handles == 0 {
+		ret, f.cfile = f.parent.fs.cfs.OpenFile(fullPath, int(req.Flags))
+		if ret != 0 {
+			return nil, fuse.Errno(syscall.EIO)
+		}
+	} else {
+		f.parent.fs.cfs.UpdateOpenFile(f.cfile, int(req.Flags))
+	}
+
+	tmp := f.handles + 1
+	f.handles = tmp
+
+	if int(req.Flags)&cfs.O_WRONLY != 0 || int(req.Flags)&cfs.O_RDWR != 0 {
+		tmp := f.writers + 1
+		f.writers = tmp
+	}
+
+	resp.Flags = fuse.OpenDirectIO
 	return f, nil
 }
 
@@ -504,27 +532,45 @@ var _ = fs.HandleReleaser(&File{})
 
 func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	logger.Debug("Release...")
-	if req.Flags.IsReadOnly() {
-		// we don't need to track read-only handles
-		return nil
-	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.writers--
-	f.cfile.Close()
+	f.cfile.Close(int(req.Flags))
+	f.handles--
+
+	if int(req.Flags)&cfs.O_WRONLY != 0 || int(req.Flags)&cfs.O_RDWR != 0 {
+		f.writers--
+	}
+
+	if f.handles == 0 {
+		f.cfile.DestroyChannel()
+		f.cfile = nil
+	}
+
 	return nil
 }
 
 var _ = fs.HandleReader(&File{})
 
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-	logger.Debug("Read....")
-	length := f.cfile.Read(&resp.Data, req.Offset, int64(req.Size))
-	//fmt.Printf("Read#### reqoffset:%v -- reqsize:%v -- length:%v --- databuflen:%v ==\n",req.Offset,req.Size, length, len(resp.Data))
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.cfile.ReaderMap[req.Handle]; !ok {
+		rdinfo := cfs.ReaderInfo{}
+		//rdinfo.Ch = make(chan *bytes.Buffer)
+		//rdinfo.LastOffset = int64(0)
+		f.cfile.ReaderMap[req.Handle] = &rdinfo
+	}
+
+	length := f.cfile.Read(req.Handle, &resp.Data, req.Offset, int64(req.Size))
+	//fmt.Printf("== The handle:%v reqoffset:%v --- reqsize:%v -- retsize:%v -- buflen:%v -- bufaddr:%p -- f.cfile.ReaderMap:%v ==\n", req.Handle, req.Offset, req.Size, length, len(resp.Data), resp.Data, f.cfile.ReaderMap)
 	if length != int64(req.Size) {
-		//fmt.Printf("== Read reqsize:%v, but return datasize:%v ==\n",req.Size,length) 
+		fmt.Printf("== Read reqsize:%v, but return datasize:%v ==\n", req.Size, length)
+	}
+	if length < 0 {
+		return fuse.Errno(syscall.EIO)
 	}
 	return nil
 }
@@ -532,7 +578,6 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 var _ = fs.HandleWriter(&File{})
 
 func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-	logger.Debug("Write...")
 
 	f.mu.Lock()
 	defer f.mu.Unlock()

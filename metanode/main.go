@@ -322,7 +322,7 @@ func init() {
 	fmt.Println("hades url:")
 	fmt.Println(url)
 	MetaNodeServerAddr.hadesurl = url
-	ns.VolMgrAddress = c.String("volmgr::volmgr.host")
+	ns.VolMgrAddress = c.String("volmgr::host")
 
 	mRaft.RaftInfo.Me = c.String("raft::me")
 	s := strings.Split(mRaft.RaftInfo.Me, ":")

@@ -222,7 +222,7 @@ func get(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsize int
 	}
 
 	ret, cfile := cfs.OpenFile(cfsFile, fs.O_RDONLY)
-	defer cfile.Close()
+	defer cfile.Close(int(fs.O_RDONLY))
 
 	if readsize == 0 {
 		readsize = cfile.FileSize
@@ -243,9 +243,9 @@ func get(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsize int
 
 	for {
 		if freesize-int64(len(buf)) < 0 {
-			r = cfile.Read(&buf, offset, freesize)
+			r = cfile.Read(1000001, &buf, offset, freesize)
 		} else {
-			r = cfile.Read(&buf, offset, int64(len(buf)))
+			r = cfile.Read(1000001, &buf, offset, int64(len(buf)))
 		}
 		freesize -= r
 		offset += r
@@ -279,7 +279,7 @@ func put(cfs *fs.CFS, localFile string, cfsFile string) int32 {
 		return ret
 	}
 	fs.ReadLocalAndWriteCFS(localFile, 1024*10, fs.ProcessLocalBuffer, cfile)
-	cfile.Close()
+	cfile.Close(int(fs.O_WRONLY))
 
 	return 0
 }
