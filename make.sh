@@ -26,22 +26,22 @@ cd -
 
 cd ./fuseclient
 go build -o cfs-fuse-client main.go
-cp cfs-fuse-client ../output
+cp cfs-fuse-client mountpoint.ini ../output
 cd -
 
 cd ./metanode
 go build -o cfs-metanode main.go
-cp cfs-metanode ../output
+cp cfs-metanode metanode.ini ../output
 cd -
 
 cd ./datanode
 go build -o cfs-datanode main.go
-cp cfs-datanode ../output
+cp cfs-datanode datanode.ini ../output
 cd -
 
 cd ./volmgr
 go build -o cfs-volmgr main.go
-cp cfs-volmgr ../output
+cp cfs-volmgr volmgr.ini ../output
 cd -
 
 echo "------------- build end -------------"
