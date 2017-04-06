@@ -41,7 +41,6 @@ type MetaNodeServer struct {
 rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
 */
 func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameSpaceReq) (*mp.CreateNameSpaceAck, error) {
-	fmt.Println("CreateNameSpace...")
 	ack := mp.CreateNameSpaceAck{}
 	ns.Wg.Add(1)
 	ack.Ret = ns.CreateNameSpace(in.VolID, false)
@@ -280,7 +279,6 @@ func loadMetaData() {
 	if ret != 0 {
 		logger.Error("loadMetaData,GetVolList failed,ret:%v", ret)
 	}
-	fmt.Println(vols)
 	for _, v := range vols {
 		ns.Wg.Add(1)
 		go ns.CreateNameSpace(v, true)
@@ -294,7 +292,6 @@ func loadNewMetaData() {
 	if ret != 0 {
 		logger.Error("loadMetaData,GetVolList failed,ret:%v", ret)
 	}
-	fmt.Println(vols)
 	for _, v := range vols {
 		ns.Wg.Add(1)
 		go ns.LoadNewVolMeta(v)
@@ -319,8 +316,6 @@ func init() {
 	ns.Domain = MetaNodeServerAddr.domain
 	MetaNodeServerAddr.log = c.String("log")
 	url := "http://" + c.String("hades::host") + "/hades/api/" + c.String("hades::domain") + "?token=" + c.String("hades::token")
-	fmt.Println("hades url:")
-	fmt.Println(url)
 	MetaNodeServerAddr.hadesurl = url
 	ns.VolMgrAddress = c.String("volmgr::host")
 
@@ -342,8 +337,7 @@ func init() {
 		logger.SetLevel(logger.ERROR)
 	}
 
-	endPoints := strings.Split(c.String("etcd::etcd.endpoints"), ",")
-	fmt.Println(endPoints)
+	endPoints := strings.Split(c.String("etcd::endpoints"), ",")
 	err = ns.EtcdClient.InitEtcd(endPoints)
 	if err != nil {
 		fmt.Println("connect etcd failed")
@@ -390,12 +384,9 @@ func main() {
 	go func() {
 		for _ = range ticker2.C {
 			if mRaft.RaftInfo.R.IsLeader() {
-				fmt.Println("I'm leader...")
+				logger.Debug("I'm leader...")
 			} else {
-				fmt.Println("I'm follower...")
-				//fmt.Println("I'm follower, I will watch etcd again ...")
-				// time to load new meta
-				//loadNewMetaData()
+				logger.Debug("I'm follower...")
 			}
 		}
 	}()
