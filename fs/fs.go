@@ -12,10 +12,12 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"io"
+	"math/rand"
 	"os"
 	"strconv"
 	"sync"
 	"syscall"
+	"time"
 )
 
 var VolMgrAddr string
@@ -293,29 +295,51 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 				return ret, nil
 			}
 
-			for i := range chunkInfos {
-				tmpFileSize += int64(chunkInfos[i].ChunkSize)
-			}
-			lastChunk := chunkInfos[len(chunkInfos)-1]
+			if len(chunkInfos) > 0 {
 
-			tmpBuffer := wBuffer{
-				buffer:    new(bytes.Buffer),
-				freeSize:  bufferSize - (lastChunk.ChunkSize % bufferSize),
-				chunkInfo: lastChunk,
+				for i := range chunkInfos {
+					tmpFileSize += int64(chunkInfos[i].ChunkSize)
+				}
+				lastChunk := chunkInfos[len(chunkInfos)-1]
+
+				tmpBuffer := wBuffer{
+					buffer:    new(bytes.Buffer),
+					freeSize:  bufferSize - (lastChunk.ChunkSize % bufferSize),
+					chunkInfo: lastChunk,
+				}
+
+				wChannel := make(chan *wBuffer, 128)
+				cfile = CFile{
+					Path:      path,
+					OpenFlag:  flags,
+					cfs:       cfs,
+					Writer:    writer,
+					FileSize:  tmpFileSize,
+					wChannel:  wChannel,
+					wBuffer:   tmpBuffer,
+					chunks:    chunkInfos,
+					ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
+				}
+			} else {
+
+				tmpBuffer := wBuffer{
+					buffer:   new(bytes.Buffer),
+					freeSize: bufferSize,
+				}
+				wChannel := make(chan *wBuffer, 128)
+				cfile = CFile{
+					Path:      path,
+					OpenFlag:  flags,
+					cfs:       cfs,
+					Writer:    writer,
+					FileSize:  0,
+					wChannel:  wChannel,
+					wBuffer:   tmpBuffer,
+					ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
+				}
+
 			}
 
-			wChannel := make(chan *wBuffer, 128)
-			cfile = CFile{
-				Path:      path,
-				OpenFlag:  flags,
-				cfs:       cfs,
-				Writer:    writer,
-				FileSize:  tmpFileSize,
-				wChannel:  wChannel,
-				wBuffer:   tmpBuffer,
-				chunks:    chunkInfos,
-				ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
-			}
 			go cfile.flushChannel()
 		} else {
 
@@ -386,14 +410,16 @@ func (cfs *CFS) UpdateOpenFile(cfile *CFile, flags int) int32 {
 			if ret, chunkInfos = cfs.GetFileChunks(cfile.Path); ret != 0 {
 				return ret
 			}
-			lastChunk := chunkInfos[len(chunkInfos)-1]
-			tmpBuffer := wBuffer{
-				buffer:    new(bytes.Buffer),
-				freeSize:  bufferSize - (lastChunk.ChunkSize % bufferSize),
-				chunkInfo: lastChunk,
-			}
-			cfile.wBuffer = tmpBuffer
 
+			if len(chunkInfos) > 0 {
+				lastChunk := chunkInfos[len(chunkInfos)-1]
+				tmpBuffer := wBuffer{
+					buffer:    new(bytes.Buffer),
+					freeSize:  bufferSize - (lastChunk.ChunkSize % bufferSize),
+					chunkInfo: lastChunk,
+				}
+				cfile.wBuffer = tmpBuffer
+			}
 			//go cfile.flushChannel()
 
 		} else {
@@ -570,39 +596,62 @@ type CFile struct {
 }
 
 func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64, size int64) {
-	for i, _ := range cfile.chunks[chunkidx].BlockGroup.BlockInfos {
-		conn, err := grpc.Dial(utils.Inet_ntoa(cfile.chunks[chunkidx].BlockGroup.BlockInfos[i].DataNodeIP).String()+":"+strconv.Itoa(int(cfile.chunks[chunkidx].BlockGroup.BlockInfos[i].DataNodePort)), grpc.WithInsecure())
+	var idx int
+	var conn *grpc.ClientConn
+	var err error
+	for i := 0; i < len(cfile.chunks[chunkidx].BlockGroup.BlockInfos); i++ {
+
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+		idx = r.Intn(len(cfile.chunks[chunkidx].BlockGroup.BlockInfos))
+
+		conn, err = grpc.Dial(utils.Inet_ntoa(cfile.chunks[chunkidx].BlockGroup.BlockInfos[idx].DataNodeIP).String()+":"+strconv.Itoa(int(cfile.chunks[chunkidx].BlockGroup.BlockInfos[idx].DataNodePort)), grpc.WithInsecure())
 		if err != nil {
 			logger.Error("streamread failed,Dial to datanode fail :%v\n", err)
 			continue
+		} else {
+			break
 		}
+	}
 
-		dc := dp.NewDataNodeClient(conn)
-		streamreadChunkReq := &dp.StreamReadChunkReq{
-			ChunkID:  cfile.chunks[chunkidx].ChunkID,
-			BlockID:  cfile.chunks[chunkidx].BlockGroup.BlockInfos[i].BlockID,
-			Offset:   offset,
-			Readsize: size,
-		}
-		stream, err := dc.StreamReadChunk(context.Background(), streamreadChunkReq)
-		if err != nil {
-			close(ch)
-		}
-		buffer := new(bytes.Buffer)
-		for {
-			ack, err := stream.Recv()
+	dc := dp.NewDataNodeClient(conn)
+	streamreadChunkReq := &dp.StreamReadChunkReq{
+		ChunkID:  cfile.chunks[chunkidx].ChunkID,
+		BlockID:  cfile.chunks[chunkidx].BlockGroup.BlockInfos[idx].BlockID,
+		Offset:   offset,
+		Readsize: size,
+	}
+	stream, err := dc.StreamReadChunk(context.Background(), streamreadChunkReq)
+	if err != nil {
+		close(ch)
+	}
+	buffer := new(bytes.Buffer)
+	for {
+		ack, err := stream.Recv()
+		/*
 			if err == io.EOF {
 				conn.Close()
 				break
 			}
-			if err != nil {
-				close(ch)
-			}
-			buffer.Write(ack.Databuf)
+		*/
+		if err != nil {
+			logger.Error("=== Recv err:%v ===", err)
+			break
 		}
-		ch <- buffer
-		conn.Close()
+		if ack != nil {
+			if len(ack.Databuf) == 0 {
+				logger.Error("1== This time Recv from datanode size is 0")
+				continue
+			} else {
+				buffer.Write(ack.Databuf)
+			}
+		} else {
+			logger.Error("2== This time Recv from datanode size is 0")
+			continue
+		}
+
 	}
+	ch <- buffer
+	conn.Close()
 }
 
 func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, readsize int64) int64 {
@@ -647,11 +696,11 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 	freesize := readsize
 	if end_chunk_num < begin_chunk_num {
 		logger.Error("This Read data from beginchunk:%v lager than endchunk:%v\n", begin_chunk_num, end_chunk_num)
-		return -1
+		return 0
 	}
 
 	if begin_chunk_num > len(cfile.chunks) || end_chunk_num+1 > len(cfile.chunks) || begin_chunk_num > cap(cfile.chunks) || end_chunk_num+1 > cap(cfile.chunks) {
-		return -1
+		return 0
 	}
 
 	for i, _ := range cfile.chunks[begin_chunk_num : end_chunk_num+1] {
@@ -666,6 +715,10 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 			cfile.ReaderMap[handleId].Ch = make(chan *bytes.Buffer)
 			go cfile.streamread(index, cfile.ReaderMap[handleId].Ch, 0, int64(cfile.chunks[index].ChunkSize))
 			buffer = <-cfile.ReaderMap[handleId].Ch
+			if buffer.Len() == 0 {
+				logger.Error("Recv chunk:%v from datanode size:%v , but retsize is 0", index, cfile.chunks[index].ChunkSize)
+				return 0
+			}
 			cfile.ReaderMap[handleId].readBuf = buffer.Next(buffer.Len())
 			buffer.Reset()
 			buffer = nil
@@ -681,11 +734,20 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 		buflen := int64(len(cfile.ReaderMap[handleId].readBuf))
 		bufcap := int64(cap(cfile.ReaderMap[handleId].readBuf))
 
-		if cur_offset > buflen || cur_offset > bufcap || cur_offset+each_read_len > buflen || cur_offset+each_read_len > bufcap {
+		//if cur_offset > buflen || cur_offset > bufcap || cur_offset+each_read_len > bufcap {
+		if cur_offset > buflen || cur_offset > bufcap {
 			logger.Error("== Read chunk:%v from datanode (offset:%v -- needreadsize:%v) lager than exist (buflen:%v -- bufcap:%v)\n", index, cur_offset, each_read_len, buflen, bufcap)
-			return -1
+			return 0
 		}
-		*data = append(*data, cfile.ReaderMap[handleId].readBuf[cur_offset:cur_offset+each_read_len]...)
+
+		if cur_offset+each_read_len > buflen {
+			//logger.Error("== Read chunk:%v from datanode (offset:%v -- needreadsize:%v) lager than exist (buflen:%v -- chunksize:%v)\n", index, cur_offset, each_read_len, buflen, cfile.chunks[index].ChunkSize)
+			each_read_len = buflen - cur_offset
+			*data = append(*data, cfile.ReaderMap[handleId].readBuf[cur_offset:cur_offset+each_read_len]...)
+		} else {
+			*data = append(*data, cfile.ReaderMap[handleId].readBuf[cur_offset:cur_offset+each_read_len]...)
+		}
+
 		cur_offset += each_read_len
 		if cur_offset == int64(len(cfile.ReaderMap[handleId].readBuf)) {
 			//if cur_offset == int64(cfile.chunks[index].ChunkSize) {
@@ -762,9 +824,10 @@ func (cfile *CFile) push2Channel() int32 {
 	if cfile.wBuffer.chunkInfo == nil {
 		return 0
 	}
-	wBuffer := cfile.wBuffer   // record cur buffer
-	cfile.wChannel <- &wBuffer // push to channel
+	wBuffer := cfile.wBuffer // record cur buffer
 	cfile.wg.Add(1)
+	cfile.wChannel <- &wBuffer // push to channel
+
 	return 0
 }
 
@@ -773,9 +836,9 @@ func (cfile *CFile) close2Channel() int32 {
 	   1. avoid repeat push for integer file ETC. 64MB , the last push has already done in Write func
 	*/
 	if cfile.wBuffer.freeSize != 0 && cfile.wBuffer.chunkInfo != nil {
-		wBuffer := cfile.wBuffer   // record cur buffer
-		cfile.wChannel <- &wBuffer // push to channel
+		wBuffer := cfile.wBuffer // record cur buffer
 		cfile.wg.Add(1)
+		cfile.wChannel <- &wBuffer // push to channel
 	}
 	return 0
 }
@@ -785,9 +848,7 @@ func (cfile *CFile) DestroyChannel() {
 	wEndBuffer.buffer = nil
 	wEndBuffer.freeSize = 0
 	wEndBuffer.chunkInfo = nil
-
 	cfile.wChannel <- &wEndBuffer // send the end flag to channel
-	cfile.wg.Add(1)
 }
 
 func (cfile *CFile) flushChannel() {
@@ -815,7 +876,6 @@ func (cfile *CFile) flushChannel() {
 			if connD[2] != nil {
 				connD[2].Close()
 			}
-			cfile.wg.Add(-1)
 			break
 		}
 

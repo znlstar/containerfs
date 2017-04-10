@@ -71,6 +71,12 @@ func registryToVolMgr() {
 	datanodeRegistryReq.Capacity = capacity
 	datanodeRegistryReq.MountPoint = DataNodeServerAddr.Path
 
+	_, err = os.Stat(datanodeRegistryReq.MountPoint)
+	if err != nil {
+		logger.Error("data node statup failed : DataNodeServerAddr.Path not exist !")
+		os.Exit(1)
+	}
+
 	pDatanodeRegistryAck, _ := c.DatanodeRegistry(context.Background(), &datanodeRegistryReq)
 	if pDatanodeRegistryAck.Ret == 0 {
 		logger.Debug("registry success!")
