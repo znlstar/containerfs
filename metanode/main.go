@@ -23,12 +23,13 @@ import (
 )
 
 type addr struct {
-	host     string
-	port     int
-	peer     []string
-	domain   string
-	log      string
-	hadesurl string
+	host       string
+	port       int
+	peer       []string
+	domain     string
+	log        string
+	hadesurl   string
+	hadestoken string
 }
 
 var MetaNodeServerAddr addr
@@ -312,11 +313,14 @@ func init() {
 	port, _ := c.Int("port")
 	MetaNodeServerAddr.port = port
 	MetaNodeServerAddr.peer = c.Strings("peer")
-	MetaNodeServerAddr.domain = c.String("hades::domain") + ".hades.local"
+	MetaNodeServerAddr.domain = c.String("hades::domain") + ".hcyf.n.jd.local"
 	ns.Domain = MetaNodeServerAddr.domain
 	MetaNodeServerAddr.log = c.String("log")
-	url := "http://" + c.String("hades::host") + "/hades/api/" + c.String("hades::domain") + "?token=" + c.String("hades::token")
+	//url := "http://" + c.String("hades::host") + "/hades/api/" + c.String("hades::domain") + "?token=" + c.String("hades::token")
+	url := "http://" + c.String("hades::host") + "/hades/api/" + c.String("hades::domain")
+
 	MetaNodeServerAddr.hadesurl = url
+	MetaNodeServerAddr.hadestoken = c.String("hades::token")
 	ns.VolMgrAddress = c.String("volmgr::host")
 
 	mRaft.RaftInfo.Me = c.String("raft::me")
@@ -363,15 +367,15 @@ func main() {
 			if mRaft.RaftInfo.R.IsLeader() {
 				count += 1
 				if count == 1 {
-					utils.DelHades(MetaNodeServerAddr.hadesurl)
-					utils.PostHades(MetaNodeServerAddr.hadesurl, MetaNodeServerAddr.host, MetaNodeServerAddr.port)
+					utils.DelHades(MetaNodeServerAddr.hadesurl, MetaNodeServerAddr.hadestoken)
+					utils.PostHades(MetaNodeServerAddr.hadesurl, MetaNodeServerAddr.host, MetaNodeServerAddr.port, MetaNodeServerAddr.hadestoken)
 				}
 				if myRole != mRaft.RaftInfo.R.IsLeader() {
 					// role change , load new meta immediately
 					//loadNewMetaData()
-					utils.DelHades(MetaNodeServerAddr.hadesurl)
+					utils.DelHades(MetaNodeServerAddr.hadesurl, MetaNodeServerAddr.hadestoken)
 					loadMetaData()
-					utils.PostHades(MetaNodeServerAddr.hadesurl, MetaNodeServerAddr.host, MetaNodeServerAddr.port)
+					utils.PostHades(MetaNodeServerAddr.hadesurl, MetaNodeServerAddr.host, MetaNodeServerAddr.port, MetaNodeServerAddr.hadestoken)
 				}
 				myRole = true
 			} else {
