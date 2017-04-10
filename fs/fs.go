@@ -4,7 +4,6 @@ import (
 	"bazil.org/fuse"
 	"bufio"
 	"bytes"
-	"fmt"
 	"github.com/ipdcode/containerfs/logger"
 	dp "github.com/ipdcode/containerfs/proto/dp"
 	mp "github.com/ipdcode/containerfs/proto/mp"
@@ -38,7 +37,7 @@ const (
 
 const (
 	chunkSize  = 64 * 1024 * 1024
-	bufferSize = 128 * 1024
+	bufferSize = 256 * 1024
 )
 
 type CFS struct {
@@ -61,13 +60,14 @@ func CreateVol(name string, capacity string) int32 {
 		SpaceQuota: int32(spaceQuota),
 		MetaDomain: MetaNodeAddr,
 	}
-	pCreateVolAck, _ := vc.CreateVol(context.Background(), pCreateVolReq)
+	pCreateVolAck, err2 := vc.CreateVol(context.Background(), pCreateVolReq)
+	if err2 != nil {
+		return -1
+	}
 
 	// send to metadata to registry a new map
-	fmt.Println("-------")
-	fmt.Println(MetaNodeAddr)
-	conn2, err2 := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
-	if err2 != nil {
+	conn2, err3 := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
+	if err3 != nil {
 		logger.Error("CreateVol failed,Dial to metanode fail :%v\n", err2)
 		return -1
 	}
@@ -76,7 +76,10 @@ func CreateVol(name string, capacity string) int32 {
 	pmCreateNameSpaceReq := &mp.CreateNameSpaceReq{
 		VolID: pCreateVolAck.UUID,
 	}
-	pmCreateNameSpaceAck, _ := mc.CreateNameSpace(context.Background(), pmCreateNameSpaceReq)
+	pmCreateNameSpaceAck, err4 := mc.CreateNameSpace(context.Background(), pmCreateNameSpaceReq)
+	if err4 != nil {
+		return -1
+	}
 	if pmCreateNameSpaceAck.Ret != 0 {
 		logger.Error("CreateNameSpace failed :%v\n", pmCreateNameSpaceAck.Ret)
 		return -1
@@ -97,7 +100,10 @@ func GetVolInfo(name string) (int32, *vp.GetVolInfoAck) {
 	pGetVolInfoReq := &vp.GetVolInfoReq{
 		UUID: name,
 	}
-	pGetVolInfoAck, _ := vc.GetVolInfo(context.Background(), pGetVolInfoReq)
+	pGetVolInfoAck, err2 := vc.GetVolInfo(context.Background(), pGetVolInfoReq)
+	if err2 != nil {
+		return 1, nil
+	}
 	if pGetVolInfoAck.Ret != 0 {
 		return 1, nil
 	}
@@ -116,7 +122,10 @@ func GetFSInfo(name string) (int32, *mp.GetFSInfoAck) {
 	pGetFSInfoReq := &mp.GetFSInfoReq{
 		VolID: name,
 	}
-	pGetFSInfoAck, _ := mc.GetFSInfo(context.Background(), pGetFSInfoReq)
+	pGetFSInfoAck, err2 := mc.GetFSInfo(context.Background(), pGetFSInfoReq)
+	if err2 != nil {
+		return 1, nil
+	}
 	if pGetFSInfoAck.Ret != 0 {
 		return 1, nil
 	}
@@ -129,7 +138,6 @@ func OpenFileSystem(UUID string) *CFS {
 }
 
 func (cfs *CFS) CreateDir(path string) int32 {
-	//fmt.Println("CreateDir...")
 	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
 		logger.Error("CreateDir failed,Dial to metanode fail :%v\n", err)
@@ -141,7 +149,10 @@ func (cfs *CFS) CreateDir(path string) int32 {
 		FullPathName: path,
 		VolID:        cfs.VolID,
 	}
-	pCreateDirAck, _ := mc.CreateDir(context.Background(), pCreateDirReq)
+	pCreateDirAck, err2 := mc.CreateDir(context.Background(), pCreateDirReq)
+	if err2 != nil {
+		return -1
+	}
 
 	return pCreateDirAck.Ret
 
@@ -158,7 +169,10 @@ func (cfs *CFS) Stat(path string) (int32, *mp.InodeInfo) {
 		FullPathName: path,
 		VolID:        cfs.VolID,
 	}
-	pStatAck, _ := mc.Stat(context.Background(), pStatReq)
+	pStatAck, err2 := mc.Stat(context.Background(), pStatReq)
+	if err2 != nil {
+		return -1, nil
+	}
 
 	return pStatAck.Ret, pStatAck.InodeInfo
 
@@ -175,7 +189,10 @@ func (cfs *CFS) List(path string) (int32, []*mp.InodeInfo) {
 		FullPathName: path,
 		VolID:        cfs.VolID,
 	}
-	pListAck, _ := mc.List(context.Background(), pListReq)
+	pListAck, err2 := mc.List(context.Background(), pListReq)
+	if err2 != nil {
+		return -1, nil
+	}
 
 	return pListAck.Ret, pListAck.InodeInfos
 
@@ -192,8 +209,10 @@ func (cfs *CFS) DeleteDir(path string) int32 {
 		FullPathName: path,
 		VolID:        cfs.VolID,
 	}
-	pDeleteDirAck, _ := mc.DeleteDir(context.Background(), pDeleteDirReq)
-
+	pDeleteDirAck, err2 := mc.DeleteDir(context.Background(), pDeleteDirReq)
+	if err2 != nil {
+		return -1
+	}
 	return pDeleteDirAck.Ret
 }
 
@@ -210,7 +229,10 @@ func (cfs *CFS) Rename(path1 string, path2 string) int32 {
 		FullPathName2: path2,
 		VolID:         cfs.VolID,
 	}
-	pRenameAck, _ := mc.Rename(context.Background(), pRenameReq)
+	pRenameAck, err2 := mc.Rename(context.Background(), pRenameReq)
+	if err2 != nil {
+		return -1
+	}
 
 	return pRenameAck.Ret
 }
@@ -281,9 +303,6 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 				freeSize:  bufferSize - (lastChunk.ChunkSize % bufferSize),
 				chunkInfo: lastChunk,
 			}
-
-			fmt.Println("freeSize:")
-			fmt.Println(tmpBuffer.freeSize)
 
 			wChannel := make(chan *wBuffer, 128)
 			cfile = CFile{
@@ -357,10 +376,6 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 }
 
 func (cfs *CFS) UpdateOpenFile(cfile *CFile, flags int) int32 {
-
-	fmt.Println("UpdateOpenFile ...")
-	fmt.Println("flags:")
-	fmt.Println(flags)
 
 	if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
 
@@ -486,7 +501,10 @@ func (cfs *CFS) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 		FileName: path,
 		VolID:    cfs.VolID,
 	}
-	pAllocateChunkAck, _ := mc.AllocateChunk(context.Background(), pAllocateChunkReq)
+	pAllocateChunkAck, err2 := mc.AllocateChunk(context.Background(), pAllocateChunkReq)
+	if err2 != nil {
+		return -1, nil
+	}
 	if pAllocateChunkAck.Ret != 0 {
 		return pAllocateChunkAck.Ret, nil
 	}
@@ -506,7 +524,10 @@ func (cfs *CFS) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
 		FileName: path,
 		VolID:    cfs.VolID,
 	}
-	pGetFileChunksAck, _ := mc.GetFileChunks(context.Background(), pGetFileChunksReq)
+	pGetFileChunksAck, err2 := mc.GetFileChunks(context.Background(), pGetFileChunksReq)
+	if err2 != nil {
+		return -1, nil
+	}
 	if pGetFileChunksAck.Ret != 0 {
 		return pGetFileChunksAck.Ret, nil
 	}
@@ -589,11 +610,7 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 	if cfile.chunks == nil || len(cfile.chunks) == 0 {
 		return -1
 	}
-	//fmt.Printf("======offset=%v,readsize=%v \n", offset, readsize)
 
-	//var buffer *bytes.Buffer
-
-	//cfile.ReaderMap[handleId].lastoffset = offset
 	if offset+readsize > cfile.FileSize {
 		readsize = cfile.FileSize - offset
 	}
@@ -604,7 +621,7 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 	var begin_chunk_num int = 0
 	var end_chunk_num int = 0
 	cur_offset := offset
-	for i := range cfile.chunks {
+	for i, _ := range cfile.chunks {
 		free_offset = cur_offset - int64(cfile.chunks[i].ChunkSize)
 		if free_offset <= 0 {
 			begin_chunk_num = i
@@ -615,10 +632,8 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 	}
 
 	cur_size := offset + readsize
-	//fmt.Printf("======cur_size:%v,offset=%v,readsize=%v \n", cur_size, offset, readsize)
 
-	for i := range cfile.chunks {
-		//fmt.Printf("======chunksize:%v \n", cfile.chunks[i].ChunkSize)
+	for i, _ := range cfile.chunks {
 		free_size = cur_size - int64(cfile.chunks[i].ChunkSize)
 		if free_size <= 0 {
 			end_chunk_num = i
@@ -630,8 +645,16 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 
 	var each_read_len int64
 	freesize := readsize
+	if end_chunk_num < begin_chunk_num {
+		logger.Error("This Read data from beginchunk:%v lager than endchunk:%v\n", begin_chunk_num, end_chunk_num)
+		return -1
+	}
 
-	for i := range cfile.chunks[begin_chunk_num : end_chunk_num+1] {
+	if begin_chunk_num > len(cfile.chunks) || end_chunk_num+1 > len(cfile.chunks) || begin_chunk_num > cap(cfile.chunks) || end_chunk_num+1 > cap(cfile.chunks) {
+		return -1
+	}
+
+	for i, _ := range cfile.chunks[begin_chunk_num : end_chunk_num+1] {
 		index := i + begin_chunk_num
 		if cur_offset+freesize < int64(cfile.chunks[index].ChunkSize) {
 			each_read_len = freesize
@@ -639,12 +662,7 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 			each_read_len = int64(cfile.chunks[index].ChunkSize) - cur_offset
 		}
 		if len(cfile.ReaderMap[handleId].readBuf) == 0 {
-			//if buffer == nil {
 			buffer := new(bytes.Buffer)
-			//}
-			//var ch chan *bytes.Buffer
-			//ch = make(chan *bytes.Buffer)
-			//go cfile.streamread(index, ch, 0, int64(cfile.chunks[index].ChunkSize))
 			cfile.ReaderMap[handleId].Ch = make(chan *bytes.Buffer)
 			go cfile.streamread(index, cfile.ReaderMap[handleId].Ch, 0, int64(cfile.chunks[index].ChunkSize))
 			buffer = <-cfile.ReaderMap[handleId].Ch
@@ -659,8 +677,15 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 		//buffer = <-ch
 		*data = append(*data, buffer.Next(buffer.Len())...)
 		buffer.Reset()*/
+
+		buflen := int64(len(cfile.ReaderMap[handleId].readBuf))
+		bufcap := int64(cap(cfile.ReaderMap[handleId].readBuf))
+
+		if cur_offset > buflen || cur_offset > bufcap || cur_offset+each_read_len > buflen || cur_offset+each_read_len > bufcap {
+			logger.Error("== Read chunk:%v from datanode (offset:%v -- needreadsize:%v) lager than exist (buflen:%v -- bufcap:%v)\n", index, cur_offset, each_read_len, buflen, bufcap)
+			return -1
+		}
 		*data = append(*data, cfile.ReaderMap[handleId].readBuf[cur_offset:cur_offset+each_read_len]...)
-		//fmt.Printf("### The handle:%v read chunk-%v -- offset:%v -- eachsize:%v -- totalbuflen:%v -- retbuflen:%v ===\n", handleId, index, cur_offset, each_read_len, len(*data), len(cfile.ReaderMap[handleId].readBuf))
 		cur_offset += each_read_len
 		if cur_offset == int64(len(cfile.ReaderMap[handleId].readBuf)) {
 			//if cur_offset == int64(cfile.chunks[index].ChunkSize) {
@@ -694,7 +719,7 @@ func (cfile *CFile) Write(buf []byte, len int32) int32 {
 
 	for w < len {
 		if (cfile.FileSize % chunkSize) == 0 {
-			fmt.Println("need a new chunk...")
+			logger.Debug("need a new chunk...")
 			var ret int32
 			ret, cfile.wBuffer.chunkInfo = cfile.cfs.AllocateChunk(cfile.Path)
 			if ret != 0 {

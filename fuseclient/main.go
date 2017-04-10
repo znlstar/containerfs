@@ -135,7 +135,10 @@ func (fs *FS) Root() (fs.Node, error) {
    Frsize  uint32 // Fragment size, smallest addressable data size in the file system.
 */
 func (fs *FS) Statfs(ctx context.Context, req *fuse.StatfsRequest, resp *fuse.StatfsResponse) error {
-	_, ret := cfs.GetFSInfo(fs.cfs.VolID)
+	err, ret := cfs.GetFSInfo(fs.cfs.VolID)
+	if err != 0 {
+		return fuse.Errno(syscall.EIO)
+	}
 	resp.Bsize = 64 * 1024 * 1024
 	resp.Frsize = resp.Bsize
 	resp.Blocks = ret.TotalSpace / (64 * 1024 * 1024)
@@ -559,15 +562,16 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 	defer f.mu.Unlock()
 	if _, ok := f.cfile.ReaderMap[req.Handle]; !ok {
 		rdinfo := cfs.ReaderInfo{}
-		//rdinfo.Ch = make(chan *bytes.Buffer)
-		//rdinfo.LastOffset = int64(0)
+		rdinfo.LastOffset = int64(0)
 		f.cfile.ReaderMap[req.Handle] = &rdinfo
+	}
+	if req.Offset == f.cfile.FileSize {
+		return nil
 	}
 
 	length := f.cfile.Read(req.Handle, &resp.Data, req.Offset, int64(req.Size))
-	//fmt.Printf("== The handle:%v reqoffset:%v --- reqsize:%v -- retsize:%v -- buflen:%v -- bufaddr:%p -- f.cfile.ReaderMap:%v ==\n", req.Handle, req.Offset, req.Size, length, len(resp.Data), resp.Data, f.cfile.ReaderMap)
 	if length != int64(req.Size) {
-		fmt.Printf("== Read reqsize:%v, but return datasize:%v ==\n", req.Size, length)
+		logger.Debug("== Read reqsize:%v, but return datasize:%v ==\n", req.Size, length)
 	}
 	if length < 0 {
 		return fuse.Errno(syscall.EIO)

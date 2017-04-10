@@ -691,12 +691,11 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 			}
 		}
 	}
-
 	ns.BGMutex.RUnlock()
-	ns.BlockGroupDBSet(blockGroupID, blockGroup)
-	ns.BlockGroupEtcdSet(blockGroupID, ns.VolID, blockGroup)
 
 	if flag {
+		ns.BlockGroupDBSet(blockGroupID, blockGroup)
+		ns.BlockGroupEtcdSet(blockGroupID, ns.VolID, blockGroup)
 		return 0, blockGroupID, blockGroup
 	} else {
 		return 1, -1, nil
