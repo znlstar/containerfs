@@ -715,7 +715,7 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 	if blockGroup.FreeCnt > 0 {
 		blockGroup.Status = 1
 	}
-	if blockGroup.FreeCnt >= 0 {
+	if blockGroup.FreeCnt >= 160 {
 		blockGroup.Status = 0
 	}
 
