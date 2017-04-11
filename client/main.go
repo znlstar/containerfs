@@ -5,34 +5,39 @@ import (
 	"fmt"
 	fs "github.com/ipdcode/containerfs/fs"
 	"github.com/ipdcode/containerfs/utils"
+	"github.com/lxmgo/config"
 	"os"
 	"strconv"
 )
 
 func main() {
 
-	fs.VolMgrAddr = "172.28.169.75:10001"
-	fs.MetaNodeAddr = "containerfs_meta.hcyf.n.jd.local:10002"
-	//fs.VolMgrAddr = "10.8.65.94:10001"
-	//fs.MetaNodeAddr = "srv-test100.hades.local:10002"
+	c, err := config.NewConfig(os.Args[1])
+	if err != nil {
+		fmt.Println("NewConfig err")
+		os.Exit(1)
+	}
 
-	switch os.Args[1] {
+	fs.VolMgrAddr = c.String("volmgr::host")
+	fs.MetaNodeAddr = c.String("metanode::host")
+
+	switch os.Args[2] {
 
 	case "createvol":
 		argNum := len(os.Args)
-		if argNum != 4 {
+		if argNum != 5 {
 			fmt.Println("createvol [volname] [space GB]")
 			os.Exit(1)
 		}
-		fs.CreateVol(os.Args[2], os.Args[3])
+		fs.CreateVol(os.Args[3], os.Args[4])
 
 	case "getvolinfo":
 		argNum := len(os.Args)
-		if argNum != 3 {
+		if argNum != 4 {
 			fmt.Println("getvolinfo [volUUID]")
 			os.Exit(1)
 		}
-		ret, vi := fs.GetVolInfo(os.Args[2])
+		ret, vi := fs.GetVolInfo(os.Args[3])
 		if ret == 0 {
 			fmt.Println(vi)
 		} else {
@@ -41,12 +46,12 @@ func main() {
 
 	case "createdir":
 		argNum := len(os.Args)
-		if argNum != 4 {
+		if argNum != 5 {
 			fmt.Println("createdir [volUUID] [dirname]")
 			os.Exit(1)
 		}
-		cfs := fs.OpenFileSystem(os.Args[2])
-		ret := cfs.CreateDir(os.Args[3])
+		cfs := fs.OpenFileSystem(os.Args[3])
+		ret := cfs.CreateDir(os.Args[4])
 		if ret == -1 {
 			fmt.Print("create dir failed\n")
 			return
@@ -66,12 +71,12 @@ func main() {
 
 	case "stat":
 		argNum := len(os.Args)
-		if argNum != 4 {
+		if argNum != 5 {
 			fmt.Println("stat [volUUID] [dir/filename]")
 			os.Exit(1)
 		}
-		cfs := fs.OpenFileSystem(os.Args[2])
-		ret, inode := cfs.Stat(os.Args[3])
+		cfs := fs.OpenFileSystem(os.Args[3])
+		ret, inode := cfs.Stat(os.Args[4])
 		if ret == 0 {
 			fmt.Println(inode)
 		} else if ret == 2 {
@@ -82,12 +87,12 @@ func main() {
 
 	case "ls":
 		argNum := len(os.Args)
-		if argNum != 4 {
+		if argNum != 5 {
 			fmt.Println("ls [volUUID] [dir/filename]")
 			os.Exit(1)
 		}
-		cfs := fs.OpenFileSystem(os.Args[2])
-		ret, inodes := cfs.List(os.Args[3])
+		cfs := fs.OpenFileSystem(os.Args[3])
+		ret, inodes := cfs.List(os.Args[4])
 
 		if ret == 0 {
 			for _, value := range inodes {
@@ -101,12 +106,12 @@ func main() {
 
 	case "ll":
 		argNum := len(os.Args)
-		if argNum != 4 {
+		if argNum != 5 {
 			fmt.Println("ls [volUUID] [dir/filename]")
 			os.Exit(1)
 		}
-		cfs := fs.OpenFileSystem(os.Args[2])
-		ret, inodes := cfs.List(os.Args[3])
+		cfs := fs.OpenFileSystem(os.Args[3])
+		ret, inodes := cfs.List(os.Args[4])
 
 		if ret == 0 {
 			for _, value := range inodes {
@@ -120,12 +125,12 @@ func main() {
 
 	case "deletedir":
 		argNum := len(os.Args)
-		if argNum != 4 {
+		if argNum != 5 {
 			fmt.Println("deletedir [volUUID] [dirname]")
 			os.Exit(1)
 		}
-		cfs := fs.OpenFileSystem(os.Args[2])
-		ret := cfs.DeleteDir(os.Args[3])
+		cfs := fs.OpenFileSystem(os.Args[3])
+		ret := cfs.DeleteDir(os.Args[4])
 		if ret != 0 {
 			if ret == 2 {
 				fmt.Println("not allowed")
@@ -136,12 +141,12 @@ func main() {
 
 	case "mv":
 		argNum := len(os.Args)
-		if argNum != 5 {
+		if argNum != 6 {
 			fmt.Println("mv [volUUID] [dirname1] [dirname2]")
 			os.Exit(1)
 		}
-		cfs := fs.OpenFileSystem(os.Args[2])
-		ret := cfs.Rename(os.Args[3], os.Args[4])
+		cfs := fs.OpenFileSystem(os.Args[3])
+		ret := cfs.Rename(os.Args[4], os.Args[5])
 		if ret == 2 {
 			fmt.Println("not existed")
 		}
@@ -150,24 +155,24 @@ func main() {
 		}
 	case "touch":
 		argNum := len(os.Args)
-		if argNum != 4 {
+		if argNum != 5 {
 			fmt.Println("touch [volUUID] [filename]")
 			os.Exit(1)
 		}
-		cfs := fs.OpenFileSystem(os.Args[2])
-		ret, _ := cfs.OpenFile(os.Args[3], fs.O_WRONLY)
+		cfs := fs.OpenFileSystem(os.Args[3])
+		ret, _ := cfs.OpenFile(os.Args[4], fs.O_WRONLY)
 		if ret != 0 {
 			fmt.Println("touch failed")
 		}
 
 	case "deletefile":
 		argNum := len(os.Args)
-		if argNum != 4 {
+		if argNum != 5 {
 			fmt.Println("deletedir [volUUID] [filename]")
 			os.Exit(1)
 		}
-		cfs := fs.OpenFileSystem(os.Args[2])
-		ret := cfs.DeleteFile(os.Args[3])
+		cfs := fs.OpenFileSystem(os.Args[3])
+		ret := cfs.DeleteFile(os.Args[4])
 		if ret != 0 {
 			if ret == 2 {
 				fmt.Println("not found")
@@ -177,12 +182,12 @@ func main() {
 		}
 	case "allocatechunk":
 		argNum := len(os.Args)
-		if argNum != 4 {
+		if argNum != 5 {
 			fmt.Println("allocatechunk [volUUID] [filename]")
 			os.Exit(1)
 		}
-		cfs := fs.OpenFileSystem(os.Args[2])
-		ret, ack := cfs.AllocateChunk(os.Args[3])
+		cfs := fs.OpenFileSystem(os.Args[3])
+		ret, ack := cfs.AllocateChunk(os.Args[4])
 
 		if ret != 0 {
 			fmt.Println("allocatechunk failed")
@@ -192,24 +197,24 @@ func main() {
 
 	case "put":
 		argNum := len(os.Args)
-		if argNum != 5 {
+		if argNum != 6 {
 			fmt.Println("put [volUUID] [localfilename] [cfsfilename]")
 			os.Exit(1)
 		}
-		cfs := fs.OpenFileSystem(os.Args[2])
-		put(cfs, os.Args[3], os.Args[4])
+		cfs := fs.OpenFileSystem(os.Args[3])
+		put(cfs, os.Args[4], os.Args[6])
 
 	case "get":
 		argNum := len(os.Args)
-		if argNum != 7 {
+		if argNum != 8 {
 			fmt.Println("get [voluuid] [cfsfilename] [dstfilename] [offset] [readsize(if read whole file,set readsize 0)]")
 			os.Exit(1)
 		}
-		offset, _ := strconv.ParseInt(os.Args[5], 10, 64)
-		size, _ := strconv.ParseInt(os.Args[6], 10, 64)
+		offset, _ := strconv.ParseInt(os.Args[6], 10, 64)
+		size, _ := strconv.ParseInt(os.Args[7], 10, 64)
 
-		cfs := fs.OpenFileSystem(os.Args[2])
-		get(cfs, os.Args[3], os.Args[4], offset, size)
+		cfs := fs.OpenFileSystem(os.Args[3])
+		get(cfs, os.Args[4], os.Args[5], offset, size)
 	}
 
 }

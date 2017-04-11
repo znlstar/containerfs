@@ -569,6 +569,7 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 		return nil
 	}
 
+	//logger.Error("== Read reqoffset:%v, reqsize:%v ==\n", req.Offset, req.Size)
 	length := f.cfile.Read(req.Handle, &resp.Data, req.Offset, int64(req.Size))
 	if length != int64(req.Size) {
 		logger.Debug("== Read reqsize:%v, but return datasize:%v ==\n", req.Size, length)

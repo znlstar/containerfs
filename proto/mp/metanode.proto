@@ -109,7 +109,7 @@ message AllocateChunkReq {
 message AllocateChunkAck {
     int32 Ret = 1;
     int64 SequenceID = 2;
-    ChunkInfo ChunkInfo = 3; 
+    ChunkInfoWithBG ChunkInfo = 3; 
 }
 
 message GetFileChunksReq {
@@ -118,7 +118,7 @@ message GetFileChunksReq {
 }
 message GetFileChunksAck {
     int32 Ret = 1;
-    repeated ChunkInfo ChunkInfos = 2; 
+    repeated ChunkInfoWithBG ChunkInfos = 2; 
 }
 
 
@@ -169,6 +169,12 @@ message BlockInfo{
 }
 
 message ChunkInfo{
+    int64 ChunkID = 1;
+    int32 ChunkSize = 2;
+    int32 BlockGroupID = 3;
+}
+
+message ChunkInfoWithBG{
     int64 ChunkID = 1;
     int32 ChunkSize = 2;
     BlockGroup BlockGroup = 3;
