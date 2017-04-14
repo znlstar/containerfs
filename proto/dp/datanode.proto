@@ -69,8 +69,15 @@ message BlockInfo{
     int32 DataNodePort = 3;
 }
 
-message ChunkInfo{
-    int64 ChunkID = 1;
-    int32 ChunkSize = 2;
-    BlockGroup BlockGroup = 3;
-}
+//message ChunkInfo{
+//    int64 ChunkID = 1;
+//    int32 ChunkSize = 2;
+//    int32 BlockGroupID = 3;
+//}
+
+
+//message ChunkInfoWithBG{
+//    int64 ChunkID = 1;
+//    int32 ChunkSize = 2;
+//    BlockGroup BlockGroup = 3;
+//}

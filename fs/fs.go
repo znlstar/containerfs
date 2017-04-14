@@ -4,6 +4,7 @@ import (
 	"bazil.org/fuse"
 	"bufio"
 	"bytes"
+	"fmt"
 	"github.com/ipdcode/containerfs/logger"
 	dp "github.com/ipdcode/containerfs/proto/dp"
 	mp "github.com/ipdcode/containerfs/proto/mp"
@@ -66,6 +67,9 @@ func CreateVol(name string, capacity string) int32 {
 	if err2 != nil {
 		return -1
 	}
+	if pCreateVolAck.Ret != 0 {
+		return -1
+	}
 
 	// send to metadata to registry a new map
 	conn2, err3 := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
@@ -86,6 +90,8 @@ func CreateVol(name string, capacity string) int32 {
 		logger.Error("CreateNameSpace failed :%v\n", pmCreateNameSpaceAck.Ret)
 		return -1
 	}
+
+	fmt.Println(pCreateVolAck.UUID)
 
 	return 0
 }
@@ -289,7 +295,7 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 	if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
 
 		if (flags & O_APPEND) != 0 {
-			chunkInfos := make([]*mp.ChunkInfo, 0)
+			chunkInfos := make([]*mp.ChunkInfoWithBG, 0)
 
 			if ret, chunkInfos = cfs.GetFileChunks(path); ret != 0 {
 				return ret, nil
@@ -368,7 +374,7 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 			go cfile.flushChannel()
 		}
 	} else {
-		chunkInfos := make([]*mp.ChunkInfo, 0)
+		chunkInfos := make([]*mp.ChunkInfoWithBG, 0)
 		if ret, chunkInfos = cfs.GetFileChunks(path); ret != 0 {
 			return ret, nil
 		}
@@ -404,7 +410,7 @@ func (cfs *CFS) UpdateOpenFile(cfile *CFile, flags int) int32 {
 	if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
 
 		if (flags & O_APPEND) != 0 {
-			chunkInfos := make([]*mp.ChunkInfo, 0)
+			chunkInfos := make([]*mp.ChunkInfoWithBG, 0)
 
 			var ret int32
 			if ret, chunkInfos = cfs.GetFileChunks(cfile.Path); ret != 0 {
@@ -515,7 +521,7 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 	return mpDeleteFileAck.Ret
 
 }
-func (cfs *CFS) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
+func (cfs *CFS) AllocateChunk(path string) (int32, *mp.ChunkInfoWithBG) {
 	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
 		logger.Error("AllocateChunk failed,Dial to metanode fail :%v\n", err)
@@ -538,7 +544,7 @@ func (cfs *CFS) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 	return pAllocateChunkAck.Ret, pAllocateChunkAck.ChunkInfo
 }
 
-func (cfs *CFS) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
+func (cfs *CFS) GetFileChunks(path string) (int32, []*mp.ChunkInfoWithBG) {
 	conn, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 	if err != nil {
 		logger.Error("GetFileChunks failed,Dial to metanode fail :%v\n", err)
@@ -561,9 +567,9 @@ func (cfs *CFS) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
 }
 
 type wBuffer struct {
-	freeSize  int32         // chunk size
-	chunkInfo *mp.ChunkInfo // chunk info
-	buffer    *bytes.Buffer // chunk data
+	freeSize  int32               // chunk size
+	chunkInfo *mp.ChunkInfoWithBG // chunk info
+	buffer    *bytes.Buffer       // chunk data
 }
 
 type ReaderInfo struct {
@@ -590,7 +596,7 @@ type CFile struct {
 	// for read
 	//lastoffset int64
 	RMutex sync.Mutex
-	chunks []*mp.ChunkInfo // chunkinfo
+	chunks []*mp.ChunkInfoWithBG // chunkinfo
 	//readBuf    []byte
 	ReaderMap map[fuse.HandleID]*ReaderInfo
 }
@@ -915,15 +921,27 @@ func (cfile *CFile) flushChannel() {
 		}
 		mc := mp.NewMetaNodeClient(connM)
 		pSyncChunkReq := &mp.SyncChunkReq{
-			FileName:  cfile.Path,
-			VolID:     cfile.cfs.VolID,
-			ChunkInfo: v.chunkInfo,
+			FileName: cfile.Path,
+			VolID:    cfile.cfs.VolID,
 		}
 
-		pSyncChunkAck, _ := mc.SyncChunk(context.Background(), pSyncChunkReq)
+		var tmpChunkInfo mp.ChunkInfo
+		tmpChunkInfo.ChunkSize = v.chunkInfo.ChunkSize
+		tmpChunkInfo.ChunkID = v.chunkInfo.ChunkID
+		tmpChunkInfo.BlockGroupID = v.chunkInfo.BlockGroup.BlockGroupID
+
+		pSyncChunkReq.ChunkInfo = &tmpChunkInfo
+
+		pSyncChunkAck, ret := mc.SyncChunk(context.Background(), pSyncChunkReq)
+		if ret != nil {
+			cfile.cfs.Status = 1
+			logger.Error("flushChannel SyncChunk Failed :%v\n", pSyncChunkReq.ChunkInfo)
+			continue
+		}
 		if pSyncChunkAck.Ret != 0 {
 			cfile.cfs.Status = 1
-			return
+			logger.Error("flushChannel SyncChunk Failed :%v\n", pSyncChunkReq.ChunkInfo)
+			continue
 		}
 
 		chunkNum := len(cfile.chunks)

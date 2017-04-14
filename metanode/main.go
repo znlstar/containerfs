@@ -216,13 +216,32 @@ func (s *MetaNodeServer) AllocateChunk(ctx context.Context, in *mp.AllocateChunk
 	ack := mp.AllocateChunkAck{}
 	fileName := in.FileName
 	volID := in.VolID
+
+	ack.SequenceID = in.SequenceID
+
 	ret, nameSpace := ns.GetNameSpace(volID)
 	if ret != 0 {
 		ack.Ret = ret
 		return &ack, nil
 	}
-	ack.Ret, ack.ChunkInfo = nameSpace.AllocateChunk(fileName)
-	ack.SequenceID = in.SequenceID
+	ok, chunkInfo := nameSpace.AllocateChunk(fileName)
+	if ok != 0 {
+		ack.Ret = 1
+		return &ack, nil
+	}
+
+	ok1, blockGroup := nameSpace.BlockGroupDBGet(chunkInfo.BlockGroupID)
+	if !ok1 {
+		ack.Ret = 1
+		return &ack, nil
+	}
+
+	var tmpChunkInfo mp.ChunkInfoWithBG
+	tmpChunkInfo.ChunkID = chunkInfo.ChunkID
+	tmpChunkInfo.ChunkSize = chunkInfo.ChunkSize
+	tmpChunkInfo.BlockGroup = nameSpace.BlockGroupVp2Mp(blockGroup)
+
+	ack.ChunkInfo = &tmpChunkInfo
 	return &ack, nil
 }
 
@@ -238,7 +257,28 @@ func (s *MetaNodeServer) GetFileChunks(ctx context.Context, in *mp.GetFileChunks
 		ack.Ret = ret
 		return &ack, nil
 	}
-	ack.Ret, ack.ChunkInfos = nameSpace.GetFileChunks(fileName)
+	ok, chunkInfos := nameSpace.GetFileChunks(fileName)
+	if ok != 0 {
+		ack.Ret = ok
+		return &ack, nil
+	}
+
+	for _, v := range chunkInfos {
+		var chunkInfoWithBG mp.ChunkInfoWithBG
+		chunkInfoWithBG.ChunkID = v.ChunkID
+		chunkInfoWithBG.ChunkSize = v.ChunkSize
+
+		ok1, blockGroup := nameSpace.BlockGroupDBGet(v.BlockGroupID)
+		if !ok1 {
+			continue
+		}
+		chunkInfoWithBG.BlockGroup = nameSpace.BlockGroupVp2Mp(blockGroup)
+
+		ack.ChunkInfos = append(ack.ChunkInfos, &chunkInfoWithBG)
+
+	}
+	ack.Ret = 0
+
 	return &ack, nil
 }
 
@@ -313,11 +353,12 @@ func init() {
 	port, _ := c.Int("port")
 	MetaNodeServerAddr.port = port
 	MetaNodeServerAddr.peer = c.Strings("peer")
-	MetaNodeServerAddr.domain = c.String("hades::domain") + ".hcyf.n.jd.local"
+	//MetaNodeServerAddr.domain = c.String("hades::domain") + ".hcyf.n.jd.local"
+	MetaNodeServerAddr.domain = c.String("hades::domain") + c.String("suffix")
 	ns.Domain = MetaNodeServerAddr.domain
 	MetaNodeServerAddr.log = c.String("log")
-	//url := "http://" + c.String("hades::host") + "/hades/api/" + c.String("hades::domain") + "?token=" + c.String("hades::token")
-	url := "http://" + c.String("hades::host") + "/hades/api/" + c.String("hades::domain")
+	url := "http://" + c.String("hades::host") + "/hades/api/" + c.String("hades::domain") + "?token=" + c.String("hades::token")
+	//url := "http://" + c.String("hades::host") + "/hades/api/" + c.String("hades::domain")
 
 	MetaNodeServerAddr.hadesurl = url
 	MetaNodeServerAddr.hadestoken = c.String("hades::token")
@@ -341,7 +382,8 @@ func init() {
 		logger.SetLevel(logger.ERROR)
 	}
 
-	endPoints := strings.Split(c.String("etcd::endpoints"), ",")
+	//endPoints := strings.Split(c.String("etcd::endpoints"), ",")
+	endPoints := c.Strings("etcd::endpoints")
 	err = ns.EtcdClient.InitEtcd(endPoints)
 	if err != nil {
 		fmt.Println("connect etcd failed")

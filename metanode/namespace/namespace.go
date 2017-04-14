@@ -520,7 +520,7 @@ func (ns *nameSpace) DeleteFile(path string) int32 {
 			continue
 		}
 		/*release bg cnt*/
-		ns.ReleaseBlockGroup(chunkInfo.BlockGroup.BlockGroupID)
+		ns.ReleaseBlockGroup(chunkInfo.BlockGroupID)
 		ns.ChunkDBDelete(value)
 		ns.ChunkEtcdDelete(value, ns.VolID)
 	}
@@ -546,12 +546,14 @@ func (ns *nameSpace) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 
 	var chunkInfo = mp.ChunkInfo{}
 	ret, _, blockGroup := ns.ChooseBlockGroup()
+
 	if ret != 0 {
 		return 28 /*ENOSPC*/, nil
 	}
-	chunkInfo.BlockGroup = ns.blockGroupVp2Mp(blockGroup)
+	chunkInfo.BlockGroupID = blockGroup.BlockGroupID
 	chunkInfo.ChunkSize = 0
 	chunkInfo.ChunkID = ns.AllocateChunkID()
+
 	return 0, &chunkInfo
 
 }
@@ -627,7 +629,7 @@ func (ns *nameSpace) SyncChunk(path string, chunkinfo *mp.ChunkInfo) int32 {
 
 }
 
-func (ns *nameSpace) blockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
+func (ns *nameSpace) BlockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 	var mpBlockGroup = mp.BlockGroup{}
 
 	mpBlockInfos := make([]*mp.BlockInfo, len(in.BlockInfos))
@@ -713,7 +715,7 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 	if blockGroup.FreeCnt > 0 {
 		blockGroup.Status = 1
 	}
-	if blockGroup.FreeCnt >= 0 {
+	if blockGroup.FreeCnt >= 160 {
 		blockGroup.Status = 0
 	}
 
