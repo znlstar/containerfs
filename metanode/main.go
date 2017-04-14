@@ -8,7 +8,6 @@ import (
 	mRaft "github.com/ipdcode/containerfs/metanode/raft"
 	mp "github.com/ipdcode/containerfs/proto/mp"
 
-	"github.com/ipdcode/containerfs/utils"
 	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -23,13 +22,11 @@ import (
 )
 
 type addr struct {
-	host       string
-	port       int
-	peer       []string
-	domain     string
-	log        string
-	hadesurl   string
-	hadestoken string
+	host   string
+	port   int
+	peer   []string
+	domain string
+	log    string
 }
 
 var MetaNodeServerAddr addr
@@ -319,6 +316,7 @@ func loadMetaData() {
 	ret, vols := ns.GetVolList()
 	if ret != 0 {
 		logger.Error("loadMetaData,GetVolList failed,ret:%v", ret)
+		return
 	}
 	for _, v := range vols {
 		ns.Wg.Add(1)
@@ -327,17 +325,15 @@ func loadMetaData() {
 	ns.Wg.Wait()
 }
 
-func loadNewMetaData() {
-
+func watchMetaData() {
 	ret, vols := ns.GetVolList()
 	if ret != 0 {
-		logger.Error("loadMetaData,GetVolList failed,ret:%v", ret)
+		logger.Error("watchMetaData,GetVolList failed,ret:%v", ret)
+		return
 	}
 	for _, v := range vols {
-		ns.Wg.Add(1)
-		go ns.LoadNewVolMeta(v)
+		ns.WatchVolMeta(v)
 	}
-	ns.Wg.Wait()
 }
 
 func init() {
@@ -353,15 +349,8 @@ func init() {
 	port, _ := c.Int("port")
 	MetaNodeServerAddr.port = port
 	MetaNodeServerAddr.peer = c.Strings("peer")
-	//MetaNodeServerAddr.domain = c.String("hades::domain") + ".hcyf.n.jd.local"
-	MetaNodeServerAddr.domain = c.String("hades::domain") + c.String("suffix")
-	ns.Domain = MetaNodeServerAddr.domain
 	MetaNodeServerAddr.log = c.String("log")
-	url := "http://" + c.String("hades::host") + "/hades/api/" + c.String("hades::domain") + "?token=" + c.String("hades::token")
-	//url := "http://" + c.String("hades::host") + "/hades/api/" + c.String("hades::domain")
 
-	MetaNodeServerAddr.hadesurl = url
-	MetaNodeServerAddr.hadestoken = c.String("hades::token")
 	ns.VolMgrAddress = c.String("volmgr::host")
 
 	mRaft.RaftInfo.Me = c.String("raft::me")
@@ -392,7 +381,13 @@ func init() {
 
 	mRaft.StartRaftService()
 	loadMetaData()
+	watchMetaData()
 
+}
+
+func setMetaLeader() {
+	fmt.Println("set leader...")
+	ns.EtcdClient.Set("/ContainerFS/MetaLeader", MetaNodeServerAddr.host+":"+strconv.Itoa(MetaNodeServerAddr.port))
 }
 
 func main() {
@@ -401,40 +396,31 @@ func main() {
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
 
-	ticker1 := time.NewTicker(time.Millisecond * 100)
+	ticker1 := time.NewTicker(time.Millisecond * 5)
 	var myRole bool = true
-	var count int64
+	var startUp bool = true
+
 	go func() {
 		for _ = range ticker1.C {
 			if mRaft.RaftInfo.R.IsLeader() {
-				count += 1
-				if count == 1 {
-					utils.DelHades(MetaNodeServerAddr.hadesurl, MetaNodeServerAddr.hadestoken)
-					utils.PostHades(MetaNodeServerAddr.hadesurl, MetaNodeServerAddr.host, MetaNodeServerAddr.port, MetaNodeServerAddr.hadestoken)
+				if startUp {
+					setMetaLeader()
 				}
+				startUp = false
 				if myRole != mRaft.RaftInfo.R.IsLeader() {
-					// role change , load new meta immediately
-					//loadNewMetaData()
-					utils.DelHades(MetaNodeServerAddr.hadesurl, MetaNodeServerAddr.hadestoken)
-					loadMetaData()
-					utils.PostHades(MetaNodeServerAddr.hadesurl, MetaNodeServerAddr.host, MetaNodeServerAddr.port, MetaNodeServerAddr.hadestoken)
+					// sleep 200ms for watch all the last event befor change to unWatcher
+					time.Sleep(time.Millisecond * 200)
+					ns.IsWatcher = false
+					setMetaLeader()
 				}
 				myRole = true
+				ns.IsWatcher = false
 			} else {
 				myRole = false
+				ns.IsWatcher = true
 			}
 		}
 	}()
 
-	ticker2 := time.NewTicker(time.Second * 5)
-	go func() {
-		for _ = range ticker2.C {
-			if mRaft.RaftInfo.R.IsLeader() {
-				logger.Debug("I'm leader...")
-			} else {
-				logger.Debug("I'm follower...")
-			}
-		}
-	}()
 	startMetaDataService()
 }

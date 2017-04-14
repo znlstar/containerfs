@@ -9,6 +9,7 @@ service DataNode {
     //rpc StreamWriteChunk(stream StreamWriteChunkReq) returns (StreamWriteChunkAck){};
     rpc StreamReadChunk(StreamReadChunkReq) returns (stream StreamReadChunkAck){};
     rpc DeleteChunk(DeleteChunkReq) returns (DeleteChunkAck){};
+    rpc DatanodeHealthCheck(DatanodeHealthCheckReq) returns (DatanodeHealthCheckAck){};
 }
 
 message WriteChunkReq{
@@ -54,6 +55,12 @@ message DeleteChunkAck{
     int32 Ret = 1;
 }
 
+message DatanodeHealthCheckReq{
+}
+
+message DatanodeHealthCheckAck{
+    int32 Ret = 1;
+}
 
 message BlockGroup{
     int32 BlockGroupID = 1;

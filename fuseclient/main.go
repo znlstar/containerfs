@@ -66,7 +66,8 @@ func main() {
 	uuid = c.String("uuid")
 	mountPoint = c.String("mountpoint")
 	cfs.VolMgrAddr = c.String("volmgr")
-	cfs.MetaNodeAddr = c.String("metanode")
+	cfs.EtcdEndPoints = c.Strings("etcd")
+	//cfs.MetaNodeAddr = c.String("metanode")
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(c.String("log"), "fuse.log", 10, 100, logger.MB) //each 100M rolling
@@ -80,6 +81,11 @@ func main() {
 	default:
 		logger.SetLevel(logger.ERROR)
 	}
+
+	cfs.GetMetaLeader()
+	go cfs.ChooseMetaLeaderWatcher()
+
+	time.Sleep(time.Second * 1)
 
 	err = mount(uuid, mountPoint)
 	if err != nil {
@@ -569,10 +575,9 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 		return nil
 	}
 
-	//logger.Error("== Read reqoffset:%v, reqsize:%v ==\n", req.Offset, req.Size)
 	length := f.cfile.Read(req.Handle, &resp.Data, req.Offset, int64(req.Size))
 	if length != int64(req.Size) {
-		logger.Debug("== Read reqsize:%v, but return datasize:%v ==\n", req.Size, length)
+		logger.Error("== Read reqsize:%v, but return datasize:%v ==\n", req.Size, length)
 	}
 	if length < 0 {
 		return fuse.Errno(syscall.EIO)

@@ -18,7 +18,6 @@ func StartRaftService() *graft.Raft {
 	chanState := make(chan bool, 100)
 	RaftInfo.R, err = graft.New(RaftInfo.Peer, RaftInfo.Me, RaftInfo.MePort, chanState)
 	if err != nil {
-		//log.Panic("new :%v", err)
 		return nil
 	} else {
 		return RaftInfo.R
