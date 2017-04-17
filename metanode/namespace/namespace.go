@@ -22,7 +22,6 @@ const (
 
 var Wg sync.WaitGroup
 var VolMgrAddress string
-var Domain string
 
 type nameSpace struct {
 	VolID        string

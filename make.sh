@@ -21,7 +21,7 @@ cd -
 
 cd ./client
 go build -o cfs-client main.go
-cp cfs-client ../output
+cp cfs-client client.ini ../output
 cd -
 
 cd ./fuseclient

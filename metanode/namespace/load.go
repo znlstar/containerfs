@@ -10,7 +10,18 @@ import (
 	"time"
 )
 
+type VolMetaWatcherVersion struct {
+	ChunkBaseIDVersion int64
+	InodeBaseIDVersion int64
+	ChunkDBVersion     int64
+	BGDBVersion        int64
+	InodeDBVersion     int64
+}
+
 func LoadVolMeta(volID string) {
+
+	logger.Error("LoadVolMeta volID %v\n", volID)
+
 	ret, nameSpace := GetNameSpace(volID)
 	if ret != 0 {
 		return
@@ -27,7 +38,6 @@ func LoadVolMeta(volID string) {
 
 	baseChunkID, _ := strconv.ParseInt(string(resp.Kvs[0].Value), 10, 64)
 	nameSpace.BaseChunkID = utils.New(baseChunkID+1, 1)
-	//nameSpace.CreateChunkBaseIDEtcdWatcher(resp.Header.Revision, nameSpace.VolID)
 
 	key = nameSpace.MakeEtcdWatchPreKey("InodeBaseID", volID)
 	key += "InodeBaseIDKey"
@@ -38,7 +48,6 @@ func LoadVolMeta(volID string) {
 	}
 	baseInodeID, _ := strconv.ParseInt(string(resp.Kvs[0].Value), 10, 64)
 	nameSpace.BaseInodeID = utils.New(baseInodeID+1, 1)
-	//nameSpace.CreateInodeBaseIDEtcdWatcher(resp.Header.Revision, nameSpace.VolID)
 
 	preKey := nameSpace.MakeEtcdWatchPreKey("ChunkDB", volID)
 	resp, err = EtcdClient.Get(preKey, true)
@@ -59,7 +68,6 @@ func LoadVolMeta(volID string) {
 		chunkID, _ := strconv.ParseInt(string(chunkKey), 10, 64)
 		nameSpace.ChunkDBSet(chunkID, &chunkInfo)
 	}
-	//nameSpace.CreateChunkDBEtcdWatcher(resp.Header.Revision, nameSpace.VolID)
 
 	preKey = nameSpace.MakeEtcdWatchPreKey("BGDB", volID)
 	resp, err = EtcdClient.Get(preKey, true)
@@ -68,7 +76,6 @@ func LoadVolMeta(volID string) {
 		return
 	}
 	for _, ev := range resp.Kvs {
-		//fmt.Printf("%s : %s\n", ev.Key, ev.Value)
 		bgKey := ev.Key[len(preKey):]
 		bgID, _ := strconv.Atoi(string(bgKey))
 
@@ -79,7 +86,6 @@ func LoadVolMeta(volID string) {
 		}
 		nameSpace.BlockGroupDBSet(int32(bgID), &bgInfo)
 	}
-	//nameSpace.CreateBGDBEtcdWatcher(resp.Header.Revision, nameSpace.VolID)
 
 	preKey = nameSpace.MakeEtcdWatchPreKey("InodeDB", volID)
 	resp, err = EtcdClient.Get(preKey, true)
@@ -89,7 +95,6 @@ func LoadVolMeta(volID string) {
 	}
 
 	for _, ev := range resp.Kvs {
-		//fmt.Printf("%s : %s\n", ev.Key, ev.Value)
 		inodeKey := ev.Key[len(preKey):]
 		inodeID, _ := strconv.Atoi(string(inodeKey))
 
@@ -102,18 +107,19 @@ func LoadVolMeta(volID string) {
 		nameSpace.InodeDBSet(strconv.FormatInt(inodeInfo.ParentInodeID, 10)+"-"+inodeInfo.Name, &inodeInfo)
 
 	}
-	//nameSpace.CreateInodeDBEtcdWatcher(resp.Header.Revision, nameSpace.VolID)
+
+	time.Sleep(time.Millisecond * 500)
+	go WatchVolMeta(volID)
 }
 
-func LoadNewVolMeta(volID string) {
-	//ret, nameSpace := GetNameSpace(volID)
-	//if ret != 0 {
-	//	return
-	//}
-
-	//nameSpace.CreateChunkBaseIDEtcdWatcher(resp.Header.Revision, nameSpace.VolID)
-	//nameSpace.CreateInodeBaseIDEtcdWatcher(resp.Header.Revision, nameSpace.VolID)
-	//nameSpace.CreateChunkDBEtcdWatcher(resp.Header.Revision, nameSpace.VolID)
-	//nameSpace.CreateBGDBEtcdWatcher(resp.Header.Revision, nameSpace.VolID)
-	//nameSpace.CreateInodeDBEtcdWatcher(resp.Header.Revision, nameSpace.VolID)
+func WatchVolMeta(volID string) {
+	ret, nameSpace := GetNameSpace(volID)
+	if ret != 0 {
+		return
+	}
+	go nameSpace.CreateChunkBaseIDEtcdWatcher(volID)
+	go nameSpace.CreateInodeBaseIDEtcdWatcher(volID)
+	go nameSpace.CreateChunkDBEtcdWatcher(volID)
+	go nameSpace.CreateBGDBEtcdWatcher(volID)
+	go nameSpace.CreateInodeDBEtcdWatcher(volID)
 }

@@ -119,6 +119,12 @@ func heartbeatToVolMgr() {
 /*
 rpc GetChunks(GetChunksReq) returns (GetChunksAck){};
 */
+func (s *DataNodeServer) DatanodeHealthCheck(ctx context.Context, in *dp.DatanodeHealthCheckReq) (*dp.DatanodeHealthCheckAck, error) {
+	ack := dp.DatanodeHealthCheckAck{}
+	ack.Ret = 1
+	return &ack,nil
+}
+
 func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (*dp.WriteChunkAck, error) {
 	var f *os.File
 	var err error

@@ -58,7 +58,7 @@ func wr(out string) {
 
 func main() {
 	for i := 0; i < 1; i++ {
-		out := "/tmp/mnt1/jbig" + strconv.Itoa(i)
+		out := "/tmp/mnt4/jbig" + strconv.Itoa(i)
 		Wg.Add(1)
 		go wr(out)
 		//time.Sleep(time.Second)
