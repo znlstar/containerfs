@@ -1,0 +1,19 @@
+sudo: required
+
+language: go
+
+go:
+  - 1.8
+
+before_install:
+  - wget https://github.com/google/protobuf/releases/download/v3.2.0/protoc-3.2.0-linux-x86_64.zip
+  - sudo unzip protoc-3.2.0-linux-x86_64.zip -d /usr
+  - sudo chmod +x /usr/bin/protoc
+  - go get -u github.com/golang/protobuf/{proto,protoc-gen-go}
+  - go get -u github.com/go-sql-driver/mysql
+  - go get -u github.com/coreos/etcd
+
+script:
+  - pwd
+  - env |grep -i GO
+  - bash -x ./make.sh

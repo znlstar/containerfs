@@ -2,11 +2,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/ipdcode/containerfs/logger"
+	"../logger"
 
-	ns "github.com/ipdcode/containerfs/metanode/namespace"
-	mRaft "github.com/ipdcode/containerfs/metanode/raft"
-	mp "github.com/ipdcode/containerfs/proto/mp"
+	ns "./namespace"
+	mRaft "./raft"
+	mp "../proto/mp"
 
 	"github.com/lxmgo/config"
 	"golang.org/x/net/context"

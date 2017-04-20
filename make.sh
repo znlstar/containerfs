@@ -1,4 +1,4 @@
-#!/bin/bash 
+#!/bin/bash
 echo "------------- Start to build ContainerFS -------------"
 
 if [ ! -d "./output" ]; then
@@ -7,44 +7,20 @@ else
   rm -rf ./output/*
 fi
 
-cd ./proto/mp/
-make
-cd -
+for dir in ./proto/mp ./proto/dp ./proto/vp
+do
+  pushd $dir
+  make
+  popd
+done
 
-cd ./proto/dp/
-make
-cd -
-
-cd ./proto/vp/
-make
-cd -
-
-cd ./client
-go build -o cfs-client main.go
-cp cfs-client client.ini ../output
-cd -
-
-cd ./fuseclient
-go build -o cfs-fuse-client main.go
-cp cfs-fuse-client mountpoint.ini ../output
-cd -
-
-cd ./metanode
-go build -o cfs-metanode main.go
-cp cfs-metanode metanode.ini ../output
-cd -
-
-cd ./datanode
-go build -o cfs-datanode main.go
-cp cfs-datanode datanode.ini ../output
-cd -
-
-cd ./volmgr
-go build -o cfs-volmgr main.go
-cp cfs-volmgr volmgr.ini ../output
-cd -
+for dir in client fuseclient metanode datanode volmgr
+do
+  pushd $dir
+  go get
+  go build -o cfs-$dir main.go
+  cp cfs-$dir $dir.ini ../output
+  popd
+done
 
 echo "------------- build end -------------"
-
-
-
