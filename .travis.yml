@@ -1,5 +1,10 @@
 sudo: required
 
+env:
+  matrix:
+  - OS_TYPE=centos OS_VERSION=6
+  - OS_TYPE=centos OS_VERSION=7
+
 language: go
 
 go:
