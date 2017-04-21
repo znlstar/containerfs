@@ -1,4 +1,4 @@
-https://travis-ci.org/ipdcode/containerfs.svg?branch=master
+![image](https://travis-ci.org/ipdcode/containerfs.svg?branch=master)
 # containerfs
 a cluster filesystem for the containers
 
