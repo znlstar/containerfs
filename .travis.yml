@@ -1,15 +1,8 @@
 sudo: required
 
-env:
-  matrix:
-  - OS_TYPE=centos OS_VERSION=6
-  - OS_TYPE=centos OS_VERSION=7
-
 language: go
 
 go:
-  - 1.6
-  - 1.7
   - 1.8
   - master
 
@@ -19,7 +12,7 @@ before_install:
   - sudo chmod +x /usr/bin/protoc
   - go get -u github.com/golang/protobuf/{proto,protoc-gen-go}
   - go get -u github.com/go-sql-driver/mysql
-  - go get -u github.com/coreos/etcd
+  - go get -u github.com/coreos/etcd/cmd/etcd
 
 script:
   - pwd
