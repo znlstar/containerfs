@@ -2,11 +2,11 @@ package namespace
 
 import (
 	"bytes"
-	mp "github.com/ipdcode/containerfs/proto/mp"
-	vp "github.com/ipdcode/containerfs/proto/vp"
+	mp "../../proto/mp"
+	vp "../../proto/vp"
 
-	"github.com/ipdcode/containerfs/logger"
-	"github.com/ipdcode/containerfs/utils"
+	"../../logger"
+	"../../utils"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"

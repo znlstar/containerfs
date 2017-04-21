@@ -2,7 +2,7 @@ package cfs
 
 import (
 	"fmt"
-	"github.com/ipdcode/containerfs/logger"
+	"../logger"
 	"google.golang.org/grpc"
 	"time"
 )
