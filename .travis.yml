@@ -17,6 +17,8 @@ before_install:
   - go get -u github.com/coreos/etcd/cmd/etcd
   - go get -u bazil.org/fuse
   - go get -u github.com/lxmgo/config
+  - go get -u golang.org/x/net/context
+  - go get -u google.golang.org/grpc
 
 script:
   - pwd
