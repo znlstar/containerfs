@@ -2,7 +2,7 @@
 Description=ContainerFS Fuse Client Service
 
 [Service]
-ExecStart=/usr/local/bin/cfs-fuse-client /usr/local/conf/cfs-fuse-client.ini
+ExecStart=/usr/local/bin/cfs-fuseclient /usr/local/conf/cfs-fuseclient.ini
 Restart=on-failure
 
 [Install]
