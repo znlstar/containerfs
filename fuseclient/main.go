@@ -16,9 +16,9 @@ import (
 	"golang.org/x/net/context"
 	//"math/rand"
 
-	cfs "../fs"
-	"../logger"
-	mp "../proto/mp"
+	cfs "github.com/ipdcode/containerfs/fs"
+	"github.com/ipdcode/containerfs/logger"
+	mp "github.com/ipdcode/containerfs/proto/mp"
 	//	"../utils"
 )
 

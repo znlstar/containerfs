@@ -7,11 +7,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	//"io/ioutil"
-	"../logger"
-	dp "../proto/dp"
-	vp "../proto/vp"
-	"../utils"
 	"bufio"
+	"github.com/ipdcode/containerfs/logger"
+	dp "github.com/ipdcode/containerfs/proto/dp"
+	vp "github.com/ipdcode/containerfs/proto/vp"
+	"github.com/ipdcode/containerfs/utils"
 	"github.com/lxmgo/config"
 	"net"
 	"os"
@@ -116,14 +116,14 @@ func heartbeatToVolMgr() {
 
 	f, err := os.OpenFile(DataNodeServerAddr.Path+"/health", os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0666)
 	if err != nil {
-		logger.Error("Open datanode check health file error:%v",err)
+		logger.Error("Open datanode check health file error:%v", err)
 		datanodeHeartbeatReq.Status = 2
 	}
 	defer f.Close()
 
 	_, err = f.WriteString("ok")
 	if err != nil {
-		logger.Error("Write datanode check health file error:%v",err)
+		logger.Error("Write datanode check health file error:%v", err)
 		datanodeHeartbeatReq.Status = 2
 	} else {
 		datanodeHeartbeatReq.Status = 0

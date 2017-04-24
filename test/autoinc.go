@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"../utils"
+	"github.com/ipdcode/containerfs/utils"
 )
 
 func main() {

@@ -1,10 +1,10 @@
 package main
 
 import (
-	fs "../fs"
-	"../utils"
 	"bufio"
 	"fmt"
+	fs "github.com/ipdcode/containerfs/fs"
+	"github.com/ipdcode/containerfs/utils"
 	"github.com/lxmgo/config"
 	"os"
 	"strconv"
