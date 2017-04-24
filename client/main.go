@@ -1,10 +1,10 @@
 package main
 
 import (
-	"bufio"
-	"fmt"
 	fs "../fs"
 	"../utils"
+	"bufio"
+	"fmt"
 	"github.com/lxmgo/config"
 	"os"
 	"strconv"

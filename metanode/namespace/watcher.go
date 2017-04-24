@@ -1,12 +1,12 @@
 package namespace
 
 import (
-	"bytes"
-	"encoding/json"
-	"github.com/coreos/etcd/clientv3"
 	mp "../../proto/mp"
 	vp "../../proto/vp"
 	"../../utils"
+	"bytes"
+	"encoding/json"
+	"github.com/coreos/etcd/clientv3"
 	"golang.org/x/net/context"
 
 	"fmt"

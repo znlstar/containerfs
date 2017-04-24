@@ -1,0 +1,9 @@
+[Unit]
+Description=ContainerFS VolMgr Service
+
+[Service]
+ExecStart=/usr/local/bin/cfs-volmgr /usr/local/conf/cfs-volmgr.ini
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

@@ -1,11 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"../logger"
+	"fmt"
 
-	ns "./namespace"
-	mRaft "./raft"
+	ns "../metanode/namespace"
+	mRaft "../metanode/raft"
 	mp "../proto/mp"
 
 	"github.com/lxmgo/config"
@@ -15,6 +15,7 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -296,6 +297,26 @@ func (s *MetaNodeServer) SyncChunk(ctx context.Context, in *mp.SyncChunkReq) (*m
 	return &ack, nil
 }
 
+/*
+rpc UpdateBlkGrp(UpdateBlkGrpReq) returns (UpdateBlkGrpAck){};
+*/
+func (s *MetaNodeServer) UpdateBlkGrp(ctx context.Context, in *mp.UpdateBlkGrpReq) (*mp.UpdateBlkGrpAck, error) {
+
+	logger.Error("---- UpdateBlkGrp ---- :%v", in)
+
+	ack := mp.UpdateBlkGrpAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	for _, v := range in.UpdateBlkGrpInfo {
+		nameSpace.UpdateBlkGrp(v.BlkGrpID, v.BlockID, v.Status)
+	}
+	ack.Ret = 0
+	return &ack, nil
+}
+
 func startMetaDataService() {
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", MetaNodeServerAddr.port))
@@ -399,6 +420,13 @@ func main() {
 	ticker1 := time.NewTicker(time.Millisecond * 5)
 	var myRole bool = true
 	var startUp bool = true
+
+	defer func() {
+		if err := recover(); err != nil {
+			logger.Error("panic !!! :%v", err)
+			logger.Error("stacks:%v", string(debug.Stack()))
+		}
+	}()
 
 	go func() {
 		for _ = range ticker1.C {

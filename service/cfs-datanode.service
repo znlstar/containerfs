@@ -1,0 +1,9 @@
+[Unit]
+Description=ContainerFS Datanode Service
+
+[Service]
+ExecStart=/usr/local/bin/cfs-datanode /usr/local/conf/cfs-datanode.ini
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
