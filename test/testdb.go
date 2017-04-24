@@ -9,7 +9,7 @@ import (
 	"time"
 	//"os"
 	_ "github.com/go-sql-driver/mysql"
-	"../logger"
+	"github.com/ipdcode/containerfs/logger"
 	"math/rand"
 	"reflect"
 	"unsafe"

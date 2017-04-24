@@ -1,15 +1,15 @@
 package main
 
 import (
-	"../logger"
-	dp "../proto/dp"
-	mp "../proto/mp"
-	vp "../proto/vp"
-	"../utils"
 	"database/sql"
 	"fmt"
 	"github.com/coreos/etcd/clientv3"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/ipdcode/containerfs/logger"
+	dp "github.com/ipdcode/containerfs/proto/dp"
+	mp "github.com/ipdcode/containerfs/proto/mp"
+	vp "github.com/ipdcode/containerfs/proto/vp"
+	"github.com/ipdcode/containerfs/utils"
 	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -132,17 +132,17 @@ func (s *VolMgrServer) DatanodeHeartbeat(ctx context.Context, in *vp.DatanodeHea
 		return &ack, nil
 	}
 	/*
-	if statu != 0 {
-		logger.Debug("The disk(%s:%d) bad statu:%d, so make it all blks is disabled", ip, port, statu)
-		blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=1 WHERE hostip=? and hostport=?")
-		checkErr(err)
-		defer blk.Close()
-		_, err = blk.Exec(ip, port)
-		if err != nil {
-			logger.Error("The disk(%s:%d) bad statu:%d update blk table disabled error:%s", ip, port, statu, err)
-		}
-	}*/
-	checkandupdatediskstatu(ip,int(port),int(statu))
+		if statu != 0 {
+			logger.Debug("The disk(%s:%d) bad statu:%d, so make it all blks is disabled", ip, port, statu)
+			blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=1 WHERE hostip=? and hostport=?")
+			checkErr(err)
+			defer blk.Close()
+			_, err = blk.Exec(ip, port)
+			if err != nil {
+				logger.Error("The disk(%s:%d) bad statu:%d update blk table disabled error:%s", ip, port, statu, err)
+			}
+		}*/
+	checkandupdatediskstatu(ip, int(port), int(statu))
 	return &ack, nil
 }
 
@@ -344,21 +344,21 @@ func (s *VolMgrServer) GetVolList(ctx context.Context, in *vp.GetVolListReq) (*v
 	return &ack, nil
 }
 
-func checkandupdatediskstatu(ip string, port int, statu int){
-        var dbstatu int=0
-        disks, err := VolMgrDB.Query("SELECT statu FROM disks where ip=? and port=?",ip,port)
-        if err != nil {
-                logger.Error("Get from disks table for all disks error:%s", err)
-                return
-        }
-        defer disks.Close()
-        for disks.Next() {
-                err = disks.Scan(&dbstatu)
-                if err != nil {
-                        logger.Error("Scan db for get datanodeAddr error:%v", err)
-                        continue
-                }
-        }
+func checkandupdatediskstatu(ip string, port int, statu int) {
+	var dbstatu int = 0
+	disks, err := VolMgrDB.Query("SELECT statu FROM disks where ip=? and port=?", ip, port)
+	if err != nil {
+		logger.Error("Get from disks table for all disks error:%s", err)
+		return
+	}
+	defer disks.Close()
+	for disks.Next() {
+		err = disks.Scan(&dbstatu)
+		if err != nil {
+			logger.Error("Scan db for get datanodeAddr error:%v", err)
+			continue
+		}
+	}
 
 	if dbstatu == 0 && statu == 2 {
 		updateDataNodeStatu(ip, port, 2)
@@ -428,8 +428,8 @@ func updateDataNodeStatu(ip string, port int, statu int) {
 		if err != nil {
 			logger.Error("The disk(%s:%d) bad statu:%d update blk table disabled error:%s", ip, port, statu, err)
 		}
-		
-		UpdateMeta(mc,ip,port,statu)
+
+		UpdateMeta(mc, ip, port, statu)
 
 	} else if statu == 0 {
 		logger.Debug("The disk(%s:%d) recovy,so update from 1 to 0, make it all blks is able", ip, port, statu)
@@ -441,68 +441,68 @@ func updateDataNodeStatu(ip string, port int, statu int) {
 			logger.Error("The disk(%s:%d) recovy , but update blk table able error:%s", ip, port, statu, err)
 		}
 
-		UpdateMeta(mc,ip,port,statu)
+		UpdateMeta(mc, ip, port, statu)
 	}
 	return
 }
 
 func UpdateMeta(mc mp.MetaNodeClient, ip string, port int, statu int) {
-		var blkid int
-                var badblks []int
-                blks, err := VolMgrDB.Query("SELECT blkid FROM blk WHERE hostip=? and hostport=? and allocated=1", ip, port)
-                if err != nil {
-                        logger.Error("Get from blk table for all bad node blks error:%s", err)
-                }
-                defer blks.Close()
-                for blks.Next() {
-                        err = blks.Scan(&blkid)
-                        if err != nil {
-                                logger.Error("Scan db for get bad blk error:%v", err)
-                                continue
-                        }
-                        badblks = append(badblks, blkid)
-                }
+	var blkid int
+	var badblks []int
+	blks, err := VolMgrDB.Query("SELECT blkid FROM blk WHERE hostip=? and hostport=? and allocated=1", ip, port)
+	if err != nil {
+		logger.Error("Get from blk table for all bad node blks error:%s", err)
+	}
+	defer blks.Close()
+	for blks.Next() {
+		err = blks.Scan(&blkid)
+		if err != nil {
+			logger.Error("Scan db for get bad blk error:%v", err)
+			continue
+		}
+		badblks = append(badblks, blkid)
+	}
 
-                pmUpdateBlkGrpReq := &mp.UpdateBlkGrpReq{}
-                var volid string
-                var blkgrpid int
-                var m map[string][]*mp.UpdateBlkGrpInfo
-                m = make(map[string][]*mp.UpdateBlkGrpInfo)
+	pmUpdateBlkGrpReq := &mp.UpdateBlkGrpReq{}
+	var volid string
+	var blkgrpid int
+	var m map[string][]*mp.UpdateBlkGrpInfo
+	m = make(map[string][]*mp.UpdateBlkGrpInfo)
 
-                for _, id := range badblks {
-                        str := "%" + strconv.Itoa(id) + ",%"
-                        blkgrp, err := VolMgrDB.Query("SELECT blkgrpid,volume_uuid FROM blkgrp WHERE blks like ?", str)
-                        if err != nil {
-                                logger.Error("Get from blk table for all bad node blks error:%s", err)
-                                continue
-                        }
-                        defer blkgrp.Close()
-                        for blkgrp.Next() {
-                                err = blkgrp.Scan(&blkgrpid, &volid)
-                                if err != nil {
-                                        logger.Error("Scan db for get bad blk error:%v", err)
-                                        continue
-                                }
-                                pmUpdateBlkGrpInfo := &mp.UpdateBlkGrpInfo{
-                                        BlkGrpID: int32(blkgrpid),
-                                        BlockID:  int32(id),
-                                        Status:   int32(statu),
-                                }
+	for _, id := range badblks {
+		str := "%" + strconv.Itoa(id) + ",%"
+		blkgrp, err := VolMgrDB.Query("SELECT blkgrpid,volume_uuid FROM blkgrp WHERE blks like ?", str)
+		if err != nil {
+			logger.Error("Get from blk table for all bad node blks error:%s", err)
+			continue
+		}
+		defer blkgrp.Close()
+		for blkgrp.Next() {
+			err = blkgrp.Scan(&blkgrpid, &volid)
+			if err != nil {
+				logger.Error("Scan db for get bad blk error:%v", err)
+				continue
+			}
+			pmUpdateBlkGrpInfo := &mp.UpdateBlkGrpInfo{
+				BlkGrpID: int32(blkgrpid),
+				BlockID:  int32(id),
+				Status:   int32(statu),
+			}
 
-                                m[volid] = append(m[volid], pmUpdateBlkGrpInfo)
-                        }
-                }
+			m[volid] = append(m[volid], pmUpdateBlkGrpInfo)
+		}
+	}
 
-                for k, v := range m {
-                        pmUpdateBlkGrpReq.VolID = k
-                        pmUpdateBlkGrpReq.UpdateBlkGrpInfo = v
-                        logger.Debug("=== Need update volid:%v updateblkinfo:%v ===",k,v)
-                        _, ret := mc.UpdateBlkGrp(context.Background(), pmUpdateBlkGrpReq)
-                        if ret != nil {
-                                logger.Error("Update blk for volid:%v to metadata err:%v", k, ret)
-                                continue
-                        }
-                }
+	for k, v := range m {
+		pmUpdateBlkGrpReq.VolID = k
+		pmUpdateBlkGrpReq.UpdateBlkGrpInfo = v
+		logger.Debug("=== Need update volid:%v updateblkinfo:%v ===", k, v)
+		_, ret := mc.UpdateBlkGrp(context.Background(), pmUpdateBlkGrpReq)
+		if ret != nil {
+			logger.Error("Update blk for volid:%v to metadata err:%v", k, ret)
+			continue
+		}
+	}
 
 }
 

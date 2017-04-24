@@ -1,11 +1,11 @@
 package namespace
 
 import (
-	"../../logger"
-	mp "../../proto/mp"
-	vp "../../proto/vp"
-	"../../utils"
 	"encoding/json"
+	"github.com/ipdcode/containerfs/logger"
+	mp "github.com/ipdcode/containerfs/proto/mp"
+	vp "github.com/ipdcode/containerfs/proto/vp"
+	"github.com/ipdcode/containerfs/utils"
 	"strconv"
 	"time"
 )

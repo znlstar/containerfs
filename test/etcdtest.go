@@ -2,12 +2,12 @@ package main
 
 import (
 	"fmt"
-	"../utils"
+	"github.com/ipdcode/containerfs/utils"
 	"os"
-	"time"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 var wg sync.WaitGroup
@@ -28,28 +28,28 @@ func main() {
 
 	var a int64
 
-        for i:=0;i<100;i++ {
+	for i := 0; i < 100; i++ {
 		for a = 0; a < 10000; a++ {
 			wg.Add(1)
 			go Set(client, a)
 		}
 		wg.Wait()
-		fmt.Printf("-----------%v----%v\n",i,time.Now())
-        }
+		fmt.Printf("-----------%v----%v\n", i, time.Now())
+	}
 	/*
 		for a = 0; a < 1000; a++ {
 			//fmt.Printf("a: %d\n", a)
 			go client.Get("/testetcd/"+strconv.FormatInt(a, 10))
 		}
 	*/
-/*
-	resp, err := client.GetWithPrefix("/testetcd/999")
-	if err != nil {
-		fmt.Printf("err:%v\n", err)
-	}
-	for _, ev := range resp.Kvs {
-		fmt.Printf("%s : %s\n", ev.Key, ev.Value)
-	}
-*/
+	/*
+		resp, err := client.GetWithPrefix("/testetcd/999")
+		if err != nil {
+			fmt.Printf("err:%v\n", err)
+		}
+		for _, ev := range resp.Kvs {
+			fmt.Printf("%s : %s\n", ev.Key, ev.Value)
+		}
+	*/
 
 }

@@ -6,6 +6,8 @@ go:
   - 1.8
   - master
 
+go_import_path: github.com/ipdcode/containerfs
+
 before_install:
   - wget https://github.com/google/protobuf/releases/download/v3.2.0/protoc-3.2.0-linux-x86_64.zip
   - sudo unzip protoc-3.2.0-linux-x86_64.zip -d /usr
@@ -15,6 +17,8 @@ before_install:
   - go get -u github.com/coreos/etcd/cmd/etcd
   - go get -u bazil.org/fuse
   - go get -u github.com/lxmgo/config
+  - go get -u golang.org/x/net/context
+  - go get -u google.golang.org/grpc
 
 script:
   - pwd
