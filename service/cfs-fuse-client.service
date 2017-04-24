@@ -1,0 +1,9 @@
+[Unit]
+Description=ContainerFS Fuse Client Service
+
+[Service]
+ExecStart=/usr/local/bin/cfs-fuse-client /usr/local/conf/cfs-fuse-client.ini
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

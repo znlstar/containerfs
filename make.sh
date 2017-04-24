@@ -19,8 +19,12 @@ do
   pushd $dir
   go get
   go build -o cfs-$dir main.go
-  cp cfs-$dir $dir.ini ../output
+  cp cfs-$dir cfs-$dir.ini ../output
   popd
 done
+
+cp ./service/* ./output
+cd ./output
+tar zcvf cfs.tar.gz ./*
 
 echo "------------- build end -------------"

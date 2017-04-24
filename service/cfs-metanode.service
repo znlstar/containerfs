@@ -1,0 +1,9 @@
+[Unit]
+Description=ContainerFS Metanode Service
+
+[Service]
+ExecStart=/usr/local/bin/cfs-metanode /usr/local/conf/cfs-metanode.ini
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

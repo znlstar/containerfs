@@ -7,15 +7,16 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	//"io/ioutil"
-	"bufio"
 	"../logger"
 	dp "../proto/dp"
 	vp "../proto/vp"
 	"../utils"
+	"bufio"
 	"github.com/lxmgo/config"
 	"net"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"time"
@@ -111,7 +112,22 @@ func heartbeatToVolMgr() {
 	datanodeHeartbeatReq.Port = DataNodeServerAddr.Port
 	datanodeHeartbeatReq.Free = free
 	datanodeHeartbeatReq.Used = used
-	datanodeHeartbeatReq.Status = 0
+	//datanodeHeartbeatReq.Status = 0
+
+	f, err := os.OpenFile(DataNodeServerAddr.Path+"/health", os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0666)
+	if err != nil {
+		logger.Error("Open datanode check health file error:%v",err)
+		datanodeHeartbeatReq.Status = 2
+	}
+	defer f.Close()
+
+	_, err = f.WriteString("ok")
+	if err != nil {
+		logger.Error("Write datanode check health file error:%v",err)
+		datanodeHeartbeatReq.Status = 2
+	} else {
+		datanodeHeartbeatReq.Status = 0
+	}
 
 	c.DatanodeHeartbeat(context.Background(), &datanodeHeartbeatReq)
 }
@@ -122,7 +138,7 @@ rpc GetChunks(GetChunksReq) returns (GetChunksAck){};
 func (s *DataNodeServer) DatanodeHealthCheck(ctx context.Context, in *dp.DatanodeHealthCheckReq) (*dp.DatanodeHealthCheckAck, error) {
 	ack := dp.DatanodeHealthCheckAck{}
 	ack.Ret = 1
-	return &ack,nil
+	return &ack, nil
 }
 
 func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (*dp.WriteChunkAck, error) {
@@ -333,6 +349,13 @@ func main() {
 
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
+
+	defer func() {
+		if err := recover(); err != nil {
+			logger.Error("panic !!! :%v", err)
+			logger.Error("stacks:%v", string(debug.Stack()))
+		}
+	}()
 
 	ticker := time.NewTicker(time.Second * 60)
 	go func() {

@@ -1,13 +1,15 @@
 package main
 
 import (
+	"../logger"
+	dp "../proto/dp"
+	mp "../proto/mp"
+	vp "../proto/vp"
+	"../utils"
 	"database/sql"
 	"fmt"
+	"github.com/coreos/etcd/clientv3"
 	_ "github.com/go-sql-driver/mysql"
-	"../logger"
-	vp "../proto/vp"
-	dp "../proto/dp"
-	"../utils"
 	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -15,6 +17,7 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,6 +32,9 @@ type addr struct {
 }
 
 var VolMgrServerAddr addr
+var MetaNodeAddr string
+var EtcdAddrs []string
+
 var Wg sync.WaitGroup
 
 type mysqlc struct {
@@ -117,14 +123,15 @@ func (s *VolMgrServer) DatanodeHeartbeat(ctx context.Context, in *vp.DatanodeHea
 	ip := ipnr.String()
 
 	logger.Debug("The disks(%s:%d) heartbeat info(used:%d -- free:%d -- statu:%d)", ip, port, used, free, statu)
-	disk, err := VolMgrDB.Prepare("UPDATE disks SET used=?,free=?,statu=? WHERE ip=? and port=?")
+	disk, err := VolMgrDB.Prepare("UPDATE disks SET used=?,free=? WHERE ip=? and port=?")
 	checkErr(err)
 	defer disk.Close()
-	_, err = disk.Exec(used, free, statu, ip, port)
+	_, err = disk.Exec(used, free, ip, port)
 	if err != nil {
 		logger.Error("The disk(%s:%d) heartbeat update to db error:%s", ip, port, err)
 		return &ack, nil
 	}
+	/*
 	if statu != 0 {
 		logger.Debug("The disk(%s:%d) bad statu:%d, so make it all blks is disabled", ip, port, statu)
 		blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=1 WHERE hostip=? and hostport=?")
@@ -134,7 +141,8 @@ func (s *VolMgrServer) DatanodeHeartbeat(ctx context.Context, in *vp.DatanodeHea
 		if err != nil {
 			logger.Error("The disk(%s:%d) bad statu:%d update blk table disabled error:%s", ip, port, statu, err)
 		}
-	}
+	}*/
+	checkandupdatediskstatu(ip,int(port),int(statu))
 	return &ack, nil
 }
 
@@ -177,7 +185,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 
 		var blkid int
 		var blks string = ""
-		var count int=0
+		var count int = 0
 		for rows.Next() {
 			err := rows.Scan(&blkid)
 			if err != nil {
@@ -336,75 +344,174 @@ func (s *VolMgrServer) GetVolList(ctx context.Context, in *vp.GetVolListReq) (*v
 	return &ack, nil
 }
 
+func checkandupdatediskstatu(ip string, port int, statu int){
+        var dbstatu int=0
+        disks, err := VolMgrDB.Query("SELECT statu FROM disks where ip=? and port=?",ip,port)
+        if err != nil {
+                logger.Error("Get from disks table for all disks error:%s", err)
+                return
+        }
+        defer disks.Close()
+        for disks.Next() {
+                err = disks.Scan(&dbstatu)
+                if err != nil {
+                        logger.Error("Scan db for get datanodeAddr error:%v", err)
+                        continue
+                }
+        }
+
+	if dbstatu == 0 && statu == 2 {
+		updateDataNodeStatu(ip, port, 2)
+	} else if dbstatu == 2 && statu == 0 {
+		updateDataNodeStatu(ip, port, 0)
+	} else {
+		return
+	}
+}
+
 func detectdatanode(ip string, port int, statu int) {
-	dnAddr := ip+":"+strconv.Itoa(port)
+	dnAddr := ip + ":" + strconv.Itoa(port)
 	conn, err := grpc.Dial(dnAddr, grpc.WithInsecure())
-        if err != nil {
-                logger.Error("Detect DataNode:%v failed : Dial to datanode failed !",dnAddr)
+	if err != nil {
+		logger.Error("Detect DataNode:%v failed : Dial to datanode failed !", dnAddr)
 		if statu == 0 {
-			updateDataNodeStatu(ip,port,1)
+			updateDataNodeStatu(ip, port, 1)
 		}
 		Wg.Add(-1)
 		return
-        }
-        defer conn.Close()
-        c := dp.NewDataNodeClient(conn)
-        var DatanodeHealthCheckReq  dp.DatanodeHealthCheckReq
-        pDatanodeHealthCheckAck, err := c.DatanodeHealthCheck(context.Background(), &DatanodeHealthCheckReq)
-        if err != nil {
+	}
+	defer conn.Close()
+	c := dp.NewDataNodeClient(conn)
+	var DatanodeHealthCheckReq dp.DatanodeHealthCheckReq
+	pDatanodeHealthCheckAck, err := c.DatanodeHealthCheck(context.Background(), &DatanodeHealthCheckReq)
+	if err != nil {
 		if statu == 0 {
-			updateDataNodeStatu(ip,port,1)
+			updateDataNodeStatu(ip, port, 1)
 		}
 		Wg.Add(-1)
 		return
-        }
+	}
 	if pDatanodeHealthCheckAck.Ret == 1 && statu == 1 {
-		updateDataNodeStatu(ip,port,0)
+		updateDataNodeStatu(ip, port, 0)
 		Wg.Add(-1)
 		return
 	}
 }
 
 func updateDataNodeStatu(ip string, port int, statu int) {
+	GetMetaLeader()
+	conn, err := DialMeta()
+	if err != nil {
+		logger.Error("Dial to metanode fail :%v for update blkds\n", err)
+		return
+	}
+	defer conn.Close()
+	mc := mp.NewMetaNodeClient(conn)
+
 	disk, err := VolMgrDB.Prepare("UPDATE disks SET statu=? WHERE ip=? and port=?")
 	if err != nil {
 		return
 	}
 
-        defer disk.Close()
-        _, err = disk.Exec(statu, ip, port)
-        if err != nil {
-                logger.Error("The disk(%s:%d) update statu:%v to db error:%s", ip, port, statu, err)
-                return
-        }
-        if statu == 1 {
-                logger.Debug("The disk(%s:%d) bad statu:%d, so make it all blks is disabled", ip, port, statu)
-                blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=1 WHERE hostip=? and hostport=?")
-                checkErr(err)
-                defer blk.Close()
-                _, err = blk.Exec(ip, port)
-                if err != nil {
-                        logger.Error("The disk(%s:%d) bad statu:%d update blk table disabled error:%s", ip, port, statu, err)
-                }
-        } else if statu == 0 {
+	defer disk.Close()
+	_, err = disk.Exec(statu, ip, port)
+	if err != nil {
+		logger.Error("The disk(%s:%d) update statu:%v to db error:%s", ip, port, statu, err)
+		return
+	}
+	if statu == 1 || statu == 2 {
+		logger.Debug("The disk(%s:%d) bad statu:%d, so make it all blks is disabled, and update metadata for allocated blks", ip, port, statu)
+		blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=1 WHERE hostip=? and hostport=?")
+		checkErr(err)
+		defer blk.Close()
+		_, err = blk.Exec(ip, port)
+		if err != nil {
+			logger.Error("The disk(%s:%d) bad statu:%d update blk table disabled error:%s", ip, port, statu, err)
+		}
+		
+		UpdateMeta(mc,ip,port,statu)
+
+	} else if statu == 0 {
 		logger.Debug("The disk(%s:%d) recovy,so update from 1 to 0, make it all blks is able", ip, port, statu)
-                blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=0 WHERE hostip=? and hostport=?")
-                checkErr(err)
-                defer blk.Close()
-                _, err = blk.Exec(ip, port)
-                if err != nil {
-                        logger.Error("The disk(%s:%d) recovy , but update blk table able error:%s", ip, port, statu, err)
-                }
+		blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=0 WHERE hostip=? and hostport=?")
+		checkErr(err)
+		defer blk.Close()
+		_, err = blk.Exec(ip, port)
+		if err != nil {
+			logger.Error("The disk(%s:%d) recovy , but update blk table able error:%s", ip, port, statu, err)
+		}
+
+		UpdateMeta(mc,ip,port,statu)
 	}
 	return
 }
 
+func UpdateMeta(mc mp.MetaNodeClient, ip string, port int, statu int) {
+		var blkid int
+                var badblks []int
+                blks, err := VolMgrDB.Query("SELECT blkid FROM blk WHERE hostip=? and hostport=? and allocated=1", ip, port)
+                if err != nil {
+                        logger.Error("Get from blk table for all bad node blks error:%s", err)
+                }
+                defer blks.Close()
+                for blks.Next() {
+                        err = blks.Scan(&blkid)
+                        if err != nil {
+                                logger.Error("Scan db for get bad blk error:%v", err)
+                                continue
+                        }
+                        badblks = append(badblks, blkid)
+                }
+
+                pmUpdateBlkGrpReq := &mp.UpdateBlkGrpReq{}
+                var volid string
+                var blkgrpid int
+                var m map[string][]*mp.UpdateBlkGrpInfo
+                m = make(map[string][]*mp.UpdateBlkGrpInfo)
+
+                for _, id := range badblks {
+                        str := "%" + strconv.Itoa(id) + ",%"
+                        blkgrp, err := VolMgrDB.Query("SELECT blkgrpid,volume_uuid FROM blkgrp WHERE blks like ?", str)
+                        if err != nil {
+                                logger.Error("Get from blk table for all bad node blks error:%s", err)
+                                continue
+                        }
+                        defer blkgrp.Close()
+                        for blkgrp.Next() {
+                                err = blkgrp.Scan(&blkgrpid, &volid)
+                                if err != nil {
+                                        logger.Error("Scan db for get bad blk error:%v", err)
+                                        continue
+                                }
+                                pmUpdateBlkGrpInfo := &mp.UpdateBlkGrpInfo{
+                                        BlkGrpID: int32(blkgrpid),
+                                        BlockID:  int32(id),
+                                        Status:   int32(statu),
+                                }
+
+                                m[volid] = append(m[volid], pmUpdateBlkGrpInfo)
+                        }
+                }
+
+                for k, v := range m {
+                        pmUpdateBlkGrpReq.VolID = k
+                        pmUpdateBlkGrpReq.UpdateBlkGrpInfo = v
+                        logger.Debug("=== Need update volid:%v updateblkinfo:%v ===",k,v)
+                        _, ret := mc.UpdateBlkGrp(context.Background(), pmUpdateBlkGrpReq)
+                        if ret != nil {
+                                logger.Error("Update blk for volid:%v to metadata err:%v", k, ret)
+                                continue
+                        }
+                }
+
+}
+
 func detectDataNodes() {
 	var ip string
-        var port int
+	var port int
 	var statu int
-        disks, err := VolMgrDB.Query("SELECT ip,port,statu FROM disks")
-        if err != nil {
+	disks, err := VolMgrDB.Query("SELECT ip,port,statu FROM disks")
+	if err != nil {
 		logger.Error("Get from disks table for all disks error:%s", err)
 		return
 	}
@@ -412,11 +519,11 @@ func detectDataNodes() {
 	for disks.Next() {
 		err = disks.Scan(&ip, &port, &statu)
 		if err != nil {
-			logger.Error("Scan db for get datanodeAddr error:%v",err)
+			logger.Error("Scan db for get datanodeAddr error:%v", err)
 			continue
 		}
 		Wg.Add(1)
-		go detectdatanode(ip,port,statu)
+		go detectdatanode(ip, port, statu)
 	}
 }
 
@@ -435,6 +542,47 @@ func StartVolMgrService() {
 	}
 }
 
+func GetMetaLeader() {
+	cli, err := clientv3.New(clientv3.Config{
+		Endpoints: EtcdAddrs,
+	})
+	if err != nil {
+		logger.Error("GetMetaLeader New Clent err:%v", err)
+		return
+	}
+	defer cli.Close()
+
+	ctx := context.Background()
+	resp, err := cli.Get(ctx, "/ContainerFS/MetaLeader")
+	if err != nil {
+		logger.Error("GetMetaLeader etcd get err:%v", err)
+	}
+	for _, ev := range resp.Kvs {
+		MetaNodeAddr = string(ev.Value)
+	}
+	logger.Debug("Get MetaLeaderNode Addr:%s", MetaNodeAddr)
+}
+
+func DialMeta() (*grpc.ClientConn, error) {
+	var conn *grpc.ClientConn
+	var err error
+
+	conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
+
+	if err != nil {
+		time.Sleep(300 * time.Millisecond)
+		logger.Error("DialMeta 1: addr:%v", MetaNodeAddr)
+
+		conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
+		if err != nil {
+			time.Sleep(300 * time.Millisecond)
+			logger.Error("DialMeta 1: addr:%v", MetaNodeAddr)
+			conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
+		}
+	}
+	return conn, err
+}
+
 func init() {
 	c, err := config.NewConfig(os.Args[1])
 	if err != nil {
@@ -445,7 +593,7 @@ func init() {
 	VolMgrServerAddr.port = port
 	VolMgrServerAddr.log = c.String("log")
 	VolMgrServerAddr.host = c.String("host")
-
+	EtcdAddrs = c.Strings("etcd::hosts")
 	os.MkdirAll(VolMgrServerAddr.log, 0777)
 
 	mysqlConf.dbhost = c.String("mysql::host")
@@ -468,7 +616,6 @@ func init() {
 
 	VolMgrDB, err = sql.Open("mysql", mysqlConf.dbusername+":"+mysqlConf.dbpassword+"@tcp("+mysqlConf.dbhost+")/"+mysqlConf.dbname+"?charset=utf8")
 	checkErr(err)
-
 	err = VolMgrDB.Ping()
 	checkErr(err)
 
@@ -479,12 +626,19 @@ func main() {
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
 
-	ticker := time.NewTicker(time.Second * 6)
-        go func() {
+	defer func() {
+		if err := recover(); err != nil {
+			logger.Error("panic !!! :%v", err)
+		}
+		logger.Error("stacks:%v", string(debug.Stack()))
+	}()
+
+	ticker := time.NewTicker(time.Second * 10)
+	go func() {
 		for _ = range ticker.C {
-                        detectDataNodes()
-                }
-        }()
+			detectDataNodes()
+		}
+	}()
 	Wg.Wait()
 	defer VolMgrDB.Close()
 	StartVolMgrService()

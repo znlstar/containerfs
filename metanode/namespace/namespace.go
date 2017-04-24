@@ -1,9 +1,9 @@
 package namespace
 
 import (
-	"bytes"
 	mp "../../proto/mp"
 	vp "../../proto/vp"
+	"bytes"
 
 	"../../logger"
 	"../../utils"
@@ -722,6 +722,29 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 	ns.BlockGroupEtcdSet(blockGroupID, ns.VolID, blockGroup)
 
 }
+func (ns *nameSpace) UpdateBlkGrp(blockGroupID int32, blockID int32, status int32) int32 {
+
+	ok, blockGroup := ns.BlockGroupDBGet(blockGroupID)
+	if !ok {
+		return -1
+	}
+	if 0 != status {
+		for i := range blockGroup.BlockInfos {
+			if blockGroup.BlockInfos[i].BlockID == blockID {
+				blockGroup.BlockInfos = append(blockGroup.BlockInfos[:i], blockGroup.BlockInfos[i+1:]...)
+				break
+			}
+		}
+		if len(blockGroup.BlockInfos) == 0 {
+			blockGroup.Status = 3
+		}
+		ns.BlockGroupDBSet(blockGroupID, blockGroup)
+		ns.BlockGroupEtcdSet(blockGroupID, ns.VolID, blockGroup)
+	}
+	return 0
+
+}
+
 func (ns *nameSpace) GetAllKeyByFullPath(in string) (keys []string) {
 	tmp := strings.Split(in, "/")
 	keys = make([]string, 1)
@@ -760,10 +783,11 @@ func (ns *nameSpace) AllocateChunkID() int64 {
 
 func (ns *nameSpace) InodeDBGet(k string) (bool, *mp.InodeInfo) {
 	ns.Mutex.RLock()
-	defer ns.Mutex.RUnlock()
 	if v, ok := ns.InodeDB[k]; ok {
+		ns.Mutex.RUnlock()
 		return true, v
 	} else {
+		ns.Mutex.RUnlock()
 		return false, nil
 	}
 }
@@ -781,10 +805,11 @@ func (ns *nameSpace) InodeDBDelete(k string) {
 
 func (ns *nameSpace) BlockGroupDBGet(k int32) (bool, *vp.BlockGroup) {
 	ns.BGMutex.RLock()
-	defer ns.BGMutex.RUnlock()
 	if v, ok := ns.BlockGroupDB[k]; ok {
+		ns.BGMutex.RUnlock()
 		return true, v
 	} else {
+		ns.BGMutex.RUnlock()
 		return false, nil
 	}
 }
@@ -802,10 +827,11 @@ func (ns *nameSpace) BlockGroupDBDelete(k int32) {
 
 func (ns *nameSpace) ChunkDBGet(k int64) (bool, *mp.ChunkInfo) {
 	ns.CMutex.RLock()
-	defer ns.CMutex.RUnlock()
 	if v, ok := ns.ChunkDB[k]; ok {
+		ns.CMutex.RUnlock()
 		return true, v
 	} else {
+		ns.CMutex.RUnlock()
 		return false, nil
 	}
 }
