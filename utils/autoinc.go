@@ -1,11 +1,13 @@
 package utils
 
+// autoinc struct
 type AutoInc struct {
 	start, step, Cur int64
 	queue            chan int64
 	running          bool
 }
 
+// new
 func New(start, step int64) (ai *AutoInc) {
 	ai = &AutoInc{
 		start:   start,
@@ -25,11 +27,13 @@ func (ai *AutoInc) process() {
 	}
 }
 
+// id
 func (ai *AutoInc) Id() int64 {
 	ai.Cur = <-ai.queue
 	return ai.Cur
 }
 
+// close
 func (ai *AutoInc) Close() {
 	ai.running = false
 	close(ai.queue)

@@ -16,6 +16,7 @@ func substr(s string, pos, length int) string {
 	return string(runes[pos:l])
 }
 
+// GetParentFullPath
 func GetParentFullPath(in string) (parentFullPath string) {
 	parentFullPath = substr(in, 0, strings.LastIndex(in, "/"))
 	if parentFullPath == "" {
@@ -24,6 +25,7 @@ func GetParentFullPath(in string) (parentFullPath string) {
 	return
 }
 
+// GetSelfName
 func GetSelfName(in string) (selfName string) {
 	tmp := strings.Split(in, "/")
 	selfName = tmp[len(tmp)-1]
@@ -33,6 +35,7 @@ func GetSelfName(in string) (selfName string) {
 	return
 }
 
+// GetParentName
 func GetParentName(in string) (parentName string) {
 	tmp := strings.Split(in, "/")
 	parentName = tmp[len(tmp)-2]
@@ -42,6 +45,7 @@ func GetParentName(in string) (parentName string) {
 	return
 }
 
+// MD5
 func MD5(in string) string {
 	h := md5.New()
 	h.Write([]byte(in))
@@ -50,6 +54,7 @@ func MD5(in string) string {
 	return hexStr
 }
 
+// LocalPathExists
 func LocalPathExists(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {

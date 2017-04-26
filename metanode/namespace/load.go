@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// VolMetaWatcherVersion
 type VolMetaWatcherVersion struct {
 	ChunkBaseIDVersion int64
 	InodeBaseIDVersion int64
@@ -18,6 +19,7 @@ type VolMetaWatcherVersion struct {
 	InodeDBVersion     int64
 }
 
+// LoadVolMeta
 func LoadVolMeta(volID string) {
 
 	logger.Error("LoadVolMeta volID %v\n", volID)
@@ -112,6 +114,7 @@ func LoadVolMeta(volID string) {
 	go WatchVolMeta(volID)
 }
 
+// WatchVolMeta
 func WatchVolMeta(volID string) {
 	ret, nameSpace := GetNameSpace(volID)
 	if ret != 0 {

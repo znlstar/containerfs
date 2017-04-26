@@ -4,6 +4,7 @@ import (
 	"github.com/lostz/graft"
 )
 
+// raft struct
 type Raft struct {
 	Me     string
 	MePort int
@@ -11,15 +12,16 @@ type Raft struct {
 	R      *graft.Raft
 }
 
+// raft info
 var RaftInfo Raft
 
+// start service
 func StartRaftService() *graft.Raft {
 	var err error
 	chanState := make(chan bool, 100)
 	RaftInfo.R, err = graft.New(RaftInfo.Peer, RaftInfo.Me, RaftInfo.MePort, chanState)
 	if err != nil {
 		return nil
-	} else {
-		return RaftInfo.R
 	}
+	return RaftInfo.R
 }

@@ -31,10 +31,16 @@ type addr struct {
 	log  string
 }
 
+// VolMgrServerAddr
 var VolMgrServerAddr addr
+
+// MetaNodeAddr
 var MetaNodeAddr string
+
+// EtcdAddrs
 var EtcdAddrs []string
 
+// Wg
 var Wg sync.WaitGroup
 
 type mysqlc struct {
@@ -50,12 +56,14 @@ const (
 	Blksize = 10 /*G*/
 )
 
-//var g_RpcConfig RpcConfigOpts
+// Mutexvar g_RpcConfig RpcConfigOpts
 var Mutex sync.RWMutex
 var err string
 
+// VolMgrServer
 type VolMgrServer struct{}
 
+// VolMgrDB
 var VolMgrDB *sql.DB
 
 func checkErr(err error) {
@@ -64,6 +72,7 @@ func checkErr(err error) {
 	}
 }
 
+// DatanodeRegistry
 func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegistryReq) (*vp.DatanodeRegistryAck, error) {
 	ack := vp.DatanodeRegistryAck{}
 	dn_ip := utils.Inet_ntoa(in.Ip)
@@ -113,6 +122,7 @@ func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegi
 	return &ack, nil
 }
 
+// DatanodeHeartbeat
 func (s *VolMgrServer) DatanodeHeartbeat(ctx context.Context, in *vp.DatanodeHeartbeatReq) (*vp.DatanodeHeartbeatAck, error) {
 	ack := vp.DatanodeHeartbeatAck{}
 	port := in.Port
@@ -146,6 +156,7 @@ func (s *VolMgrServer) DatanodeHeartbeat(ctx context.Context, in *vp.DatanodeHea
 	return &ack, nil
 }
 
+// CreateVol
 func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.CreateVolAck, error) {
 	ack := vp.CreateVolAck{}
 	volname := in.VolName
@@ -232,6 +243,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	return &ack, nil
 }
 
+// GetVolInfo
 func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*vp.GetVolInfoAck, error) {
 	ack := vp.GetVolInfoAck{}
 	var volInfo vp.VolInfo
@@ -320,6 +332,7 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 	return &ack, nil
 }
 
+// GetVolList
 func (s *VolMgrServer) GetVolList(ctx context.Context, in *vp.GetVolListReq) (*vp.GetVolListAck, error) {
 	ack := vp.GetVolListAck{}
 
@@ -446,6 +459,7 @@ func updateDataNodeStatu(ip string, port int, statu int) {
 	return
 }
 
+// UpdateMeta
 func UpdateMeta(mc mp.MetaNodeClient, ip string, port int, statu int) {
 	var blkid int
 	var badblks []int
@@ -527,6 +541,7 @@ func detectDataNodes() {
 	}
 }
 
+// StartVolMgrService
 func StartVolMgrService() {
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", VolMgrServerAddr.port))
@@ -542,6 +557,7 @@ func StartVolMgrService() {
 	}
 }
 
+// GetMetaLeader
 func GetMetaLeader() {
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints: EtcdAddrs,
@@ -563,6 +579,7 @@ func GetMetaLeader() {
 	logger.Debug("Get MetaLeaderNode Addr:%s", MetaNodeAddr)
 }
 
+// DialMeta
 func DialMeta() (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error

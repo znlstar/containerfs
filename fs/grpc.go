@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// DialMeta
 func DialMeta() (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
@@ -37,6 +38,7 @@ func DialMeta() (*grpc.ClientConn, error) {
 	return conn, err
 }
 
+// DialData
 func DialData(host string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
@@ -52,6 +54,7 @@ func DialData(host string) (*grpc.ClientConn, error) {
 	return conn, err
 }
 
+// DialVolmgr
 func DialVolmgr(host string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error

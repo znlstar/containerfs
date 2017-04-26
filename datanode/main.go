@@ -22,6 +22,7 @@ import (
 	"time"
 )
 
+// DataNodeServer
 type DataNodeServer struct {
 	Mutex sync.Mutex
 }
@@ -39,6 +40,7 @@ type addr struct {
 	VolMgrPort string
 }
 
+// DataNodeServerAddr
 var DataNodeServerAddr addr
 
 func startDataService() {
@@ -132,15 +134,14 @@ func heartbeatToVolMgr() {
 	c.DatanodeHeartbeat(context.Background(), &datanodeHeartbeatReq)
 }
 
-/*
-rpc GetChunks(GetChunksReq) returns (GetChunksAck){};
-*/
+// DatanodeHealthCheck rpc GetChunks(GetChunksReq) returns (GetChunksAck){};
 func (s *DataNodeServer) DatanodeHealthCheck(ctx context.Context, in *dp.DatanodeHealthCheckReq) (*dp.DatanodeHealthCheckAck, error) {
 	ack := dp.DatanodeHealthCheckAck{}
 	ack.Ret = 1
 	return &ack, nil
 }
 
+// WriteChunk
 func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (*dp.WriteChunkAck, error) {
 	var f *os.File
 	var err error
@@ -232,6 +233,8 @@ func (s *DataNodeServer) ReadChunk(ctx context.Context, in *dp.ReadChunkReq) (*d
 	}
 }
 */
+
+// StreamReadChunk
 func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.DataNode_StreamReadChunkServer) error {
 	chunkID := in.ChunkID
 	blockID := in.BlockID
@@ -279,9 +282,7 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 
 }
 
-/*
-rpc DeleteChunks(eleteChunksReq) returns (eleteChunksAck){};
-*/
+//DeleteChunk rpc DeleteChunks(eleteChunksReq) returns (eleteChunksAck){};
 func (s *DataNodeServer) DeleteChunk(ctx context.Context, in *dp.DeleteChunkReq) (*dp.DeleteChunkAck, error) {
 	var err error
 

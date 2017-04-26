@@ -967,6 +967,8 @@ func (cfile *CFile) flushChannel() {
 		os.Exit(1)
 	}
 
+	copies := 0
+
 	for {
 		v := <-cfile.wChannel
 
@@ -985,6 +987,7 @@ func (cfile *CFile) flushChannel() {
 
 		dataBuf := v.buffer.Next(v.buffer.Len())
 
+		copies = 0
 		for i := range v.chunkInfo.BlockGroup.BlockInfos {
 			addr[i] = utils.Inet_ntoa(v.chunkInfo.BlockGroup.BlockInfos[i].DataNodeIP).String() + ":" + strconv.Itoa(int(v.chunkInfo.BlockGroup.BlockInfos[i].DataNodePort))
 			if addr[i] != cfile.wLastDataNode[i] {
@@ -995,7 +998,7 @@ func (cfile *CFile) flushChannel() {
 				connD[i], err = DialData(addr[i])
 				if err != nil {
 					logger.Error("flushChannel to datanode failed,Dial failed:%v\n", err)
-					return
+					continue
 				}
 				dc[i] = dp.NewDataNodeClient(connD[i])
 				cfile.wLastDataNode[i] = addr[i]
@@ -1012,11 +1015,19 @@ func (cfile *CFile) flushChannel() {
 			pWriteChunkAck, _ := dc[i].WriteChunk(context.Background(), pWriteChunkReq)
 			if pWriteChunkAck.Ret != 0 {
 				logger.Error("flushChannel WriteChunk Failed :%v\n", pWriteChunkAck.Ret)
-				cfile.cfs.Status = 1
-				return
+				continue
 			}
 
+			copies++
+
 		}
+
+		if copies < 1 {
+			logger.Error("WriteChunk copies < 2")
+			cfile.cfs.Status = 1
+			continue
+		}
+
 		mc := mp.NewMetaNodeClient(connM)
 		pSyncChunkReq := &mp.SyncChunkReq{
 			FileName: cfile.Path,
@@ -1039,13 +1050,16 @@ func (cfile *CFile) flushChannel() {
 			connM, err = DialMeta()
 			if err != nil {
 				logger.Error("Dial failed:%v\n", err)
-				logger.Error("process exit!!!")
-				time.Sleep(time.Second)
-				os.Exit(1)
+				cfile.cfs.Status = 1
+				continue
 			}
 			mc := mp.NewMetaNodeClient(connM)
 			pSyncChunkAck, ret = mc.SyncChunk(context.Background(), pSyncChunkReq)
-
+			if ret != nil {
+				logger.Error("flushChannel SyncChunk Failed again:%v\n", pSyncChunkReq.ChunkInfo)
+				cfile.cfs.Status = 1
+				continue
+			}
 		}
 		if pSyncChunkAck.Ret != 0 {
 			cfile.cfs.Status = 1

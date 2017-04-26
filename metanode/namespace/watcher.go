@@ -13,9 +13,10 @@ import (
 	"strconv"
 )
 
-var EtcdClient utils.EtcdV3
-var IsWatcher bool
+var EtcdClient utils.EtcdV3 // EtcdClient
+var IsWatcher bool          // IsWatcher
 
+// MakeEtcdKeyString
 func (ns *nameSpace) MakeEtcdKeyString(k string, types string, volID string) (key string) {
 	var buf bytes.Buffer
 	buf.WriteString("/ContainerFS/")
@@ -28,6 +29,7 @@ func (ns *nameSpace) MakeEtcdKeyString(k string, types string, volID string) (ke
 	return key
 }
 
+// MakeEtcdWatchPreKey
 func (ns *nameSpace) MakeEtcdWatchPreKey(types string, volID string) (key string) {
 	var buf bytes.Buffer
 	buf.WriteString("/ContainerFS/")
@@ -39,6 +41,7 @@ func (ns *nameSpace) MakeEtcdWatchPreKey(types string, volID string) (key string
 	return key
 }
 
+// InodeEtcdSet
 func (ns *nameSpace) InodeEtcdSet(k string, volID string, v *mp.InodeInfo) {
 
 	var key string
@@ -48,6 +51,7 @@ func (ns *nameSpace) InodeEtcdSet(k string, volID string, v *mp.InodeInfo) {
 
 }
 
+// InodeEtcdDelete
 func (ns *nameSpace) InodeEtcdDelete(k string, volID string) {
 
 	var key string
@@ -56,6 +60,7 @@ func (ns *nameSpace) InodeEtcdDelete(k string, volID string) {
 
 }
 
+// CreateInodeDBEtcdWatcher
 func (ns *nameSpace) CreateInodeDBEtcdWatcher(volID string) {
 
 	var watcher clientv3.WatchChan
@@ -97,6 +102,7 @@ func (ns *nameSpace) CreateInodeDBEtcdWatcher(volID string) {
 	}
 }
 
+// BlockGroupEtcdSet
 func (ns *nameSpace) BlockGroupEtcdSet(k int32, volID string, v *vp.BlockGroup) {
 
 	var key string
@@ -106,6 +112,7 @@ func (ns *nameSpace) BlockGroupEtcdSet(k int32, volID string, v *vp.BlockGroup) 
 
 }
 
+// BlockGroupEtcdDelete
 func (ns *nameSpace) BlockGroupEtcdDelete(k int32, volID string) {
 
 	var key string
@@ -114,6 +121,7 @@ func (ns *nameSpace) BlockGroupEtcdDelete(k int32, volID string) {
 
 }
 
+// CreateBGDBEtcdWatcher
 func (ns *nameSpace) CreateBGDBEtcdWatcher(volID string) {
 
 	var watcher clientv3.WatchChan
@@ -150,6 +158,7 @@ func (ns *nameSpace) CreateBGDBEtcdWatcher(volID string) {
 	}
 }
 
+// ChunkEtcdSet
 func (ns *nameSpace) ChunkEtcdSet(k int64, volID string, v *mp.ChunkInfo) {
 
 	var key string
@@ -159,6 +168,7 @@ func (ns *nameSpace) ChunkEtcdSet(k int64, volID string, v *mp.ChunkInfo) {
 
 }
 
+// ChunkEtcdDelete
 func (ns *nameSpace) ChunkEtcdDelete(k int64, volID string) {
 
 	var key string
@@ -167,6 +177,7 @@ func (ns *nameSpace) ChunkEtcdDelete(k int64, volID string) {
 
 }
 
+// CreateChunkDBEtcdWatcher
 func (ns *nameSpace) CreateChunkDBEtcdWatcher(volID string) {
 
 	var watcher clientv3.WatchChan
@@ -204,6 +215,7 @@ func (ns *nameSpace) CreateChunkDBEtcdWatcher(volID string) {
 	}
 }
 
+// InodeBaseIDEtcdSet
 func (ns *nameSpace) InodeBaseIDEtcdSet(v string, volID string) {
 
 	var key string
@@ -212,6 +224,7 @@ func (ns *nameSpace) InodeBaseIDEtcdSet(v string, volID string) {
 
 }
 
+// CreateInodeBaseIDEtcdWatcher
 func (ns *nameSpace) CreateInodeBaseIDEtcdWatcher(volID string) {
 
 	var watcher clientv3.WatchChan
@@ -235,6 +248,7 @@ func (ns *nameSpace) CreateInodeBaseIDEtcdWatcher(volID string) {
 	}
 }
 
+// ChunkBaseIDEtcdSet
 func (ns *nameSpace) ChunkBaseIDEtcdSet(v string, volID string) {
 
 	var key string
@@ -243,6 +257,7 @@ func (ns *nameSpace) ChunkBaseIDEtcdSet(v string, volID string) {
 
 }
 
+// CreateChunkBaseIDEtcdWatcher
 func (ns *nameSpace) CreateChunkBaseIDEtcdWatcher(volID string) {
 
 	var watcher clientv3.WatchChan

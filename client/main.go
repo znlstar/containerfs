@@ -226,7 +226,7 @@ func get(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsize int
 		os.Exit(1)
 	}
 
-	ret, cfile := cfs.OpenFile(cfsFile, fs.O_RDONLY)
+	_, cfile := cfs.OpenFile(cfsFile, fs.O_RDONLY)
 	defer cfile.Close(int(fs.O_RDONLY))
 
 	if readsize == 0 {
@@ -234,9 +234,9 @@ func get(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsize int
 	}
 	freesize := readsize
 
-	var lastoffset int64 = 0
+	var lastoffset int64
 	lastoffset = offset + readsize
-	var r int64 = 0
+	var r int64
 	f, err := os.Create(dstFile)
 	if err != nil {
 		fmt.Println("Open local dstFile error!")
