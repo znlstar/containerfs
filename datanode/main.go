@@ -337,9 +337,9 @@ func init() {
 	}
 
 	if ok, _ := utils.LocalPathExists(DataNodeServerAddr.Flag); !ok {
-		logger.Debug("Start registy to volmgr ...")
+		logger.Debug("Start registry to volmgr ...")
 		registryToVolMgr()
-		logger.Debug("registy to volmgr sucess")
+		logger.Debug("registry to volmgr success")
 	} else {
 		logger.Debug("already registied")
 	}

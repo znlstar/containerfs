@@ -945,7 +945,7 @@ func (cfile *CFile) close2Channel() int32 {
 	return 0
 }
 
-// destory channel
+//DestroyChannel: destroy channel
 func (cfile *CFile) DestroyChannel() {
 	var wEndBuffer wBuffer
 	wEndBuffer.buffer = nil
