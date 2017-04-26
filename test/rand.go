@@ -1,14 +1,14 @@
 package main
 
 import (
-    "fmt"
-    "time"
-    "math/rand"
+	"fmt"
+	"math/rand"
+	"time"
 )
 
 func main() {
-    r := rand.New(rand.NewSource(time.Now().UnixNano()))
-    for i:=0; i<3; i++ {
-        fmt.Println(r.Intn(3))
-    }
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for i := 0; i < 3; i++ {
+		fmt.Println(r.Intn(3))
+	}
 }

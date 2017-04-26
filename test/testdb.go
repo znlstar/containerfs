@@ -119,19 +119,4 @@ func main() {
 	fmt.Printf("### %v ###  %v  ### %v  ### %v ### %v ### %v ####\n", intList[9:], intList[:], intList[:3], intList[3:], intList[3:len(intList)-1], intList[10:])
 	fmt.Printf("%v %d %d\n", intList, intList[0], intList[len(intList)-1])
 	return
-	db, err := sql.Open("mysql", "root:root@tcp(127.0.0.1:3306)/jls?charset=utf8")
-
-	if err != nil {
-		panic(err)
-	}
-	defer db.Close()
-
-	err = db.Ping()
-	if err != nil {
-		panic(err)
-	}
-
-	insert(db)
-	count := 1000 / 10
-	logger.Debug("xxxx count:", count)
 }

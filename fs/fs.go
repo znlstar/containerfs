@@ -18,12 +18,11 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 )
 
-var VolMgrAddr string
-var MetaNodeAddr string
+var VolMgrAddr string   //VolMgrAddr
+var MetaNodeAddr string //MetaNodeAddr
 
 const (
 	O_RDONLY = os.O_RDONLY // 0    00000000000000000000000000000000
@@ -33,22 +32,21 @@ const (
 	O_CREATE = os.O_CREATE // 64   00000000000000000000000001000000
 	O_TRUNC  = os.O_TRUNC  // 512  00000000000000000000001000000000
 	O_EXCL   = os.O_EXCL   // 0x4000
-
-	O_MVOPT  = O_RDONLY | 0x20000
-	O_TAROPT = O_MVOPT | syscall.O_NONBLOCK
-	O_SCPOPT = O_RDONLY | syscall.O_NONBLOCK
 )
 
+// chunksize and buffersize for write
 const (
 	chunkSize  = 64 * 1024 * 1024
 	bufferSize = 256 * 1024
 )
 
+// fs
 type CFS struct {
 	VolID  string
 	Status int // 0 ok , 1 readonly 2 invaild
 }
 
+// create volume function
 func CreateVol(name string, capacity string) int32 {
 	conn, err := DialVolmgr(VolMgrAddr)
 	if err != nil {
@@ -97,6 +95,7 @@ func CreateVol(name string, capacity string) int32 {
 	return 0
 }
 
+// get volume info
 func GetVolInfo(name string) (int32, *vp.GetVolInfoAck) {
 
 	conn, err := DialVolmgr(VolMgrAddr)
@@ -119,6 +118,7 @@ func GetVolInfo(name string) (int32, *vp.GetVolInfoAck) {
 	return 0, pGetVolInfoAck
 }
 
+// get filesystem info
 func GetFSInfo(name string) (int32, *mp.GetFSInfoAck) {
 
 	conn, err := DialMeta()
@@ -141,11 +141,13 @@ func GetFSInfo(name string) (int32, *mp.GetFSInfoAck) {
 	return 0, pGetFSInfoAck
 }
 
+// open a filesystem
 func OpenFileSystem(UUID string) *CFS {
 	cfs := CFS{VolID: UUID, Status: 0}
 	return &cfs
 }
 
+// create dir
 func (cfs *CFS) CreateDir(path string) int32 {
 	conn, err := DialMeta()
 	if err != nil {
@@ -166,6 +168,8 @@ func (cfs *CFS) CreateDir(path string) int32 {
 	return pCreateDirAck.Ret
 
 }
+
+// stat
 func (cfs *CFS) Stat(path string) (int32, *mp.InodeInfo) {
 	conn, err := DialMeta()
 	if err != nil {
@@ -197,6 +201,8 @@ func (cfs *CFS) Stat(path string) (int32, *mp.InodeInfo) {
 	return pStatAck.Ret, pStatAck.InodeInfo
 
 }
+
+// list
 func (cfs *CFS) List(path string) (int32, []*mp.InodeInfo) {
 	conn, err := DialMeta()
 	if err != nil {
@@ -217,6 +223,8 @@ func (cfs *CFS) List(path string) (int32, []*mp.InodeInfo) {
 	return pListAck.Ret, pListAck.InodeInfos
 
 }
+
+// delete dir
 func (cfs *CFS) DeleteDir(path string) int32 {
 	conn, err := DialMeta()
 	if err != nil {
@@ -236,6 +244,7 @@ func (cfs *CFS) DeleteDir(path string) int32 {
 	return pDeleteDirAck.Ret
 }
 
+// rename
 func (cfs *CFS) Rename(path1 string, path2 string) int32 {
 	conn, err := DialMeta()
 	if err != nil {
@@ -257,6 +266,7 @@ func (cfs *CFS) Rename(path1 string, path2 string) int32 {
 	return pRenameAck.Ret
 }
 
+// create file
 func (cfs *CFS) CreateFile(path string, flags int) (int32, *CFile) {
 
 	if flags&O_TRUNC != 0 {
@@ -297,6 +307,7 @@ func (cfs *CFS) CreateFile(path string, flags int) (int32, *CFile) {
 	return 0, &cfile
 }
 
+// open file
 func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 	var ret int32
 	var writer int32 = 0
@@ -417,6 +428,7 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 	return 0, &cfile
 }
 
+// update open file
 func (cfs *CFS) UpdateOpenFile(cfile *CFile, flags int) int32 {
 
 	if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
@@ -461,6 +473,7 @@ func (cfs *CFS) UpdateOpenFile(cfile *CFile, flags int) int32 {
 	return 0
 }
 
+// create file
 func (cfs *CFS) createFile(path string) int32 {
 	conn, err := DialMeta()
 	if err != nil {
@@ -500,6 +513,7 @@ func (cfs *CFS) createFile(path string) int32 {
 	return 0
 }
 
+// delete file
 func (cfs *CFS) DeleteFile(path string) int32 {
 
 	ret, chunkInfos := cfs.GetFileChunks(path)
@@ -574,6 +588,8 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 	return mpDeleteFileAck.Ret
 
 }
+
+// allcoate chunk
 func (cfs *CFS) AllocateChunk(path string) (int32, *mp.ChunkInfoWithBG) {
 	conn, err := DialMeta()
 	if err != nil {
@@ -608,6 +624,7 @@ func (cfs *CFS) AllocateChunk(path string) (int32, *mp.ChunkInfoWithBG) {
 	return pAllocateChunkAck.Ret, pAllocateChunkAck.ChunkInfo
 }
 
+// get file chunks
 func (cfs *CFS) GetFileChunks(path string) (int32, []*mp.ChunkInfoWithBG) {
 	conn, err := DialMeta()
 	if err != nil {
@@ -647,12 +664,14 @@ type wBuffer struct {
 	buffer    *bytes.Buffer       // chunk data
 }
 
+// reader info for read
 type ReaderInfo struct {
 	LastOffset int64
 	readBuf    []byte
 	Ch         chan *bytes.Buffer
 }
 
+// a file
 type CFile struct {
 	cfs      *CFS
 	Path     string
@@ -735,6 +754,7 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 	conn.Close()
 }
 
+// read
 func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, readsize int64) int64 {
 
 	if cfile.chunks == nil || len(cfile.chunks) == 0 {
@@ -854,6 +874,7 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 }
 */
 
+// write
 func (cfile *CFile) Write(buf []byte, len int32) int32 {
 	cfile.WMutex.Lock()
 	defer cfile.WMutex.Unlock()
@@ -924,6 +945,7 @@ func (cfile *CFile) close2Channel() int32 {
 	return 0
 }
 
+// destory channel
 func (cfile *CFile) DestroyChannel() {
 	var wEndBuffer wBuffer
 	wEndBuffer.buffer = nil
@@ -1047,17 +1069,17 @@ func (cfile *CFile) flushChannel() {
 	}
 }
 
+// flush
 func (cfile *CFile) Flush() int32 {
 	return 0
 }
 
+// sync
 func (cfile *CFile) Sync() int32 {
 	return 0
 }
 
-//func closeP(cfile *CFile) {
-//cfile = nil
-//}
+// close
 func (cfile *CFile) Close(flags int) int32 {
 	if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
 		cfile.close2Channel()
@@ -1066,10 +1088,12 @@ func (cfile *CFile) Close(flags int) int32 {
 	return 0
 }
 
+// process local buffer
 func ProcessLocalBuffer(buffer []byte, cfile *CFile) {
 	cfile.Write(buffer, int32(len(buffer)))
 }
 
+// read local and write to cfs
 func ReadLocalAndWriteCFS(filePth string, bufSize int, hookfn func([]byte, *CFile), cfile *CFile) error {
 	f, err := os.Open(filePth)
 	if err != nil {
@@ -1088,11 +1112,12 @@ func ReadLocalAndWriteCFS(filePth string, bufSize int, hookfn func([]byte, *CFil
 			return err
 		}
 	}
-	return nil
 }
 
+// etcd endpoints
 var EtcdEndPoints []string
 
+// choose metanode leader watcher
 func ChooseMetaLeaderWatcher() {
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints: EtcdEndPoints,
@@ -1112,6 +1137,7 @@ func ChooseMetaLeaderWatcher() {
 	}
 }
 
+// get meta leader ip
 func GetMetaLeader() {
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints: EtcdEndPoints,
