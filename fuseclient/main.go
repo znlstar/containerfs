@@ -25,6 +25,7 @@ import (
 var uuid string
 var mountPoint string
 
+// FS struct
 type FS struct {
 	cfs *cfs.CFS
 }
@@ -39,6 +40,7 @@ type refcount struct {
 	refs uint32
 }
 
+// Dir struct
 type Dir struct {
 	mu     sync.Mutex
 	fs     *FS
@@ -46,6 +48,8 @@ type Dir struct {
 	inode  *mp.InodeInfo
 	active map[string]*refcount // for fuse rename update f.name immediately , otherwise f.name will be old name after rename in about 30s
 }
+
+// File struct
 type File struct {
 	mu      sync.Mutex
 	parent  *Dir
@@ -125,6 +129,7 @@ func mount(uuid, mountPoint string) error {
 
 var _ = fs.FS(&FS{})
 
+// Root
 func (fs *FS) Root() (fs.Node, error) {
 	n := newDir(fs, nil, "/")
 	return n, nil
@@ -140,6 +145,8 @@ func (fs *FS) Root() (fs.Node, error) {
    Namelen uint32 // Maximum file name length?
    Frsize  uint32 // Fragment size, smallest addressable data size in the file system.
 */
+
+// Statfs
 func (fs *FS) Statfs(ctx context.Context, req *fuse.StatfsRequest, resp *fuse.StatfsResponse) error {
 	err, ret := cfs.GetFSInfo(fs.cfs.VolID)
 	if err != 0 {
@@ -177,11 +184,13 @@ func (d *Dir) setName(name string) {
 	d.name = name
 }
 
+// Attr
 func (d *Dir) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Mode = os.ModeDir | 0755
 	return nil
 }
 
+// ReadDirAll
 func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -227,6 +236,7 @@ func (d *Dir) reviveNode(inode *mp.InodeInfo, name string, fullpath string) (nod
 
 }
 
+// Lookup
 func (d *Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
 	if a, ok := d.active[name]; ok {
 		return a.node, nil
@@ -260,6 +270,7 @@ func (d *Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
 
 var _ = fs.NodeMkdirer(&Dir{})
 
+// Mkdir
 func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
 	var fullPath string
 
@@ -286,7 +297,7 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 		return nil, fuse.Errno(syscall.EEXIST)
 	}
 
-	ret, inode := d.fs.cfs.Stat(fullPath)
+	_, inode := d.fs.cfs.Stat(fullPath)
 	child := newDir(d.fs, inode, fullPath)
 	d.active[fullPath] = &refcount{node: child}
 
@@ -295,6 +306,7 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 
 var _ = fs.NodeCreater(&Dir{})
 
+// Create
 func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
 
 	logger.Debug("Create...,Flag:%v", req.Flags)
@@ -317,7 +329,7 @@ func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 
 		}
 	}
-	ret, inode := d.fs.cfs.Stat(fullPath)
+	_, inode := d.fs.cfs.Stat(fullPath)
 	child := &File{
 		inode:   inode,
 		name:    req.Name,
@@ -334,6 +346,7 @@ func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 
 var _ = fs.NodeRemover(&Dir{})
 
+// Remove
 func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	var fullPath string
 
@@ -384,6 +397,7 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 
 var _ = fs.NodeRenamer(&Dir{})
 
+// Rename
 func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Node) error {
 	if newDir != d {
 		return fuse.Errno(syscall.EPERM)
@@ -425,7 +439,7 @@ func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 		}
 	}
 
-	ret, inodeNew := d.fs.cfs.Stat(fullPath2)
+	_, inodeNew := d.fs.cfs.Stat(fullPath2)
 
 	if inodeNew.InodeType {
 		// tell overwritten node it's unlinked
@@ -466,6 +480,7 @@ func (f *File) setName(name string) {
 	f.name = name
 }
 
+// Attr
 func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	var fullPath string
 	if f.parent.name == "/" {
@@ -495,6 +510,7 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 
 var _ = fs.NodeOpener(&File{})
 
+// Open
 func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
 	var ret int32
 
@@ -539,6 +555,7 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 
 var _ = fs.HandleReleaser(&File{})
 
+// Release
 func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	logger.Debug("Release...")
 
@@ -562,6 +579,7 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 
 var _ = fs.HandleReader(&File{})
 
+// Read
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
 
 	f.mu.Lock()
@@ -587,6 +605,7 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 
 var _ = fs.HandleWriter(&File{})
 
+// Write
 func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
 
 	f.mu.Lock()
@@ -605,16 +624,19 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 
 var _ = fs.HandleFlusher(&File{})
 
+// Flush
 func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 	return nil
 }
 
+// Fsync
 func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 	return nil
 }
 
 var _ = fs.NodeSetattrer(&File{})
 
+// Setattr
 func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
 	return nil
 }

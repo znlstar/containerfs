@@ -7,6 +7,7 @@ import (
 	"golang.org/x/net/context"
 )
 
+// EtcdV3
 type EtcdV3 struct {
 	Client *clientv3.Client
 	ctx    context.Context
@@ -27,6 +28,7 @@ func notFound(key string) clientv3.Cmp {
 	return clientv3.Compare(clientv3.ModRevision(key), "=", 0)
 }
 
+// InitEtcd
 func (etcdcli *EtcdV3) InitEtcd(etcdServerList []string) error {
 	cfg := clientv3.Config{
 		Endpoints: etcdServerList,
@@ -62,6 +64,7 @@ func (etcdcli *EtcdV3) Get(key string, recursive bool) (*clientv3.GetResponse, e
 	return getResp, nil
 }
 
+// Set
 func (etcdcli *EtcdV3) Set(key string, val string) error {
 
 	if _, err := etcdcli.Client.KV.Put(etcdcli.ctx, key, val); err != nil {
@@ -72,6 +75,7 @@ func (etcdcli *EtcdV3) Set(key string, val string) error {
 
 }
 
+// DoDelete
 func (etcdcli *EtcdV3) DoDelete(key string) error {
 	if _, err := etcdcli.Client.KV.Delete(etcdcli.ctx, key); err != nil {
 		logger.Error("delete etcd err:", err)

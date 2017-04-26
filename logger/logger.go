@@ -14,6 +14,7 @@ const (
 	_VER string = "1.0.2"
 )
 
+// level
 type LEVEL int32
 
 var logLevel LEVEL = 1
@@ -21,13 +22,14 @@ var maxFileSize int64
 var maxFileCount int32
 var dailyRolling bool = true
 var consoleAppender bool = true
-var RollingFile bool = false
+var RollingFile bool = false // roll file
 var logObj *_FILE
 
-const DATEFORMAT = "2006-01-02"
+const DATEFORMAT = "2006-01-02" // date format
 
-type UNIT int64
+type UNIT int64 // int64
 
+// const var
 const (
 	_       = iota
 	KB UNIT = 1 << (iota * 10)
@@ -36,6 +38,7 @@ const (
 	TB
 )
 
+// const var
 const (
 	ALL LEVEL = iota
 	DEBUG
@@ -46,6 +49,7 @@ const (
 	OFF
 )
 
+// file
 type _FILE struct {
 	dir      string
 	filename string
@@ -57,14 +61,17 @@ type _FILE struct {
 	lg       *log.Logger
 }
 
+// set console
 func SetConsole(isConsole bool) {
 	consoleAppender = isConsole
 }
 
+// set level
 func SetLevel(_level LEVEL) {
 	logLevel = _level
 }
 
+// set roll file
 func SetRollingFile(fileDir, fileName string, maxNumber int32, maxSize int64, _unit UNIT) {
 	maxFileCount = maxNumber
 	maxFileSize = maxSize * int64(_unit)
@@ -90,6 +97,7 @@ func SetRollingFile(fileDir, fileName string, maxNumber int32, maxSize int64, _u
 	go fileMonitor()
 }
 
+// set roll daily
 func SetRollingDaily(fileDir, fileName string) {
 	RollingFile = false
 	dailyRolling = true
@@ -142,6 +150,7 @@ func catchError() {
 	}
 }
 
+// debug
 func Debug(format string, args ...interface{}) {
 	if dailyRolling {
 		fileCheck()
@@ -160,6 +169,7 @@ func Debug(format string, args ...interface{}) {
 	}
 }
 
+// info
 func Info(format string, args ...interface{}) {
 	if dailyRolling {
 		fileCheck()
@@ -176,6 +186,8 @@ func Info(format string, args ...interface{}) {
 		}
 	}
 }
+
+// warn
 func Warn(format string, args ...interface{}) {
 	if dailyRolling {
 		fileCheck()
@@ -193,6 +205,8 @@ func Warn(format string, args ...interface{}) {
 		}
 	}
 }
+
+// error
 func Error(format string, args ...interface{}) {
 	if dailyRolling {
 		fileCheck()
@@ -209,6 +223,8 @@ func Error(format string, args ...interface{}) {
 		}
 	}
 }
+
+// fatal
 func Fatal(format string, args ...interface{}) {
 	if dailyRolling {
 		fileCheck()

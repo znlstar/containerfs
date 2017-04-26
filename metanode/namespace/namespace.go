@@ -17,10 +17,13 @@ import (
 )
 
 const (
-	Blksize = 10 /*G*/
+	Blksize = 10 //Blksize G
 )
 
+// Wg
 var Wg sync.WaitGroup
+
+// VolMgrAddress
 var VolMgrAddress string
 
 type nameSpace struct {
@@ -38,11 +41,14 @@ type nameSpace struct {
 var AllNameSpace map[string]*nameSpace
 var gMutex sync.RWMutex
 
+// CreateGNameSpace
 func CreateGNameSpace() {
 	gMutex.Lock()
 	AllNameSpace = make(map[string]*nameSpace)
 	gMutex.Unlock()
 }
+
+// CreateNameSpace
 func CreateNameSpace(UUID string, IsLoad bool) int32 {
 	nameSpace := nameSpace{}
 	nameSpace.VolID = UUID
@@ -89,6 +95,7 @@ func CreateNameSpace(UUID string, IsLoad bool) int32 {
 	return 0
 }
 
+// GetNameSpace
 func GetNameSpace(UUID string) (int32, *nameSpace) {
 	gMutex.RLock()
 	defer gMutex.RUnlock()
@@ -99,6 +106,7 @@ func GetNameSpace(UUID string) (int32, *nameSpace) {
 	}
 }
 
+// GetFSInfo
 func (ns *nameSpace) GetFSInfo(volID string) mp.GetFSInfoAck {
 	ack := mp.GetFSInfoAck{}
 	var totalSpace uint64 = 0
@@ -132,6 +140,7 @@ func (ns *nameSpace) GetVolInfo(name string) (int32, []*vp.BlockGroup) {
 	return 0, pGetVolInfoAck.VolInfo.BlockGroups
 }
 
+// GetVolList
 func GetVolList() (int32, []string) {
 	conn, err := grpc.Dial(VolMgrAddress, grpc.WithInsecure())
 	if err != nil {
@@ -149,6 +158,7 @@ func GetVolList() (int32, []string) {
 	return 0, pGetVolListAck.VolIDs
 }
 
+// CreateDir
 func (ns *nameSpace) CreateDir(path string) int32 {
 	var ret int32
 	ret = 0
@@ -202,6 +212,7 @@ func (ns *nameSpace) CreateDir(path string) int32 {
 	return ret
 }
 
+// Stat
 func (ns *nameSpace) Stat(path string) (*mp.InodeInfo, int32) {
 	var ret int32
 	ret = 0
@@ -222,6 +233,7 @@ func (ns *nameSpace) Stat(path string) (*mp.InodeInfo, int32) {
 	return pInodeInfo, 0
 }
 
+// List
 func (ns *nameSpace) List(path string) ([]*mp.InodeInfo, int32) {
 	var ret int32
 	ret = 0
@@ -256,6 +268,7 @@ func (ns *nameSpace) List(path string) ([]*mp.InodeInfo, int32) {
 	return tmpInodeInfos, ret
 }
 
+// DeleteDir
 func (ns *nameSpace) DeleteDir(path string) int32 {
 	var ret int32
 	ret = 0
@@ -312,6 +325,7 @@ func (ns *nameSpace) DeleteDir(path string) int32 {
 	return ret
 }
 
+// Rename
 func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
 	var ret int32
 	ret = 0
@@ -410,6 +424,8 @@ func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
 
 	return ret
 }
+
+// CreateFile
 func (ns *nameSpace) CreateFile(path string) int32 {
 
 	var ret int32
@@ -473,6 +489,7 @@ func (ns *nameSpace) CreateFile(path string) int32 {
 	return ret
 }
 
+// DeleteFile
 func (ns *nameSpace) DeleteFile(path string) int32 {
 	var ret int32
 	ret = 0
@@ -532,6 +549,8 @@ func (ns *nameSpace) DeleteFile(path string) int32 {
 	ns.InodeDBDelete(strconv.FormatInt(pInodeInfo.ParentInodeID, 10) + "-" + utils.GetSelfName(path))
 	return ret
 }
+
+// AllocateChunk
 func (ns *nameSpace) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 	var ret int32
 
@@ -557,6 +576,7 @@ func (ns *nameSpace) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 
 }
 
+// GetFileChunks
 func (ns *nameSpace) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
 	var ret int32
 	var ok bool
@@ -583,6 +603,7 @@ func (ns *nameSpace) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
 
 }
 
+// SyncChunk
 func (ns *nameSpace) SyncChunk(path string, chunkinfo *mp.ChunkInfo) int32 {
 	var ret int32
 	var ok bool
@@ -628,6 +649,7 @@ func (ns *nameSpace) SyncChunk(path string, chunkinfo *mp.ChunkInfo) int32 {
 
 }
 
+// BlockGroupVp2Mp
 func (ns *nameSpace) BlockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 	var mpBlockGroup = mp.BlockGroup{}
 
@@ -654,6 +676,7 @@ func (ns *nameSpace) BlockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 
 }
 
+// ChooseBlockGroup
 func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 
 	var blockGroupID int32
@@ -704,6 +727,7 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 
 }
 
+// ReleaseBlockGroup
 func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 
 	ok, blockGroup := ns.BlockGroupDBGet(blockGroupID)
@@ -722,6 +746,8 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 	ns.BlockGroupEtcdSet(blockGroupID, ns.VolID, blockGroup)
 
 }
+
+// UpdateBlkGrp
 func (ns *nameSpace) UpdateBlkGrp(blockGroupID int32, blockID int32, status int32) int32 {
 
 	ok, blockGroup := ns.BlockGroupDBGet(blockGroupID)
@@ -745,6 +771,7 @@ func (ns *nameSpace) UpdateBlkGrp(blockGroupID int32, blockID int32, status int3
 
 }
 
+// GetAllKeyByFullPath
 func (ns *nameSpace) GetAllKeyByFullPath(in string) (keys []string) {
 	tmp := strings.Split(in, "/")
 	keys = make([]string, 1)
@@ -769,18 +796,21 @@ func (ns *nameSpace) GetAllKeyByFullPath(in string) (keys []string) {
 	return
 }
 
+// AllocateInodeID
 func (ns *nameSpace) AllocateInodeID() int64 {
 	id := ns.BaseInodeID.Id()
 	ns.InodeBaseIDEtcdSet(strconv.FormatInt(id, 10), ns.VolID)
 	return id
 }
 
+// AllocateChunkID
 func (ns *nameSpace) AllocateChunkID() int64 {
 	id := ns.BaseChunkID.Id()
 	ns.ChunkBaseIDEtcdSet(strconv.FormatInt(id, 10), ns.VolID)
 	return id
 }
 
+// InodeDBGet
 func (ns *nameSpace) InodeDBGet(k string) (bool, *mp.InodeInfo) {
 	ns.Mutex.RLock()
 	if v, ok := ns.InodeDB[k]; ok {
@@ -791,18 +821,22 @@ func (ns *nameSpace) InodeDBGet(k string) (bool, *mp.InodeInfo) {
 		return false, nil
 	}
 }
+
+// InodeDBSet
 func (ns *nameSpace) InodeDBSet(k string, v *mp.InodeInfo) {
 	ns.Mutex.Lock()
 	ns.InodeDB[k] = v
 	ns.Mutex.Unlock()
 }
 
+// InodeDBDelete
 func (ns *nameSpace) InodeDBDelete(k string) {
 	ns.Mutex.Lock()
 	delete(ns.InodeDB, k)
 	ns.Mutex.Unlock()
 }
 
+// BlockGroupDBGet
 func (ns *nameSpace) BlockGroupDBGet(k int32) (bool, *vp.BlockGroup) {
 	ns.BGMutex.RLock()
 	if v, ok := ns.BlockGroupDB[k]; ok {
@@ -813,18 +847,22 @@ func (ns *nameSpace) BlockGroupDBGet(k int32) (bool, *vp.BlockGroup) {
 		return false, nil
 	}
 }
+
+// BlockGroupDBSet
 func (ns *nameSpace) BlockGroupDBSet(k int32, v *vp.BlockGroup) {
 	ns.BGMutex.Lock()
 	ns.BlockGroupDB[k] = v
 	ns.BGMutex.Unlock()
 }
 
+// BlockGroupDBDelete
 func (ns *nameSpace) BlockGroupDBDelete(k int32) {
 	ns.BGMutex.Lock()
 	delete(ns.BlockGroupDB, k)
 	ns.BGMutex.Unlock()
 }
 
+// ChunkDBGet
 func (ns *nameSpace) ChunkDBGet(k int64) (bool, *mp.ChunkInfo) {
 	ns.CMutex.RLock()
 	if v, ok := ns.ChunkDB[k]; ok {
@@ -835,12 +873,15 @@ func (ns *nameSpace) ChunkDBGet(k int64) (bool, *mp.ChunkInfo) {
 		return false, nil
 	}
 }
+
+// ChunkDBSet
 func (ns *nameSpace) ChunkDBSet(k int64, v *mp.ChunkInfo) {
 	ns.CMutex.Lock()
 	ns.ChunkDB[k] = v
 	ns.CMutex.Unlock()
 }
 
+// ChunkDBDelete
 func (ns *nameSpace) ChunkDBDelete(k int64) {
 	ns.CMutex.Lock()
 	delete(ns.ChunkDB, k)

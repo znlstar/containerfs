@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Convert uint to net.IP
+//Inet_ntoa  Convert uint to net.IP
 func Inet_ntoa(ipnr int32) net.IP {
 	var bytes [4]byte
 	bytes[0] = byte(ipnr & 0xFF)
@@ -18,7 +18,7 @@ func Inet_ntoa(ipnr int32) net.IP {
 	return net.IPv4(bytes[3], bytes[2], bytes[1], bytes[0])
 }
 
-// Convert net.IP to int32
+//Inet_aton  Convert net.IP to int32
 func Inet_aton(ipnr net.IP) int32 {
 	bits := strings.Split(ipnr.String(), ".")
 
@@ -37,6 +37,7 @@ func Inet_aton(ipnr net.IP) int32 {
 	return sum
 }
 
+// testIp
 func testIp() {
 	ipnr := net.ParseIP("110.118.165.194")
 	ipint := Inet_aton(ipnr)
