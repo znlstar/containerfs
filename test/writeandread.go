@@ -22,10 +22,10 @@ func wr(out string) {
 
 	defer in.Close()
 
-	o, err1 := os.OpenFile(out, os.O_RDWR|os.O_APPEND|os.O_CREATE,0666)
+	o, err1 := os.OpenFile(out, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0666)
 	if err1 != nil { //打开文件
 		fmt.Println("文件存在")
-	} 
+	}
 	/*else {
 		o, err = os.Create(out) //创建文件
 		fmt.Println("文件不存在")
@@ -62,7 +62,7 @@ func wr(out string) {
 func main() {
 	for i := 1; i < 4; i++ {
 
-		out := "/root/jlsxx"+strconv.Itoa(i)
+		out := "/root/jlsxx" + strconv.Itoa(i)
 		//o, _ := os.OpenFile(out,os.O_RDONLY,0666)
 		Wg.Add(1)
 		go wr(out)

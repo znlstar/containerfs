@@ -239,7 +239,7 @@ func get(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsize int
 	var r int64 = 0
 	f, err := os.Create(dstFile)
 	if err != nil {
-		fmt.Println("Open local dstFile error!\n")
+		fmt.Println("Open local dstFile error!")
 		os.Exit(1)
 	}
 	defer f.Close()
@@ -269,7 +269,7 @@ func get(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsize int
 		}
 	}
 	if err = w.Flush(); err != nil {
-		fmt.Println("Flush Localfile data err!\n")
+		fmt.Println("Flush Localfile data err!")
 		os.Exit(1)
 	}
 }
