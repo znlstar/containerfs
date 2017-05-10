@@ -407,7 +407,7 @@ func init() {
 }
 
 func setMetaLeader() {
-	fmt.Println("set leader...")
+	logger.Debug("set leader %v", MetaNodeServerAddr.host)
 	ns.EtcdClient.Set("/ContainerFS/MetaLeader", MetaNodeServerAddr.host+":"+strconv.Itoa(MetaNodeServerAddr.port))
 }
 
@@ -436,8 +436,8 @@ func main() {
 				}
 				startUp = false
 				if myRole != mRaft.RaftInfo.R.IsLeader() {
-					// sleep 200ms for watch all the last event befor change to unWatcher
-					time.Sleep(time.Millisecond * 200)
+					// sleep 500ms for watch all the last event befor change to unWatcher
+					time.Sleep(time.Millisecond * 500)
 					ns.IsWatcher = false
 					setMetaLeader()
 				}

@@ -37,13 +37,13 @@ const (
 // chunksize and buffersize for write
 const (
 	chunkSize  = 64 * 1024 * 1024
-	bufferSize = 256 * 1024
+	bufferSize = 1024 * 1024
 )
 
 // fs
 type CFS struct {
-	VolID  string
-	Status int // 0 ok , 1 readonly 2 invaild
+	VolID string
+	//Status int // 0 ok , 1 readonly 2 invaild
 }
 
 // create volume function
@@ -143,7 +143,7 @@ func GetFSInfo(name string) (int32, *mp.GetFSInfoAck) {
 
 // open a filesystem
 func OpenFileSystem(UUID string) *CFS {
-	cfs := CFS{VolID: UUID, Status: 0}
+	cfs := CFS{VolID: UUID}
 	return &cfs
 }
 
@@ -291,7 +291,7 @@ func (cfs *CFS) CreateFile(path string, flags int) (int32, *CFile) {
 		freeSize: bufferSize,
 	}
 
-	wChannel := make(chan *wBuffer, 128)
+	wChannel := make(chan *wBuffer, 32)
 	cfile = CFile{
 		Path:      path,
 		OpenFlag:  flags,
@@ -337,7 +337,7 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 					chunkInfo: lastChunk,
 				}
 
-				wChannel := make(chan *wBuffer, 128)
+				wChannel := make(chan *wBuffer, 32)
 				cfile = CFile{
 					Path:      path,
 					OpenFlag:  flags,
@@ -355,7 +355,7 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 					buffer:   new(bytes.Buffer),
 					freeSize: bufferSize,
 				}
-				wChannel := make(chan *wBuffer, 128)
+				wChannel := make(chan *wBuffer, 32)
 				cfile = CFile{
 					Path:      path,
 					OpenFlag:  flags,
@@ -382,7 +382,7 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 				freeSize: bufferSize,
 			}
 
-			wChannel := make(chan *wBuffer, 128)
+			wChannel := make(chan *wBuffer, 32)
 			cfile = CFile{
 				Path:      path,
 				OpenFlag:  flags,
@@ -409,7 +409,7 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 			buffer:   new(bytes.Buffer),
 			freeSize: bufferSize,
 		}
-		wChannel := make(chan *wBuffer, 128)
+		wChannel := make(chan *wBuffer, 32)
 
 		cfile = CFile{
 			Path:      path,
@@ -475,6 +475,7 @@ func (cfs *CFS) UpdateOpenFile(cfile *CFile, flags int) int32 {
 
 // create file
 func (cfs *CFS) createFile(path string) int32 {
+
 	conn, err := DialMeta()
 	if err != nil {
 		logger.Error("createFile failed,Dial to metanode fail :%v\n", err)
@@ -591,6 +592,7 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 
 // allcoate chunk
 func (cfs *CFS) AllocateChunk(path string) (int32, *mp.ChunkInfoWithBG) {
+
 	conn, err := DialMeta()
 	if err != nil {
 		logger.Error("AllocateChunk failed,Dial to metanode fail :%v\n", err)
@@ -677,6 +679,7 @@ type CFile struct {
 	Path     string
 	OpenFlag int
 	FileSize int64
+	Status   int // 0 ok
 
 	// for write
 	WMutex sync.Mutex
@@ -876,6 +879,12 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 
 // write
 func (cfile *CFile) Write(buf []byte, len int32) int32 {
+
+	if cfile.Status != 0 {
+		logger.Error("cfile status error , Write func return -2 ")
+		return -2
+	}
+
 	cfile.WMutex.Lock()
 	defer cfile.WMutex.Unlock()
 	var w int32
@@ -1024,8 +1033,8 @@ func (cfile *CFile) flushChannel() {
 
 		if copies < 1 {
 			logger.Error("WriteChunk copies < 2")
-			cfile.cfs.Status = 1
-			continue
+			cfile.Status = 1
+			break
 		}
 
 		mc := mp.NewMetaNodeClient(connM)
@@ -1050,21 +1059,21 @@ func (cfile *CFile) flushChannel() {
 			connM, err = DialMeta()
 			if err != nil {
 				logger.Error("Dial failed:%v\n", err)
-				cfile.cfs.Status = 1
-				continue
+				cfile.Status = 1
+				break
 			}
 			mc := mp.NewMetaNodeClient(connM)
 			pSyncChunkAck, ret = mc.SyncChunk(context.Background(), pSyncChunkReq)
 			if ret != nil {
 				logger.Error("flushChannel SyncChunk Failed again:%v\n", pSyncChunkReq.ChunkInfo)
-				cfile.cfs.Status = 1
-				continue
+				cfile.Status = 1
+				break
 			}
 		}
 		if pSyncChunkAck.Ret != 0 {
-			cfile.cfs.Status = 1
+			cfile.Status = 1
 			logger.Error("flushChannel SyncChunk Failed :%v\n", pSyncChunkReq.ChunkInfo)
-			continue
+			break
 		}
 
 		chunkNum := len(cfile.chunks)
@@ -1095,10 +1104,16 @@ func (cfile *CFile) Sync() int32 {
 
 // close
 func (cfile *CFile) Close(flags int) int32 {
+	if cfile.Status != 0 {
+		logger.Error("cfile status error , Close func just return")
+		return 0
+	}
+
 	if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
 		cfile.close2Channel()
 		cfile.wg.Wait()
 	}
+
 	return 0
 }
 

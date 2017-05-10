@@ -734,17 +734,44 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 	if !ok {
 		return
 	}
+
+	var status int32
 	blockGroup.FreeCnt += 1
 	if blockGroup.FreeCnt > 0 {
-		blockGroup.Status = 1
+		status = 1
+		if blockGroup.Status != status {
+			blockGroup.Status = 1
+			ns.SetBlockGroupStatus(blockGroupID, blockGroup.Status)
+		}
+
 	}
 	if blockGroup.FreeCnt >= 160 {
-		blockGroup.Status = 0
+		status = 0
+		if blockGroup.Status != status {
+			blockGroup.Status = 0
+			ns.SetBlockGroupStatus(blockGroupID, blockGroup.Status)
+		}
+
 	}
 
 	ns.BlockGroupDBSet(blockGroupID, blockGroup)
 	ns.BlockGroupEtcdSet(blockGroupID, ns.VolID, blockGroup)
 
+}
+
+// SetBlockGroupStatus
+func (ns *nameSpace) SetBlockGroupStatus(blockGroupID int32, status int32) {
+	conn, err := grpc.Dial(VolMgrAddress, grpc.WithInsecure())
+	if err != nil {
+		logger.Debug("Dial failed: %v", err)
+		return
+	}
+	defer conn.Close()
+	vc := vp.NewVolMgrClient(conn)
+	pSetBlockGroupStatusReq := &vp.SetBlockGroupStatusReq{}
+	pSetBlockGroupStatusReq.BlockGroupID = blockGroupID
+	pSetBlockGroupStatusReq.Status = status
+	vc.SetBlockGroupStatus(context.Background(), pSetBlockGroupStatusReq)
 }
 
 // UpdateBlkGrp

@@ -13,25 +13,17 @@ func DialMeta() (*grpc.ClientConn, error) {
 	var err error
 
 	conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
-	fmt.Printf("DialMeta 1: addr:%v\n", MetaNodeAddr)
-	logger.Error("DialMeta 1: addr:%v", MetaNodeAddr)
-
-	fmt.Printf("DialMeta 1: conn:%v\n", conn)
-	logger.Error("DialMeta 1: conn:%v", conn)
-
-	fmt.Printf("DialMeta 1: err:%v\n", err)
-	logger.Error("DialMeta 1: err:%v", err)
 
 	if err != nil {
 		time.Sleep(300 * time.Millisecond)
-		fmt.Printf("DialMeta 2: addr:%v\n", MetaNodeAddr)
+		fmt.Printf("DialMeta 1: addr:%v\n", MetaNodeAddr)
 		logger.Error("DialMeta 1: addr:%v", MetaNodeAddr)
 
 		conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 		if err != nil {
 			time.Sleep(300 * time.Millisecond)
-			fmt.Printf("DialMeta 3: addr:%v\n", MetaNodeAddr)
-			logger.Error("DialMeta 1: addr:%v", MetaNodeAddr)
+			fmt.Printf("DialMeta 2: addr:%v\n", MetaNodeAddr)
+			logger.Error("DialMeta 3: addr:%v", MetaNodeAddr)
 			conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 		}
 	}
