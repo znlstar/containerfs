@@ -22,7 +22,7 @@ type VolMetaWatcherVersion struct {
 // LoadVolMeta
 func LoadVolMeta(volID string) {
 
-	logger.Error("LoadVolMeta volID %v\n", volID)
+	logger.Debug("LoadVolMeta volID %v\n", volID)
 
 	ret, nameSpace := GetNameSpace(volID)
 	if ret != 0 {

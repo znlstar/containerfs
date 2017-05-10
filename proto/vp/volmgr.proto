@@ -11,6 +11,8 @@ service VolMgr {
     rpc DatanodeRegistry(DatanodeRegistryReq) returns (DatanodeRegistryAck){};
     rpc DatanodeHeartbeat(DatanodeHeartbeatReq) returns (DatanodeHeartbeatAck){};
 
+    rpc SetBlockGroupStatus(SetBlockGroupStatusReq) returns (SetBlockGroupStatusAck){};
+
 }
 
 message CreateVolReq {
@@ -85,6 +87,16 @@ message DatanodeHeartbeatReq {
 
 message DatanodeHeartbeatAck {
 }
+
+
+message SetBlockGroupStatusReq {
+    int32 BlockGroupID = 1;
+    int32 Status = 2;
+}
+
+message SetBlockGroupStatusAck {
+}
+
 
 // block table:
 // blockID | ip | port | status | blockGroupID

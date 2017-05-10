@@ -81,25 +81,25 @@ func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegi
 	dn_mount := in.MountPoint
 	dn_capacity := in.Capacity
 
-	disk, err := VolMgrDB.Prepare("INSERT INTO disks(ip,port,mount,total) VALUES(?, ?, ?, ?)")
+	disk, err := VolMgrDB.Prepare("INSERT INTO disks(ip,port,mount,total,statu) VALUES(?, ?, ?, ?, ?)")
 	checkErr(err)
 	defer disk.Close()
 
-	_, err = disk.Exec(ip, dn_port, dn_mount, dn_capacity)
+	_, err = disk.Exec(ip, dn_port, dn_mount, dn_capacity, 0)
 	checkErr(err)
 
 	blkcount := dn_capacity / Blksize
 
 	hostip := ip
 	hostport := strconv.Itoa(int(dn_port))
-	blk, err := VolMgrDB.Prepare("INSERT INTO blk(hostip, hostport, allocated) VALUES(?, ?, ?)")
+	blk, err := VolMgrDB.Prepare("INSERT INTO blk(hostip, hostport, allocated, disabled) VALUES(?, ?, ?, ?)")
 	checkErr(err)
 	defer blk.Close()
 
 	VolMgrDB.Exec("lock tables blk write")
 
 	for i := int32(0); i < blkcount; i++ {
-		blk.Exec(hostip, hostport, 0)
+		blk.Exec(hostip, hostport, 0, 0)
 	}
 	VolMgrDB.Exec("unlock tables")
 
@@ -186,7 +186,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 
 	//allocate block group for the volume
 	for i := int32(0); i < blkgrpnum; i++ {
-		rows, err := VolMgrDB.Query("SELECT blkid FROM blk WHERE allocated = 0 group by hostip ORDER BY rand() LIMIT 3 FOR UPDATE")
+		rows, err := VolMgrDB.Query("SELECT blkid FROM blk WHERE allocated = 0 and disabled=0 group by hostip ORDER BY rand() LIMIT 3 FOR UPDATE")
 		if err != nil {
 			logger.Error("Create volume(%s -- %s) select blk for the %dth blkgroup error:%s", volname, voluuid, i, err)
 			ack.Ret = 1
@@ -241,6 +241,24 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	ack.Ret = 0 //success
 	ack.UUID = voluuid
 	return &ack, nil
+}
+
+func (s *VolMgrServer) SetBlockGroupStatus(ctx context.Context, in *vp.SetBlockGroupStatusReq) (*vp.SetBlockGroupStatusAck, error) {
+	ack := vp.SetBlockGroupStatusAck{}
+	blkgrpid := in.BlockGroupID
+	statu := in.Status
+	blkgrp, err := VolMgrDB.Prepare("UPDATE blkgrp SET statu=? WHERE blkgrpid=?")
+	if err != nil {
+		logger.Error("update blkgrpid:%v statu:%v prepare error:%v", blkgrpid,statu,err)
+		return &ack,err
+	}
+	defer blkgrp.Close()
+	_, err = blkgrp.Exec(statu,blkgrpid)
+	if err != nil {
+		logger.Error("update blkgrpid:%v statu:%v exec error:%v", blkgrpid,statu,err)
+		return &ack,err
+	}
+	return &ack,nil
 }
 
 // GetVolInfo
@@ -434,7 +452,7 @@ func updateDataNodeStatu(ip string, port int, statu int) {
 	}
 	if statu == 1 || statu == 2 {
 		logger.Debug("The disk(%s:%d) bad statu:%d, so make it all blks is disabled, and update metadata for allocated blks", ip, port, statu)
-		blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=1 WHERE hostip=? and hostport=?")
+		blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=1, repair=1 WHERE hostip=? and hostport=?")
 		checkErr(err)
 		defer blk.Close()
 		_, err = blk.Exec(ip, port)
@@ -446,7 +464,7 @@ func updateDataNodeStatu(ip string, port int, statu int) {
 
 	} else if statu == 0 {
 		logger.Debug("The disk(%s:%d) recovy,so update from 1 to 0, make it all blks is able", ip, port, statu)
-		blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=0 WHERE hostip=? and hostport=?")
+		blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=0, repair=(CASE WHEN allocated=0 THEN 0 ELSE 1 END) WHERE hostip=? and hostport=?")
 		checkErr(err)
 		defer blk.Close()
 		_, err = blk.Exec(ip, port)
@@ -484,8 +502,8 @@ func UpdateMeta(mc mp.MetaNodeClient, ip string, port int, statu int) {
 	m = make(map[string][]*mp.UpdateBlkGrpInfo)
 
 	for _, id := range badblks {
-		str := "%" + strconv.Itoa(id) + ",%"
-		blkgrp, err := VolMgrDB.Query("SELECT blkgrpid,volume_uuid FROM blkgrp WHERE blks like ?", str)
+		//str := "%" + strconv.Itoa(id) + ",%"
+		blkgrp, err := VolMgrDB.Query("SELECT blkgrpid,volume_uuid FROM blkgrp WHERE FIND_IN_SET(?,blks)",id)
 		if err != nil {
 			logger.Error("Get from blk table for all bad node blks error:%s", err)
 			continue

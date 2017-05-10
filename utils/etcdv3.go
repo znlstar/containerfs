@@ -5,6 +5,7 @@ import (
 	"github.com/coreos/etcd/clientv3"
 	"github.com/ipdcode/containerfs/logger"
 	"golang.org/x/net/context"
+	"time"
 )
 
 // EtcdV3
@@ -66,10 +67,12 @@ func (etcdcli *EtcdV3) Get(key string, recursive bool) (*clientv3.GetResponse, e
 
 // Set
 func (etcdcli *EtcdV3) Set(key string, val string) error {
-
 	if _, err := etcdcli.Client.KV.Put(etcdcli.ctx, key, val); err != nil {
-		logger.Error("set etcd err:", err)
-		return errors.New("set etcd err")
+		time.Sleep(10 * time.Millisecond)
+		if _, err = etcdcli.Client.KV.Put(etcdcli.ctx, key, val); err != nil {
+			logger.Error("set etcd err:", err)
+			return errors.New("set etcd err")
+		}
 	}
 	return nil
 
@@ -78,8 +81,12 @@ func (etcdcli *EtcdV3) Set(key string, val string) error {
 // DoDelete
 func (etcdcli *EtcdV3) DoDelete(key string) error {
 	if _, err := etcdcli.Client.KV.Delete(etcdcli.ctx, key); err != nil {
-		logger.Error("delete etcd err:", err)
-		return errors.New("delete etcd err")
+		time.Sleep(10 * time.Millisecond)
+		if _, err = etcdcli.Client.KV.Delete(etcdcli.ctx, key); err != nil {
+
+			logger.Error("delete etcd err:", err)
+			return errors.New("delete etcd err")
+		}
 	}
 	return nil
 }
