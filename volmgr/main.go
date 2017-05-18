@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"github.com/coreos/etcd/clientv3"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/ipdcode/containerfs/logger"
 	dp "github.com/ipdcode/containerfs/proto/dp"
@@ -36,9 +35,6 @@ var VolMgrServerAddr addr
 
 // MetaNodeAddr
 var MetaNodeAddr string
-
-// EtcdAddrs
-var EtcdAddrs []string
 
 // Wg
 var Wg sync.WaitGroup
@@ -92,14 +88,14 @@ func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegi
 
 	hostip := ip
 	hostport := strconv.Itoa(int(dn_port))
-	blk, err := VolMgrDB.Prepare("INSERT INTO blk(hostip, hostport, allocated, disabled) VALUES(?, ?, ?, ?)")
+	blk, err := VolMgrDB.Prepare("INSERT INTO blk(hostip, hostport, allocated, disabled,repair) VALUES(?, ?, ?, ?, ?)")
 	checkErr(err)
 	defer blk.Close()
 
 	VolMgrDB.Exec("lock tables blk write")
 
 	for i := int32(0); i < blkcount; i++ {
-		blk.Exec(hostip, hostport, 0, 0)
+		blk.Exec(hostip, hostport, 0, 0, 0)
 	}
 	VolMgrDB.Exec("unlock tables")
 
@@ -249,16 +245,16 @@ func (s *VolMgrServer) SetBlockGroupStatus(ctx context.Context, in *vp.SetBlockG
 	statu := in.Status
 	blkgrp, err := VolMgrDB.Prepare("UPDATE blkgrp SET statu=? WHERE blkgrpid=?")
 	if err != nil {
-		logger.Error("update blkgrpid:%v statu:%v prepare error:%v", blkgrpid,statu,err)
-		return &ack,err
+		logger.Error("update blkgrpid:%v statu:%v prepare error:%v", blkgrpid, statu, err)
+		return &ack, err
 	}
 	defer blkgrp.Close()
-	_, err = blkgrp.Exec(statu,blkgrpid)
+	_, err = blkgrp.Exec(statu, blkgrpid)
 	if err != nil {
-		logger.Error("update blkgrpid:%v statu:%v exec error:%v", blkgrpid,statu,err)
-		return &ack,err
+		logger.Error("update blkgrpid:%v statu:%v exec error:%v", blkgrpid, statu, err)
+		return &ack, err
 	}
-	return &ack,nil
+	return &ack, nil
 }
 
 // GetVolInfo
@@ -430,7 +426,7 @@ func detectdatanode(ip string, port int, statu int) {
 }
 
 func updateDataNodeStatu(ip string, port int, statu int) {
-	GetMetaLeader()
+
 	conn, err := DialMeta()
 	if err != nil {
 		logger.Error("Dial to metanode fail :%v for update blkds\n", err)
@@ -472,7 +468,7 @@ func updateDataNodeStatu(ip string, port int, statu int) {
 			logger.Error("The disk(%s:%d) recovy , but update blk table able error:%s", ip, port, statu, err)
 		}
 
-		UpdateMeta(mc, ip, port, statu)
+		//UpdateMeta(mc, ip, port, statu) // if repair complete, do this
 	}
 	return
 }
@@ -503,7 +499,7 @@ func UpdateMeta(mc mp.MetaNodeClient, ip string, port int, statu int) {
 
 	for _, id := range badblks {
 		//str := "%" + strconv.Itoa(id) + ",%"
-		blkgrp, err := VolMgrDB.Query("SELECT blkgrpid,volume_uuid FROM blkgrp WHERE FIND_IN_SET(?,blks)",id)
+		blkgrp, err := VolMgrDB.Query("SELECT blkgrpid,volume_uuid FROM blkgrp WHERE FIND_IN_SET(?,blks)", id)
 		if err != nil {
 			logger.Error("Get from blk table for all bad node blks error:%s", err)
 			continue
@@ -575,28 +571,6 @@ func StartVolMgrService() {
 	}
 }
 
-// GetMetaLeader
-func GetMetaLeader() {
-	cli, err := clientv3.New(clientv3.Config{
-		Endpoints: EtcdAddrs,
-	})
-	if err != nil {
-		logger.Error("GetMetaLeader New Clent err:%v", err)
-		return
-	}
-	defer cli.Close()
-
-	ctx := context.Background()
-	resp, err := cli.Get(ctx, "/ContainerFS/MetaLeader")
-	if err != nil {
-		logger.Error("GetMetaLeader etcd get err:%v", err)
-	}
-	for _, ev := range resp.Kvs {
-		MetaNodeAddr = string(ev.Value)
-	}
-	logger.Debug("Get MetaLeaderNode Addr:%s", MetaNodeAddr)
-}
-
 // DialMeta
 func DialMeta() (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
@@ -628,7 +602,7 @@ func init() {
 	VolMgrServerAddr.port = port
 	VolMgrServerAddr.log = c.String("log")
 	VolMgrServerAddr.host = c.String("host")
-	EtcdAddrs = c.Strings("etcd::hosts")
+	MetaNodeAddr = c.String("metanode::host")
 	os.MkdirAll(VolMgrServerAddr.log, 0777)
 
 	mysqlConf.dbhost = c.String("mysql::host")
@@ -668,7 +642,7 @@ func main() {
 		logger.Error("stacks:%v", string(debug.Stack()))
 	}()
 
-	ticker := time.NewTicker(time.Second * 10)
+	ticker := time.NewTicker(time.Second * 60)
 	go func() {
 		for _ = range ticker.C {
 			detectDataNodes()

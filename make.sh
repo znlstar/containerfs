@@ -14,7 +14,7 @@ do
   popd
 done
 
-for dir in client fuseclient metanode datanode volmgr repair
+for dir in client fuseclient metanode datanode volmgr repair 
 do
   pushd $dir
   go get
@@ -22,6 +22,12 @@ do
   cp cfs-$dir cfs-$dir.ini ../output
   popd
 done
+
+cd ./fuseclient_flag
+  go get
+  go build -o cfs-fuseclient_flag main.go
+  cp cfs-fuseclient_flag ../output
+cd ..
 
 cp ./service/* ./output
 cd ./output

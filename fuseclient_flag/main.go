@@ -1,8 +1,8 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"log"
 	"math"
 	"os"
 	//	"strconv"
@@ -12,7 +12,6 @@ import (
 
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
-	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 	//"math/rand"
 
@@ -62,20 +61,23 @@ type File struct {
 
 func main() {
 
-	c, err := config.NewConfig(os.Args[1])
-	if err != nil {
-		fmt.Println("NewConfig err")
-		os.Exit(1)
-	}
-	uuid = c.String("uuid")
-	mountPoint = c.String("mountpoint")
-	cfs.VolMgrAddr = c.String("volmgr")
-	//cfs.EtcdEndPoints = c.Strings("etcd")
-	cfs.MetaNodeAddr = c.String("metanode")
+	uuid := flag.String("uuid", "xxx", "ContainerFS Volume UUID")
+	mountPoint := flag.String("mountpoint", "/mnt", "ContainerFS MountPoint")
+	addr1 := flag.String("volmgr", "127.0.0.1:10001", "ContainerFS volmgr host")
+	addr2 := flag.String("metanode", "127.0.0.1:10002", "ContainerFS metanode host")
+
+	log := flag.String("log", "/home", "ContainerFS log level")
+	loglevel := flag.String("loglevel", "error", "ContainerFS log level")
+
+	flag.Parse()
+
+	cfs.VolMgrAddr = *addr1
+	cfs.MetaNodeAddr = *addr2
 
 	logger.SetConsole(true)
-	logger.SetRollingFile(c.String("log"), "fuse.log", 10, 100, logger.MB) //each 100M rolling
-	switch level := c.String("loglevel"); level {
+	logger.SetRollingFile(*log, "fuse.log", 10, 100, logger.MB) //each 100M rolling
+
+	switch *loglevel {
 	case "error":
 		logger.SetLevel(logger.ERROR)
 	case "debug":
@@ -86,9 +88,9 @@ func main() {
 		logger.SetLevel(logger.ERROR)
 	}
 
-	err = mount(uuid, mountPoint)
+	err := mount(*uuid, *mountPoint)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("mount failed ...")
 	}
 }
 

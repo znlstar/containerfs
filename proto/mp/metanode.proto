@@ -27,6 +27,7 @@ message NULL{
 }
 message CreateNameSpaceReq{
     string VolID = 1;
+    int32  Type =2 ;
 }
 message CreateNameSpaceAck{
     int32 Ret = 1;
