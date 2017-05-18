@@ -254,7 +254,7 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 
 	var ack dp.StreamReadChunkAck
 	totalsize := readsize
-	buf := make([]byte, 1024*1024)
+	buf := make([]byte, 64*1024*1024)
 	bfRd := bufio.NewReader(f)
 	for {
 		n, err := bfRd.Read(buf)

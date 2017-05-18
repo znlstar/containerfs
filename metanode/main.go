@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"github.com/ipdcode/containerfs/logger"
 
+	//"github.com/chasex/redis-go-cluster"
+	"github.com/go-redis/redis"
+
 	ns "github.com/ipdcode/containerfs/metanode/namespace"
-	mRaft "github.com/ipdcode/containerfs/metanode/raft"
 	mp "github.com/ipdcode/containerfs/proto/mp"
 
 	"github.com/lxmgo/config"
@@ -16,10 +18,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
-	"strconv"
-	"strings"
 	"sync"
-	"time"
 )
 
 type addr struct {
@@ -41,13 +40,14 @@ rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
 */
 func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameSpaceReq) (*mp.CreateNameSpaceAck, error) {
 	ack := mp.CreateNameSpaceAck{}
-	ns.Wg.Add(1)
 	ack.Ret = ns.CreateNameSpace(in.VolID, false)
 
-	if mRaft.RaftInfo.R.IsLeader() {
-		// send to follower metadatas to registry a new map
-
+	// send to follower metadatas to registry a new map
+	if in.Type == 0 {
 		for _, addr := range MetaNodeServerAddr.peer {
+			if addr == MetaNodeServerAddr.host {
+				continue
+			}
 			conn2, err2 := grpc.Dial(addr, grpc.WithInsecure())
 			if err2 != nil {
 				logger.Error("Leader told Follower to create NameSpace Failed ...")
@@ -57,6 +57,7 @@ func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameS
 			mc := mp.NewMetaNodeClient(conn2)
 			pmCreateNameSpaceReq := &mp.CreateNameSpaceReq{
 				VolID: in.VolID,
+				Type:  1,
 			}
 			pmCreateNameSpaceAck, ret := mc.CreateNameSpace(context.Background(), pmCreateNameSpaceReq)
 			if ret != nil {
@@ -68,8 +69,8 @@ func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameS
 				continue
 			}
 		}
-
 	}
+
 	return &ack, nil
 }
 
@@ -319,9 +320,9 @@ func (s *MetaNodeServer) UpdateBlkGrp(ctx context.Context, in *mp.UpdateBlkGrpRe
 
 func startMetaDataService() {
 
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", MetaNodeServerAddr.port))
+	lis, err := net.Listen("tcp", MetaNodeServerAddr.host)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to listen on:%v", MetaNodeServerAddr.port))
+		panic(fmt.Sprintf("Failed to listen on:%v", MetaNodeServerAddr.host))
 	}
 	s := grpc.NewServer()
 	mp.RegisterMetaNodeServer(s, &MetaNodeServer{})
@@ -340,20 +341,7 @@ func loadMetaData() {
 		return
 	}
 	for _, v := range vols {
-		ns.Wg.Add(1)
-		go ns.CreateNameSpace(v, true)
-	}
-	ns.Wg.Wait()
-}
-
-func watchMetaData() {
-	ret, vols := ns.GetVolList()
-	if ret != 0 {
-		logger.Error("watchMetaData,GetVolList failed,ret:%v", ret)
-		return
-	}
-	for _, v := range vols {
-		ns.WatchVolMeta(v)
+		ns.CreateNameSpace(v, true)
 	}
 }
 
@@ -366,18 +354,33 @@ func init() {
 		os.Exit(1)
 	}
 
-	MetaNodeServerAddr.host = c.String("host")
-	port, _ := c.Int("port")
-	MetaNodeServerAddr.port = port
-	MetaNodeServerAddr.peer = c.Strings("peer")
-	MetaNodeServerAddr.log = c.String("log")
-
+	MetaNodeServerAddr.host = c.String("metanode::host")
+	MetaNodeServerAddr.peer = c.Strings("metanode::peer")
+	MetaNodeServerAddr.log = c.String("metanode::log")
 	ns.VolMgrAddress = c.String("volmgr::host")
+	endPoints := c.Strings("redis::endpoints")
+	/*
+		for i := 0; i < 10; i++ {
+			ns.RedisClusters[i], err = redis.NewCluster(
+				&redis.Options{
+					StartNodes:   endPoints,
+					ConnTimeout:  50 * time.Millisecond,
+					ReadTimeout:  50 * time.Millisecond,
+					WriteTimeout: 50 * time.Millisecond,
+					KeepAlive:    16,
+					AliveTime:    60 * time.Second,
+				})
+		}
+	*/
 
-	mRaft.RaftInfo.Me = c.String("raft::me")
-	s := strings.Split(mRaft.RaftInfo.Me, ":")
-	mRaft.RaftInfo.MePort, _ = strconv.Atoi(s[1])
-	mRaft.RaftInfo.Peer = c.Strings("raft::peer")
+	ns.RedisClient = redis.NewClusterClient(&redis.ClusterOptions{
+		Addrs: endPoints,
+	})
+
+	if ns.RedisClient == nil {
+		fmt.Println("connect redis failed...")
+		os.Exit(1)
+	}
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(MetaNodeServerAddr.log, "metanode.log", 10, 100, logger.MB) //each 100M rolling
@@ -392,23 +395,8 @@ func init() {
 		logger.SetLevel(logger.ERROR)
 	}
 
-	//endPoints := strings.Split(c.String("etcd::endpoints"), ",")
-	endPoints := c.Strings("etcd::endpoints")
-	err = ns.EtcdClient.InitEtcd(endPoints)
-	if err != nil {
-		fmt.Println("connect etcd failed")
-		os.Exit(0)
-	}
-
-	mRaft.StartRaftService()
 	loadMetaData()
-	watchMetaData()
 
-}
-
-func setMetaLeader() {
-	logger.Debug("set leader %v", MetaNodeServerAddr.host)
-	ns.EtcdClient.Set("/ContainerFS/MetaLeader", MetaNodeServerAddr.host+":"+strconv.Itoa(MetaNodeServerAddr.port))
 }
 
 func main() {
@@ -417,36 +405,10 @@ func main() {
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
 
-	ticker1 := time.NewTicker(time.Millisecond * 5)
-	var myRole bool = true
-	var startUp bool = true
-
 	defer func() {
 		if err := recover(); err != nil {
 			logger.Error("panic !!! :%v", err)
 			logger.Error("stacks:%v", string(debug.Stack()))
-		}
-	}()
-
-	go func() {
-		for _ = range ticker1.C {
-			if mRaft.RaftInfo.R.IsLeader() {
-				if startUp {
-					setMetaLeader()
-				}
-				startUp = false
-				if myRole != mRaft.RaftInfo.R.IsLeader() {
-					// sleep 500ms for watch all the last event befor change to unWatcher
-					time.Sleep(time.Millisecond * 500)
-					ns.IsWatcher = false
-					setMetaLeader()
-				}
-				myRole = true
-				ns.IsWatcher = false
-			} else {
-				myRole = false
-				ns.IsWatcher = true
-			}
 		}
 	}()
 

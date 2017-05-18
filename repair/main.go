@@ -88,7 +88,7 @@ func getNeedRepairBlks() {
                         continue
                 }
 		bs = append(bs,blkid)
-		//Wg.Add(1)
+		Wg.Add(1)
 		go repairblk(blkid,port)
         }
 	logger.Debug("== Begin repair blks:%v ==",bs)
@@ -97,10 +97,10 @@ func getNeedRepairBlks() {
 func repairblk(id int, port int) {
 	logger.Debug("=== Begin repair blk:%v ====",id)
 	var blks string
-	blkgrp, err := VolMgrDB.Query("SELECT blks FROM blkgrp WHERE FIND_IN_SET(?,blks) and statu=1",id)
+	blkgrp, err := VolMgrDB.Query("SELECT blks FROM blkgrp WHERE FIND_IN_SET(?,blks) and statu=2",id)
         if err != nil {
                 logger.Error("Get from blk table for all bad node blks error:%s", err)
-		//Wg.Add(-1)
+		Wg.Add(-1)
                 return
         }   
         defer blkgrp.Close()
@@ -136,7 +136,7 @@ func repairblk(id int, port int) {
 			}
 		}
 	}
-	//Wg.Add(-1)
+	Wg.Add(-1)
 }
 
 func beginRepairblk(srcip string,srcport int,dstport int, srcblkid int,dstblkid int) {
@@ -145,7 +145,7 @@ func beginRepairblk(srcip string,srcport int,dstport int, srcblkid int,dstblkid 
 	conn, err := grpc.Dial(srcAddr, grpc.WithInsecure())
 	if err != nil {
                 logger.Error("Connect Src Repair Server:%v failed : Dial to failed, reason:%v !", srcAddr,err)
-               	//Wg.Add(-1)
+               	Wg.Add(-1)
                 return
         }
 	defer conn.Close()
@@ -161,8 +161,6 @@ func beginRepairblk(srcip string,srcport int,dstport int, srcblkid int,dstblkid 
         pAck, err := c.GetSrcData(context.Background(), getSrcDataReq)
 	if pAck.Ret !=0 || err != nil {
 		logger.Error("Repair blk:%v from bakblk:%v fail: ack:%v--err:%v",dstblkid,srcblkid,pAck,err)
-		//Wg.Add(-1)
-		return
 	} else {
 		blk, err := VolMgrDB.Prepare("UPDATE blk SET repair=0 WHERE blkid=?")
                 checkErr(err)
@@ -170,8 +168,12 @@ func beginRepairblk(srcip string,srcport int,dstport int, srcblkid int,dstblkid 
                 _, err = blk.Exec(dstblkid)
                 if err != nil {
                         logger.Error("The blk:%v repair complete , but update blk table repair=1 error:%s",dstblkid)
-                }
+                } else {
+			logger.Error("The blk:%v have repair finished!",dstblkid)
+		}
 	}
+	Wg.Add(-1)
+	return
 }
 
 func (s *RepairServer) GetSrcData(ctx context.Context, in *rp.GetSrcDataReq) (*rp.GetSrcDataAck, error) {
@@ -189,6 +191,8 @@ func (s *RepairServer) GetSrcData(ctx context.Context, in *rp.GetSrcDataReq) (*r
 	disk,err := VolMgrDB.Query("SELECT mount FROM disks WHERE ip=? and port=?",srcip,srcport)
 	if err != nil {
 		logger.Error("Get srcblk:%v mountpath for repair dstblk:%v error:%s", srcid,dstid,err)
+		ack.Ret = -1
+		return &ack,err
         }
 	defer disk.Close()
 	for disk.Next() {
@@ -196,13 +200,15 @@ func (s *RepairServer) GetSrcData(ctx context.Context, in *rp.GetSrcDataReq) (*r
 		if err != nil {
 			logger.Error("Scan db for get need repair dstblk:%v - srcblk:%v mountpath error:%v", dstid,srcid,err)
 			ack.Ret = -1
-			return &ack, nil 
+			return &ack, err
 		}
 	}
 
 	disk,err = VolMgrDB.Query("SELECT mount FROM disks WHERE ip=? and port=?",dstip,dstport)
         if err != nil {
                 logger.Error("Get dstblk:%v mountpath for repair error:%s", dstid,err)
+		ack.Ret = -1
+		return &ack, err
         }
         defer disk.Close()
         for disk.Next() {
@@ -210,7 +216,7 @@ func (s *RepairServer) GetSrcData(ctx context.Context, in *rp.GetSrcDataReq) (*r
                 if err != nil {
                         logger.Error("Scan db for get need repair dstblk:%v mountpath error:%v", dstid, err)
                         ack.Ret = -1
-                        return &ack, nil 
+                        return &ack, err
                 }
         }
 
@@ -219,7 +225,7 @@ func (s *RepairServer) GetSrcData(ctx context.Context, in *rp.GetSrcDataReq) (*r
 	if err != nil {
 		logger.Error("Read SrcBlkDir:%v error:%v",srcpath,err)
 		ack.Ret = -1
-		return &ack, nil
+		return &ack, err
 	}
 
 	var cnt int
@@ -247,6 +253,9 @@ func (s *RepairServer) GetSrcData(ctx context.Context, in *rp.GetSrcDataReq) (*r
 		defer blkgrp.Close()
 		_, err = blkgrp.Exec(srcid)
 		checkErr(err)
+		ack.Ret = 0
+	} else {
+		ack.Ret = -1
 	}
 	return &ack, nil
 }
@@ -455,22 +464,13 @@ func main() {
 		logger.Error("stacks:%v", string(debug.Stack()))
 	}()
 
-	//ticker := time.NewTicker(time.Second * 30)
-	ticker := time.NewTicker(1)
-	for {
-		select {
-			case <-ticker.C:
-				getNeedRepairBlks()
-				ticker = time.NewTicker(time.Second * 10)
+	ticker := time.NewTicker(time.Second * 600)
+	go func() {
+		for _ = range ticker.C {
+			getNeedRepairBlks()
 		}
-	}
-	//go func() {
-	//	for _ = range ticker.C {
-	//		getNeedRepairBlks()
-	//		ticker = time.NewTicker(time.Second * 10)
-	//	}
-	//}()
-	//Wg.Wait()
+	}()
+	Wg.Wait()
 	defer VolMgrDB.Close()
 	StartRepairService()
 }
