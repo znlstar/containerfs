@@ -5,9 +5,9 @@ package vp;
 service VolMgr {
     rpc CreateVol(CreateVolReq) returns (CreateVolAck){};
     rpc GetVolInfo(GetVolInfoReq) returns (GetVolInfoAck){};
+    rpc DeleteVol(DeleteVolReq) returns (DeleteVolAck){};
     rpc GetVolList(GetVolListReq) returns (GetVolListAck){};
     //rpc ListVol(ListVolReq) returns (ListVolAck){};
-    //rpc DeleteVol(DeleteVolReq) returns (DeleteVolAck){};
     rpc DatanodeRegistry(DatanodeRegistryReq) returns (DatanodeRegistryAck){};
     rpc DatanodeHeartbeat(DatanodeHeartbeatReq) returns (DatanodeHeartbeatAck){};
 
@@ -33,6 +33,14 @@ message GetVolInfoAck {
     int32 Ret = 1;
     VolInfo VolInfo = 2;
 }
+
+message DeleteVolReq {
+    string UUID = 1 ;
+}
+message DeleteVolAck {
+    int32 Ret = 1;
+}
+
 
 message GetVolListReq {
 }

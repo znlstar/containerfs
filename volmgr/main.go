@@ -239,6 +239,77 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	return &ack, nil
 }
 
+func (s *VolMgrServer) DeleteVol(ctx context.Context, in *vp.DeleteVolReq) (*vp.DeleteVolAck,error) {
+	ack := vp.DeleteVolAck{}
+	volid := in.UUID
+
+	//delete volumes table
+	vol, err := VolMgrDB.Prepare("delete from volumes where uuid=?")
+	if err != nil {
+                logger.Error("delete volume:%v from volumes tables err:%v",volid,err)
+		ack.Ret = -1
+                return &ack, err
+        }
+        defer vol.Close()
+        _, err = vol.Exec(volid)
+	if err != nil {
+		ack.Ret = -1
+		return &ack, err
+	}
+
+	//update blk table for delete
+	blkgrp, err := VolMgrDB.Query("SELECT blks FROM blkgrp WHERE volume_uuid=?",volid)
+        if err != nil {
+                logger.Error("select blks for delete volume:%v error:%s", volid, err)
+                ack.Ret = -1
+                return &ack, err
+        }
+        defer blkgrp.Close()
+
+        var blks string
+        for blkgrp.Next() {
+                err := blkgrp.Scan(&blks)
+                if err != nil {
+                        ack.Ret = -1
+                        return &ack, err
+                }
+
+		s := strings.Split(blks,",")
+		for _,v := range s[:len(s)-1] {
+			blkid,_ := strconv.Atoi(v)
+			blk, err := VolMgrDB.Prepare("UPDATE blk SET allocated=0, repair=0 WHERE blkid=?")
+			if err != nil {
+                                logger.Error("update blk:%d allocated=0 error:%s for delete volume:%v", blkid,volid)
+                                ack.Ret = -1
+                                return &ack, err
+                        }
+                        defer blk.Close()
+                        _, err = blk.Exec(blkid)
+                        if err != nil {
+                                ack.Ret = -1
+                                return &ack, err
+                        }
+		}
+	}
+
+	//delete blkgrp table
+	bgrp, err := VolMgrDB.Prepare("delete from blkgrp where volume_uuid=?")
+        if err != nil {
+                logger.Error("delete volume:%v from blkgrp tables err:%v",volid,err)
+                ack.Ret = -1
+                return &ack, err
+        }
+        defer bgrp.Close()
+        _, err = bgrp.Exec(volid)
+        if err != nil {
+                ack.Ret = -1
+                return &ack, err
+        }
+	logger.Debug("== Delete db tables data success for volume:%v",volid)
+	ack.Ret = 0
+	return &ack,nil
+}
+
 func (s *VolMgrServer) SetBlockGroupStatus(ctx context.Context, in *vp.SetBlockGroupStatusReq) (*vp.SetBlockGroupStatusAck, error) {
 	ack := vp.SetBlockGroupStatusAck{}
 	blkgrpid := in.BlockGroupID

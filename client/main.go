@@ -31,6 +31,14 @@ func main() {
 		}
 		fs.CreateVol(os.Args[3], os.Args[4])
 
+	case "deletevol":
+		argNum := len(os.Args)
+		if argNum != 4 {
+			fmt.Println("createvol [voluuid]")
+			os.Exit(1)
+		}
+		fs.DeleteVol(os.Args[3])
+
 	case "getvolinfo":
 		argNum := len(os.Args)
 		if argNum != 4 {

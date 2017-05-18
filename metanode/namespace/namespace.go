@@ -100,6 +100,20 @@ func CreateNameSpace(UUID string, IsLoad bool) int32 {
 	return 0
 }
 
+// DeleteNameSpace
+func DeleteNameSpace(UUID string) int32 {
+
+	gMutex.Lock()
+	delete(AllNameSpace, UUID)
+	gMutex.Unlock()
+
+	RedisClient.Del(UUID)
+	RedisClient.Del(UUID + "-InodeID")
+	RedisClient.Del(UUID + "-ChunkID")
+
+	return 0
+}
+
 // GetNameSpace
 func GetNameSpace(UUID string) (int32, *nameSpace) {
 	gMutex.RLock()
@@ -636,10 +650,6 @@ func (ns *nameSpace) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 	var chunkInfo = mp.ChunkInfo{}
 	ret, _, blockGroup := ns.ChooseBlockGroup()
 
-	fmt.Println("ChooseBlockGroup...")
-	fmt.Println(ret)
-	fmt.Println(blockGroup)
-
 	if ret != 0 {
 		return 28 /*ENOSPC*/, nil
 	}
@@ -651,9 +661,6 @@ func (ns *nameSpace) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 	if err != nil {
 		return 1, nil
 	}
-
-	fmt.Println("chunkInfo...")
-	fmt.Println(chunkInfo)
 
 	return 0, &chunkInfo
 

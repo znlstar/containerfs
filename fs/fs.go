@@ -73,7 +73,7 @@ func CreateVol(name string, capacity string) int32 {
 	// send to metadata to registry a new map
 	conn2, err3 := DialMeta()
 	if err3 != nil {
-		logger.Error("CreateVol failed,Dial to metanode fail :%v\n", err2)
+		logger.Error("CreateVol failed,Dial to metanode fail :%v\n", err3)
 		return -1
 	}
 	defer conn2.Close()
@@ -117,6 +117,64 @@ func GetVolInfo(name string) (int32, *vp.GetVolInfoAck) {
 		return 1, nil
 	}
 	return 0, pGetVolInfoAck
+}
+
+// create volume function
+func DeleteVol(uuid string) int32 {
+
+	cfs := OpenFileSystem(uuid)
+	ret, inode := cfs.Stat("/")
+	if ret == 0 {
+		if len(inode.ChildrenInodeIDs) > 0 {
+			logger.Error("DeleteVol failed,volume has files or dirs")
+			return -1
+		}
+	} else {
+		logger.Error("DeleteVol failed,stat root dir failed")
+		return -1
+	}
+
+	// send to metadata to delete a  map
+	conn2, err3 := DialMeta()
+	if err3 != nil {
+		logger.Error("DeleteVol failed,Dial to metanode fail :%v\n", err3)
+		return -1
+	}
+	defer conn2.Close()
+	mc := mp.NewMetaNodeClient(conn2)
+	pmDeleteNameSpaceReq := &mp.DeleteNameSpaceReq{
+		VolID: uuid,
+		Type:  0,
+	}
+	pmDeleteNameSpaceAck, err4 := mc.DeleteNameSpace(context.Background(), pmDeleteNameSpaceReq)
+	if err4 != nil {
+		return -1
+	}
+	if pmDeleteNameSpaceAck.Ret != 0 {
+		logger.Error("DeleteNameSpace failed :%v\n", pmDeleteNameSpaceAck.Ret)
+		return -1
+	}
+
+	conn, err := DialVolmgr(VolMgrAddr)
+	if err != nil {
+		logger.Error("CreateVol failed,Dial to volmgr fail :%v\n", err)
+		return -1
+
+	}
+	defer conn.Close()
+	vc := vp.NewVolMgrClient(conn)
+	pDeleteVolReq := &vp.DeleteVolReq{
+		UUID: uuid,
+	}
+	pDeleteVolAck, err2 := vc.DeleteVol(context.Background(), pDeleteVolReq)
+	if err2 != nil {
+		return -1
+	}
+	if pDeleteVolAck.Ret != 0 {
+		return -1
+	}
+
+	return 0
 }
 
 // get filesystem info
@@ -545,13 +603,12 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 				conn, err = DialData(addr)
 				if err != nil {
 					logger.Error("DeleteChunk failed,Dial to metanode fail :%v\n", err)
-					return -1
-				}
-				dc = dp.NewDataNodeClient(conn)
-				dpDeleteChunkAck, err2 = dc.DeleteChunk(context.Background(), dpDeleteChunkReq)
-				if err2 != nil {
-					logger.Error("DeleteChunk failed,grpc func failed :%v\n", err2)
-					return -1
+				} else {
+					dc = dp.NewDataNodeClient(conn)
+					dpDeleteChunkAck, err2 = dc.DeleteChunk(context.Background(), dpDeleteChunkReq)
+					if err2 != nil {
+						logger.Error("DeleteChunk failed,grpc func failed :%v\n", err2)
+					}
 				}
 			}
 			if dpDeleteChunkAck.Ret != 0 {
@@ -740,7 +797,7 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 				}
 			*/
 			if err == io.EOF {
-				logger.Error("=== Recv11 err:%v ===", err)
+				//logger.Error("=== Recv11 err:%v ===", err)
 				break
 			}
 			if err != nil {
@@ -792,7 +849,7 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 
 // read
 func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, readsize int64) int64 {
-	t1 := time.Now()
+	//t1 := time.Now()
 	if cfile.chunks == nil || len(cfile.chunks) == 0 {
 		return -1
 	}
@@ -809,7 +866,7 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 	cur_offset := offset
 	for i, _ := range cfile.chunks {
 		free_offset = cur_offset - int64(cfile.chunks[i].ChunkSize)
-		if free_offset <= 0 {
+		if free_offset < 0 {
 			begin_chunk_num = i
 			break
 		} else {
@@ -839,7 +896,7 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 	if begin_chunk_num > len(cfile.chunks) || end_chunk_num+1 > len(cfile.chunks) || begin_chunk_num > cap(cfile.chunks) || end_chunk_num+1 > cap(cfile.chunks) {
 		return 0
 	}
-	t2 := time.Now()
+	//t2 := time.Now()
 	for i, _ := range cfile.chunks[begin_chunk_num : end_chunk_num+1] {
 		index := i + begin_chunk_num
 		if cur_offset+freesize < int64(cfile.chunks[index].ChunkSize) {
@@ -847,7 +904,7 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 		} else {
 			each_read_len = int64(cfile.chunks[index].ChunkSize) - cur_offset
 		}
-		t3 := time.Now()
+		//t3 := time.Now()
 		if len(cfile.ReaderMap[handleId].readBuf) == 0 {
 			buffer := new(bytes.Buffer)
 			cfile.ReaderMap[handleId].Ch = make(chan *bytes.Buffer)
@@ -860,9 +917,10 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 			cfile.ReaderMap[handleId].readBuf = buffer.Next(buffer.Len())
 			buffer.Reset()
 			buffer = nil
+			logger.Debug("#### Read chunk:%v == bufferlen:%v == curoffset:%v == eachlen:%v ==offset:%v == readsize:%v ####", index, len(cfile.ReaderMap[handleId].readBuf), cur_offset, each_read_len, offset, readsize)
 		}
 
-		t4 := time.Now()
+		//t4 := time.Now()
 		/*var ch chan *bytes.Buffer
 		//ch = make(chan *bytes.Buffer)
 		//go cfile.streamread(index, ch, cur_offset, each_read_len)
@@ -895,8 +953,8 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 		}
 		freesize = freesize - each_read_len
 		length += each_read_len
-		t5 := time.Now()
-		logger.Debug("== t2-t1:%v == t3-t2:%v == t4-t3:%v == t5-t4:%v ===", t2.Sub(t1), t3.Sub(t2), t4.Sub(t3), t5.Sub(t4))
+		//t5 := time.Now()
+		//logger.Debug("== t2-t1:%v == t3-t2:%v == t4-t3:%v == t5-t4:%v ===", t2.Sub(t1), t3.Sub(t2), t4.Sub(t3), t5.Sub(t4))
 	}
 	return length
 }
