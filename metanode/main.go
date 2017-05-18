@@ -75,6 +75,45 @@ func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameS
 }
 
 /*
+rpc DeleteNameSpace(DeleteNameSpaceReq) returns (DeleteNameSpaceAck){};
+*/
+func (s *MetaNodeServer) DeleteNameSpace(ctx context.Context, in *mp.DeleteNameSpaceReq) (*mp.DeleteNameSpaceAck, error) {
+	ack := mp.DeleteNameSpaceAck{}
+	ack.Ret = ns.DeleteNameSpace(in.VolID)
+
+	// send to follower metadatas to delete volume map
+	if in.Type == 0 {
+		for _, addr := range MetaNodeServerAddr.peer {
+			if addr == MetaNodeServerAddr.host {
+				continue
+			}
+			conn2, err2 := grpc.Dial(addr, grpc.WithInsecure())
+			if err2 != nil {
+				logger.Error("Leader told Follower to delete NameSpace Failed ...")
+				continue
+			}
+			defer conn2.Close()
+			mc := mp.NewMetaNodeClient(conn2)
+			pmDeleteNameSpaceReq := &mp.DeleteNameSpaceReq{
+				VolID: in.VolID,
+				Type:  1,
+			}
+			pmDeleteNameSpaceAck, ret := mc.DeleteNameSpace(context.Background(), pmDeleteNameSpaceReq)
+			if ret != nil {
+				logger.Error("Leader told Follower to delete NameSpace Failed ...")
+				continue
+			}
+			if pmDeleteNameSpaceAck.Ret != 0 {
+				logger.Error("Leader told Follower to delete NameSpace Failed ...")
+				continue
+			}
+		}
+	}
+
+	return &ack, nil
+}
+
+/*
 rpc GetFSInfo(GetFSInfoReq) returns (GetFSInfoAck){};
 */
 func (s *MetaNodeServer) GetFSInfo(ctx context.Context, in *mp.GetFSInfoReq) (*mp.GetFSInfoAck, error) {
