@@ -29,7 +29,10 @@ func main() {
 			fmt.Println("createvol [volname] [space GB]")
 			os.Exit(1)
 		}
-		fs.CreateVol(os.Args[3], os.Args[4])
+		ret := fs.CreateVol(os.Args[3], os.Args[4])
+		if ret != 0 {
+			fmt.Println("failed")
+		}
 
 	case "deletevol":
 		argNum := len(os.Args)
@@ -37,8 +40,10 @@ func main() {
 			fmt.Println("createvol [voluuid]")
 			os.Exit(1)
 		}
-		fs.DeleteVol(os.Args[3])
-
+		ret := fs.DeleteVol(os.Args[3])
+		if ret != 0 {
+			fmt.Println("failed")
+		}
 	case "getvolinfo":
 		argNum := len(os.Args)
 		if argNum != 4 {
