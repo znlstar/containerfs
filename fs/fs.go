@@ -597,7 +597,7 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 				ChunkID: v1.ChunkID,
 				BlockID: v2.BlockID,
 			}
-			dpDeleteChunkAck, err2 := dc.DeleteChunk(context.Background(), dpDeleteChunkReq)
+			_, err2 := dc.DeleteChunk(context.Background(), dpDeleteChunkReq)
 			if err2 != nil {
 				time.Sleep(time.Second)
 				conn, err = DialData(addr)
@@ -605,15 +605,13 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 					logger.Error("DeleteChunk failed,Dial to metanode fail :%v\n", err)
 				} else {
 					dc = dp.NewDataNodeClient(conn)
-					dpDeleteChunkAck, err2 = dc.DeleteChunk(context.Background(), dpDeleteChunkReq)
+					_, err2 = dc.DeleteChunk(context.Background(), dpDeleteChunkReq)
 					if err2 != nil {
 						logger.Error("DeleteChunk failed,grpc func failed :%v\n", err2)
 					}
 				}
 			}
-			if dpDeleteChunkAck.Ret != 0 {
-				//return dpDeleteChunkAck.Ret
-			}
+
 			conn.Close()
 		}
 	}
@@ -764,6 +762,13 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 	outflag := 0
 	inflag := 0
 	for i := 0; i < len(cfile.chunks[chunkidx].BlockGroup.BlockInfos); i++ {
+
+		if cfile.chunks[chunkidx].BlockGroup.BlockInfos[i].Status != 0 {
+			logger.Error("streamreadChunkReq error:%v, so retry other datanode!", "blk status error")
+			outflag += 1
+			continue
+		}
+
 		buffer = new(bytes.Buffer)
 		//r := rand.New(rand.NewSource(time.Now().UnixNano()))
 		//idx = r.Intn(len(cfile.chunks[chunkidx].BlockGroup.BlockInfos))
@@ -1058,9 +1063,48 @@ func (cfile *CFile) DestroyChannel() {
 	cfile.wChannel <- &wEndBuffer // send the end flag to channel
 }
 
-func (cfile *CFile) writeChunk(dc dp.DataNodeClient, req *dp.WriteChunkReq) {
+func (cfile *CFile) SetBlkStatus(blkgrpid int32, blkid, status int32) int32 {
 
-	dc.WriteChunk(context.Background(), req)
+	logger.Error("SetBlkStatus...\n")
+	conn, err := DialMeta()
+	if err != nil {
+		logger.Error("Dial to metanode fail :%v for update blkds\n", err)
+		return -1
+	}
+	defer conn.Close()
+	mc := mp.NewMetaNodeClient(conn)
+
+	pmUpdateBlkGrpReq := &mp.UpdateBlkGrpReq{}
+	pmUpdateBlkGrpReq.VolID = cfile.cfs.VolID
+
+	blks := []*mp.UpdateBlkGrpInfo{}
+
+	blk := &mp.UpdateBlkGrpInfo{}
+
+	blk.BlkGrpID = blkgrpid
+	blk.BlockID = blkid
+	blk.Status = status
+
+	blks = append(blks, blk)
+
+	pmUpdateBlkGrpReq.UpdateBlkGrpInfo = blks
+
+	logger.Error("SetBlkStatus...%v\n", pmUpdateBlkGrpReq)
+
+	_, ret := mc.UpdateBlkGrp(context.Background(), pmUpdateBlkGrpReq)
+	if ret != nil {
+		logger.Error("SetBlkStatus...failed\n")
+		return -1
+	}
+	return -1
+}
+func (cfile *CFile) writeChunk(dc dp.DataNodeClient, req *dp.WriteChunkReq, blkgrpid int32) {
+
+	_, err := dc.WriteChunk(context.Background(), req)
+	if err != nil {
+		cfile.SetBlkStatus(blkgrpid, req.BlockID, -1)
+
+	}
 	cfile.wgWriteReps.Add(-1)
 
 }
@@ -1110,6 +1154,7 @@ func (cfile *CFile) flushChannel() {
 				connD[i], err = DialData(addr[i])
 				if err != nil {
 					logger.Error("flushChannel to datanode failed,Dial failed:%v\n", err)
+					cfile.SetBlkStatus(v.chunkInfo.BlockGroup.BlockGroupID, v.chunkInfo.BlockGroup.BlockInfos[i].BlockID, -1)
 					continue
 				}
 				dc[i] = dp.NewDataNodeClient(connD[i])
@@ -1133,7 +1178,7 @@ func (cfile *CFile) flushChannel() {
 			*/
 			cfile.wgWriteReps.Add(1)
 			//go dc[i].WriteChunk(context.Background(), pWriteChunkReq)
-			go cfile.writeChunk(dc[i], pWriteChunkReq)
+			go cfile.writeChunk(dc[i], pWriteChunkReq, v.chunkInfo.BlockGroup.BlockGroupID)
 
 			copies++
 

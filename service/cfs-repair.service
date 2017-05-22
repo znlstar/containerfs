@@ -1,0 +1,9 @@
+[Unit]
+Description=ContainerFS Repair Service
+
+[Service]
+ExecStart=/usr/local/bin/cfs-repair /usr/local/conf/cfs-repair.ini
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

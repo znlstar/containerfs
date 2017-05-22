@@ -19,6 +19,7 @@ import (
 	cfs "github.com/ipdcode/containerfs/fs"
 	"github.com/ipdcode/containerfs/logger"
 	mp "github.com/ipdcode/containerfs/proto/mp"
+	"runtime/debug"
 	//	"../utils"
 )
 
@@ -85,6 +86,13 @@ func main() {
 	default:
 		logger.SetLevel(logger.ERROR)
 	}
+
+	defer func() {
+		if err := recover(); err != nil {
+			logger.Error("panic !!! :%v", err)
+			logger.Error("stacks:%v", string(debug.Stack()))
+		}
+	}()
 
 	err = mount(uuid, mountPoint)
 	if err != nil {

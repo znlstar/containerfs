@@ -372,16 +372,17 @@ func startMetaDataService() {
 	}
 }
 
-func loadMetaData() {
+func loadMetaData() int {
 	ns.CreateGNameSpace()
 	ret, vols := ns.GetVolList()
 	if ret != 0 {
 		logger.Error("loadMetaData,GetVolList failed,ret:%v", ret)
-		return
+		return -1
 	}
 	for _, v := range vols {
 		ns.CreateNameSpace(v, true)
 	}
+	return 0
 }
 
 func init() {
@@ -434,7 +435,11 @@ func init() {
 		logger.SetLevel(logger.ERROR)
 	}
 
-	loadMetaData()
+	ret := loadMetaData()
+	if ret != 0 {
+		fmt.Println("loadMetaData failed...")
+		os.Exit(1)
+	}
 
 }
 
