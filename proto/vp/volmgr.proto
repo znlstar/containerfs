@@ -70,6 +70,7 @@ message BlockInfo{
     int32 BlockID = 1;
     int32 DataNodeIP = 2;
     int32 DataNodePort = 3;
+    int32 Status = 4;
 }
 
 message DatanodeRegistryReq {

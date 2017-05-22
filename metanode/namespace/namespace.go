@@ -177,7 +177,10 @@ func GetVolList() (int32, []string) {
 	defer conn.Close()
 	vc := vp.NewVolMgrClient(conn)
 	pGetVolListReq := &vp.GetVolListReq{}
-	pGetVolListAck, _ := vc.GetVolList(context.Background(), pGetVolListReq)
+	pGetVolListAck, err := vc.GetVolList(context.Background(), pGetVolListReq)
+	if err != nil {
+		return -1, nil
+	}
 	if pGetVolListAck.Ret != 0 {
 		logger.Debug("GetVolList failed: %v", pGetVolListAck.Ret)
 		return pGetVolListAck.Ret, nil
@@ -763,6 +766,8 @@ func (ns *nameSpace) BlockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 		mpBlockInfo.BlockID = pVpBlockInfo.BlockID
 		mpBlockInfo.DataNodeIP = pVpBlockInfo.DataNodeIP
 		mpBlockInfo.DataNodePort = pVpBlockInfo.DataNodePort
+		mpBlockInfo.Status = pVpBlockInfo.Status
+
 		mpBlockInfos[i] = &mpBlockInfo
 
 	}
@@ -889,24 +894,21 @@ func (ns *nameSpace) SetBlockGroupStatus(blockGroupID int32, status int32) {
 
 // UpdateBlkGrp
 func (ns *nameSpace) UpdateBlkGrp(blockGroupID int32, blockID int32, status int32) int32 {
-	/*
-		ok, blockGroup := ns.BlockGroupDBGet(blockGroupID)
-		if !ok {
-			return -1
-		}
-		if 0 != status {
-			for i := range blockGroup.BlockInfos {
-				if blockGroup.BlockInfos[i].BlockID == blockID {
-					blockGroup.BlockInfos = append(blockGroup.BlockInfos[:i], blockGroup.BlockInfos[i+1:]...)
-					break
-				}
+
+	ok, blockGroup := ns.BlockGroupDBGet(blockGroupID)
+	if !ok {
+		return -1
+	}
+	if 0 != status {
+		for i := range blockGroup.BlockInfos {
+			if blockGroup.BlockInfos[i].BlockID == blockID {
+				blockGroup.BlockInfos[i].Status = status
+				break
 			}
-			if len(blockGroup.BlockInfos) == 0 {
-				blockGroup.Status = 3
-			}
-			ns.BlockGroupDBSet(blockGroupID, blockGroup)
 		}
-	*/
+		ns.BlockGroupDBSet(blockGroupID, blockGroup)
+	}
+
 	return 0
 }
 
