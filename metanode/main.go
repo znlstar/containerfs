@@ -342,8 +342,6 @@ rpc UpdateBlkGrp(UpdateBlkGrpReq) returns (UpdateBlkGrpAck){};
 */
 func (s *MetaNodeServer) UpdateBlkGrp(ctx context.Context, in *mp.UpdateBlkGrpReq) (*mp.UpdateBlkGrpAck, error) {
 
-	logger.Error("---- UpdateBlkGrp ---- :%v", in)
-
 	ack := mp.UpdateBlkGrpAck{}
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
@@ -377,7 +375,7 @@ func loadMetaData() int {
 	ret, vols := ns.GetVolList()
 	if ret != 0 {
 		logger.Error("loadMetaData,GetVolList failed,ret:%v", ret)
-		return -1
+		return 0
 	}
 	for _, v := range vols {
 		ns.CreateNameSpace(v, true)

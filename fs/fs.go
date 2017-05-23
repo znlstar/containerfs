@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"github.com/coreos/etcd/clientv3"
 	"github.com/ipdcode/containerfs/logger"
 	dp "github.com/ipdcode/containerfs/proto/dp"
 	mp "github.com/ipdcode/containerfs/proto/mp"
@@ -1296,50 +1295,4 @@ func ReadLocalAndWriteCFS(filePth string, bufSize int, hookfn func([]byte, *CFil
 			return err
 		}
 	}
-}
-
-// etcd endpoints
-var EtcdEndPoints []string
-
-// choose metanode leader watcher
-func ChooseMetaLeaderWatcher() {
-	cli, err := clientv3.New(clientv3.Config{
-		Endpoints: EtcdEndPoints,
-	})
-	if err != nil {
-		logger.Error("ChooseMetaLeaderWatcher New Clent err:%v", err)
-		return
-	}
-	defer cli.Close()
-
-	rch := cli.Watch(context.Background(), "/ContainerFS/MetaLeader")
-	for wresp := range rch {
-		for _, ev := range wresp.Events {
-			MetaNodeAddr = string(ev.Kv.Value)
-			logger.Debug("%s %q : %v", ev.Type, ev.Kv.Key, MetaNodeAddr)
-		}
-	}
-}
-
-// get meta leader ip
-func GetMetaLeader() {
-	cli, err := clientv3.New(clientv3.Config{
-		Endpoints: EtcdEndPoints,
-	})
-	if err != nil {
-		logger.Error("ChooseMetaLeaderWatcher New Clent err:%v", err)
-		return
-	}
-	defer cli.Close()
-
-	ctx := context.Background()
-	resp, err := cli.Get(ctx, "/ContainerFS/MetaLeader")
-	if err != nil {
-		logger.Error("GetMetaLeader etcd get err:%v", err)
-	}
-	for _, ev := range resp.Kvs {
-		MetaNodeAddr = string(ev.Value)
-	}
-	fmt.Println(MetaNodeAddr)
-
 }

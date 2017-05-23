@@ -899,13 +899,21 @@ func (ns *nameSpace) UpdateBlkGrp(blockGroupID int32, blockID int32, status int3
 	if !ok {
 		return -1
 	}
-	if 0 != status {
-		for i := range blockGroup.BlockInfos {
-			if blockGroup.BlockInfos[i].BlockID == blockID {
+
+	flag := 0
+
+	for i := range blockGroup.BlockInfos {
+
+		if blockGroup.BlockInfos[i].BlockID == blockID {
+			if blockGroup.BlockInfos[i].Status != status {
 				blockGroup.BlockInfos[i].Status = status
+				flag = 1
 				break
 			}
 		}
+	}
+
+	if flag == 1 {
 		ns.BlockGroupDBSet(blockGroupID, blockGroup)
 	}
 
@@ -1102,7 +1110,7 @@ func (ns *nameSpace) AllocateChunkID() (int64, error) {
 func (ns *nameSpace) InodeDBGet(k string) (bool, *mp.InodeInfo) {
 	value, err := RedisClient.HGet(ns.VolID, "InodeDB/"+k).Result()
 	if err != nil {
-		if err.Error() != "redis: nil" {
+		if err != redis.Nil {
 			time.Sleep(time.Second * 2)
 			value, err = RedisClient.HGet(ns.VolID, "InodeDB/"+k).Result()
 			if err != nil {
@@ -1156,7 +1164,7 @@ func (ns *nameSpace) InodeDBDelete(k string) error {
 func (ns *nameSpace) BlockGroupDBGet(k int32) (bool, *vp.BlockGroup) {
 	value, err := RedisClient.HGet(ns.VolID, "BGDB/"+strconv.Itoa(int(k))).Result()
 	if err != nil {
-		if err.Error() != "redis: nil" {
+		if err != redis.Nil {
 			time.Sleep(time.Second * 2)
 			value, err = RedisClient.HGet(ns.VolID, "BGDB/"+strconv.Itoa(int(k))).Result()
 			if err != nil {
@@ -1209,7 +1217,7 @@ func (ns *nameSpace) BlockGroupDBDelete(k int32) {
 func (ns *nameSpace) ChunkDBGet(k int64) (bool, *mp.ChunkInfo) {
 	value, err := RedisClient.HGet(ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10)).Result()
 	if err != nil {
-		if err.Error() != "redis: nil" {
+		if err != redis.Nil {
 			time.Sleep(time.Second * 2)
 			value, err = RedisClient.HGet(ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10)).Result()
 			if err != nil {
