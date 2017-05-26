@@ -1,10 +1,12 @@
 package cfs
 
 import (
-	"bazil.org/fuse"
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
+
+	"bazil.org/fuse"
 	"github.com/ipdcode/containerfs/logger"
 	dp "github.com/ipdcode/containerfs/proto/dp"
 	mp "github.com/ipdcode/containerfs/proto/mp"
@@ -12,7 +14,6 @@ import (
 	"github.com/ipdcode/containerfs/utils"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"io"
 	//"math/rand"
 	"os"
 	"strconv"
@@ -145,10 +146,12 @@ func DeleteVol(uuid string) int32 {
 		VolID: uuid,
 		Type:  0,
 	}
+
 	pmDeleteNameSpaceAck, err4 := mc.DeleteNameSpace(context.Background(), pmDeleteNameSpaceReq)
 	if err4 != nil {
 		return -1
 	}
+
 	if pmDeleteNameSpaceAck.Ret != 0 {
 		logger.Error("DeleteNameSpace failed :%v\n", pmDeleteNameSpaceAck.Ret)
 		return -1
@@ -1120,6 +1123,8 @@ func (cfile *CFile) flushChannel() {
 		logger.Error("process exit!!!")
 		os.Exit(1)
 	}
+
+	defer connM.Close()
 
 	copies := 0
 

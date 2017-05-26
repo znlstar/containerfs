@@ -288,7 +288,7 @@ func compare(srcpath string, dstip string, dstport int32, dstid int32, dstmp str
 		DstFile: dstfile,
 		SrcSize: size,
 	}
-	pAck, err := c.CompareFile(context.Background(), compareReq)
+	pAck, _ := c.CompareFile(context.Background(), compareReq)
 	if pAck.Ret == 0 {
 		logger.Debug("This Blk chunk:%v no need repair", dstfile)
 		ch <- 0
@@ -346,7 +346,7 @@ func copydata(srcip string, sfile string, dfile string, ssize int64) (totalsize 
 	}
 	defer conn.Close()
 	c := rp.NewRepairClient(conn)
-	stream, err := c.CopyData(context.Background(), streamCopyReq)
+	stream, _ := c.CopyData(context.Background(), streamCopyReq)
 	for {
 		ack, err := stream.Recv()
 		if err != nil {
