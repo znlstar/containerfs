@@ -1124,6 +1124,8 @@ func (cfile *CFile) flushChannel() {
 		os.Exit(1)
 	}
 
+	defer connM.Close()
+
 	copies := 0
 
 	for {
