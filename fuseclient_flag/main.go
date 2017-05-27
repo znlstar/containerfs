@@ -501,6 +501,7 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.BlockSize = 128 * 1024 // this is for fuse attr quick update
 	a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
 	a.Mode = 0666
+	a.Valid = time.Second
 
 	return nil
 }
