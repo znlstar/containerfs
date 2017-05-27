@@ -507,6 +507,7 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.BlockSize = 128 * 1024 // this is for fuse attr quick update
 	a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
 	a.Mode = 0666
+	a.Valid = time.Second
 
 	return nil
 }
@@ -520,7 +521,6 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 	var fullPath string
 
 	logger.Debug("OpenFlag:%v", req.Flags)
-
 	if f.parent.name == "/" {
 		fullPath = f.parent.name + f.name
 	} else {

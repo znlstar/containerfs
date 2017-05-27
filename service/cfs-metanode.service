@@ -3,6 +3,9 @@ Description=ContainerFS Metanode Service
 
 [Service]
 ExecStart=/usr/local/bin/cfs-metanode /usr/local/conf/cfs-metanode.ini
+LimitNOFILE=1048576
+LimitNPROC=1048576
+LimitCORE=infinity
 Restart=on-failure
 
 [Install]

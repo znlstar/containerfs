@@ -32,7 +32,8 @@ var VolMgrAddress string
 var RedisClient *redis.ClusterClient
 
 type nameSpace struct {
-	VolID string
+	VolID           string
+	bgFreeCntLocker sync.Mutex
 }
 
 var AllNameSpace map[string]*nameSpace
@@ -495,6 +496,10 @@ func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
 // CreateFile
 func (ns *nameSpace) CreateFile(path string) int32 {
 
+	if path == "/" {
+		return 1
+	}
+
 	var ret int32
 	ret = 0
 
@@ -790,6 +795,8 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 
 	logger.Debug("blkgrps:%v\n", blkgrps)
 
+	ns.bgFreeCntLocker.Lock()
+
 	for i := range blkgrps {
 		ret, bg := ns.BlockGroupDBGet(blkgrps[i])
 		if !ret {
@@ -810,8 +817,12 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 			break
 		}
 	}
+	ns.bgFreeCntLocker.Unlock()
+
 	// find the free blockgroup
 	if flag == false {
+		ns.bgFreeCntLocker.Lock()
+
 		for i := range blkgrps {
 			ret, bg := ns.BlockGroupDBGet(blkgrps[i])
 			if !ret {
@@ -833,6 +844,8 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 				break
 			}
 		}
+		ns.bgFreeCntLocker.Unlock()
+
 	}
 
 	if flag {
@@ -845,6 +858,9 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 
 // ReleaseBlockGroup
 func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
+
+	ns.bgFreeCntLocker.Lock()
+	defer ns.bgFreeCntLocker.Unlock()
 
 	ok, blockGroup := ns.BlockGroupDBGet(blockGroupID)
 	if !ok {

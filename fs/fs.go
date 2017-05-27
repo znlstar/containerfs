@@ -62,7 +62,8 @@ func CreateVol(name string, capacity string) int32 {
 		SpaceQuota: int32(spaceQuota),
 		MetaDomain: MetaNodeAddr,
 	}
-	pCreateVolAck, err2 := vc.CreateVol(context.Background(), pCreateVolReq)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pCreateVolAck, err2 := vc.CreateVol(ctx, pCreateVolReq)
 	if err2 != nil {
 		return -1
 	}
@@ -82,7 +83,8 @@ func CreateVol(name string, capacity string) int32 {
 		VolID: pCreateVolAck.UUID,
 		Type:  0,
 	}
-	pmCreateNameSpaceAck, err4 := mc.CreateNameSpace(context.Background(), pmCreateNameSpaceReq)
+	ctx2, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pmCreateNameSpaceAck, err4 := mc.CreateNameSpace(ctx2, pmCreateNameSpaceReq)
 	if err4 != nil {
 		return -1
 	}
@@ -109,7 +111,8 @@ func GetVolInfo(name string) (int32, *vp.GetVolInfoAck) {
 	pGetVolInfoReq := &vp.GetVolInfoReq{
 		UUID: name,
 	}
-	pGetVolInfoAck, err2 := vc.GetVolInfo(context.Background(), pGetVolInfoReq)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pGetVolInfoAck, err2 := vc.GetVolInfo(ctx, pGetVolInfoReq)
 	if err2 != nil {
 		return 1, nil
 	}
@@ -146,8 +149,8 @@ func DeleteVol(uuid string) int32 {
 		VolID: uuid,
 		Type:  0,
 	}
-
-	pmDeleteNameSpaceAck, err4 := mc.DeleteNameSpace(context.Background(), pmDeleteNameSpaceReq)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pmDeleteNameSpaceAck, err4 := mc.DeleteNameSpace(ctx, pmDeleteNameSpaceReq)
 	if err4 != nil {
 		return -1
 	}
@@ -168,7 +171,8 @@ func DeleteVol(uuid string) int32 {
 	pDeleteVolReq := &vp.DeleteVolReq{
 		UUID: uuid,
 	}
-	pDeleteVolAck, err2 := vc.DeleteVol(context.Background(), pDeleteVolReq)
+	ctx2, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pDeleteVolAck, err2 := vc.DeleteVol(ctx2, pDeleteVolReq)
 	if err2 != nil {
 		return -1
 	}
@@ -192,7 +196,8 @@ func GetFSInfo(name string) (int32, *mp.GetFSInfoAck) {
 	pGetFSInfoReq := &mp.GetFSInfoReq{
 		VolID: name,
 	}
-	pGetFSInfoAck, err2 := mc.GetFSInfo(context.Background(), pGetFSInfoReq)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pGetFSInfoAck, err2 := mc.GetFSInfo(ctx, pGetFSInfoReq)
 	if err2 != nil {
 		return 1, nil
 	}
@@ -221,7 +226,8 @@ func (cfs *CFS) CreateDir(path string) int32 {
 		FullPathName: path,
 		VolID:        cfs.VolID,
 	}
-	pCreateDirAck, err2 := mc.CreateDir(context.Background(), pCreateDirReq)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pCreateDirAck, err2 := mc.CreateDir(ctx, pCreateDirReq)
 	if err2 != nil {
 		return -1
 	}
@@ -243,7 +249,8 @@ func (cfs *CFS) Stat(path string) (int32, *mp.InodeInfo) {
 		FullPathName: path,
 		VolID:        cfs.VolID,
 	}
-	pStatAck, err2 := mc.Stat(context.Background(), pStatReq)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pStatAck, err2 := mc.Stat(ctx, pStatReq)
 	if err2 != nil {
 		time.Sleep(time.Second)
 		conn, err = DialMeta()
@@ -252,7 +259,8 @@ func (cfs *CFS) Stat(path string) (int32, *mp.InodeInfo) {
 			return -1, nil
 		}
 		mc = mp.NewMetaNodeClient(conn)
-		pStatAck, err2 = mc.Stat(context.Background(), pStatReq)
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		pStatAck, err2 = mc.Stat(ctx, pStatReq)
 		if err2 != nil {
 			return -1, nil
 		}
@@ -276,7 +284,8 @@ func (cfs *CFS) List(path string) (int32, []*mp.InodeInfo) {
 		FullPathName: path,
 		VolID:        cfs.VolID,
 	}
-	pListAck, err2 := mc.List(context.Background(), pListReq)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pListAck, err2 := mc.List(ctx, pListReq)
 	if err2 != nil {
 		return -1, nil
 	}
@@ -298,7 +307,8 @@ func (cfs *CFS) DeleteDir(path string) int32 {
 		FullPathName: path,
 		VolID:        cfs.VolID,
 	}
-	pDeleteDirAck, err2 := mc.DeleteDir(context.Background(), pDeleteDirReq)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pDeleteDirAck, err2 := mc.DeleteDir(ctx, pDeleteDirReq)
 	if err2 != nil {
 		return -1
 	}
@@ -319,7 +329,8 @@ func (cfs *CFS) Rename(path1 string, path2 string) int32 {
 		FullPathName2: path2,
 		VolID:         cfs.VolID,
 	}
-	pRenameAck, err2 := mc.Rename(context.Background(), pRenameReq)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pRenameAck, err2 := mc.Rename(ctx, pRenameReq)
 	if err2 != nil {
 		return -1
 	}
@@ -548,7 +559,8 @@ func (cfs *CFS) createFile(path string) int32 {
 		FullPathName: path,
 		VolID:        cfs.VolID,
 	}
-	pCreateFileAck, err1 := mc.CreateFile(context.Background(), pCreateFileReq)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pCreateFileAck, err1 := mc.CreateFile(ctx, pCreateFileReq)
 	if err1 != nil {
 		time.Sleep(time.Second)
 		conn, err = DialMeta()
@@ -557,7 +569,8 @@ func (cfs *CFS) createFile(path string) int32 {
 			return -1
 		}
 		mc = mp.NewMetaNodeClient(conn)
-		pCreateFileAck, err1 = mc.CreateFile(context.Background(), pCreateFileReq)
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		pCreateFileAck, err1 = mc.CreateFile(ctx, pCreateFileReq)
 		if err1 != nil {
 			logger.Error("CreateFile failed,grpc func failed :%v\n", err1)
 			return -1
@@ -599,7 +612,8 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 				ChunkID: v1.ChunkID,
 				BlockID: v2.BlockID,
 			}
-			_, err2 := dc.DeleteChunk(context.Background(), dpDeleteChunkReq)
+			ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+			_, err2 := dc.DeleteChunk(ctx, dpDeleteChunkReq)
 			if err2 != nil {
 				time.Sleep(time.Second)
 				conn, err = DialData(addr)
@@ -607,7 +621,8 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 					logger.Error("DeleteChunk failed,Dial to metanode fail :%v\n", err)
 				} else {
 					dc = dp.NewDataNodeClient(conn)
-					_, err2 = dc.DeleteChunk(context.Background(), dpDeleteChunkReq)
+					ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+					_, err2 = dc.DeleteChunk(ctx, dpDeleteChunkReq)
 					if err2 != nil {
 						logger.Error("DeleteChunk failed,grpc func failed :%v\n", err2)
 					}
@@ -629,7 +644,8 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 		FullPathName: path,
 		VolID:        cfs.VolID,
 	}
-	mpDeleteFileAck, err2 := mc.DeleteFile(context.Background(), mpDeleteFileReq)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	mpDeleteFileAck, err2 := mc.DeleteFile(ctx, mpDeleteFileReq)
 	if err2 != nil {
 		time.Sleep(time.Second)
 		conn, err = DialMeta()
@@ -638,7 +654,8 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 			return -1
 		}
 		mc = mp.NewMetaNodeClient(conn)
-		mpDeleteFileAck, err2 = mc.DeleteFile(context.Background(), mpDeleteFileReq)
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		mpDeleteFileAck, err2 = mc.DeleteFile(ctx, mpDeleteFileReq)
 		if err2 != nil {
 			logger.Error("DeleteFile failed,grpc func failed :%v\n", err2)
 			return -1
@@ -662,7 +679,8 @@ func (cfs *CFS) AllocateChunk(path string) (int32, *mp.ChunkInfoWithBG) {
 		FileName: path,
 		VolID:    cfs.VolID,
 	}
-	pAllocateChunkAck, err2 := mc.AllocateChunk(context.Background(), pAllocateChunkReq)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pAllocateChunkAck, err2 := mc.AllocateChunk(ctx, pAllocateChunkReq)
 	if err2 != nil {
 		time.Sleep(time.Second)
 		conn, err = DialMeta()
@@ -671,7 +689,8 @@ func (cfs *CFS) AllocateChunk(path string) (int32, *mp.ChunkInfoWithBG) {
 			return -1, nil
 		}
 		mc = mp.NewMetaNodeClient(conn)
-		pAllocateChunkAck, err2 = mc.AllocateChunk(context.Background(), pAllocateChunkReq)
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		pAllocateChunkAck, err2 = mc.AllocateChunk(ctx, pAllocateChunkReq)
 		if err2 != nil {
 			logger.Error("AllocateChunk failed,grpc func failed :%v\n", err2)
 			return -1, nil
@@ -697,7 +716,8 @@ func (cfs *CFS) GetFileChunks(path string) (int32, []*mp.ChunkInfoWithBG) {
 		FileName: path,
 		VolID:    cfs.VolID,
 	}
-	pGetFileChunksAck, err2 := mc.GetFileChunks(context.Background(), pGetFileChunksReq)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pGetFileChunksAck, err2 := mc.GetFileChunks(ctx, pGetFileChunksReq)
 	if err2 != nil {
 		conn, err = DialMeta()
 		time.Sleep(time.Second)
@@ -706,7 +726,8 @@ func (cfs *CFS) GetFileChunks(path string) (int32, []*mp.ChunkInfoWithBG) {
 			return -1, nil
 		}
 		mc = mp.NewMetaNodeClient(conn)
-		pGetFileChunksAck, err2 = mc.GetFileChunks(context.Background(), pGetFileChunksReq)
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		pGetFileChunksAck, err2 = mc.GetFileChunks(ctx, pGetFileChunksReq)
 		if err2 != nil {
 			logger.Error("GetFileChunks failed,grpc func failed :%v\n", err2)
 			return -1, nil
@@ -789,7 +810,8 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 			Offset:   offset,
 			Readsize: size,
 		}
-		stream, err := dc.StreamReadChunk(context.Background(), streamreadChunkReq)
+		ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+		stream, err := dc.StreamReadChunk(ctx, streamreadChunkReq)
 		if err != nil {
 			logger.Error("streamreadChunkReq error:%v, so retry other datanode!", err)
 			outflag += 1
@@ -1091,9 +1113,8 @@ func (cfile *CFile) SetBlkStatus(blkgrpid int32, blkid, status int32) int32 {
 
 	pmUpdateBlkGrpReq.UpdateBlkGrpInfo = blks
 
-	logger.Error("SetBlkStatus...%v\n", pmUpdateBlkGrpReq)
-
-	_, ret := mc.UpdateBlkGrp(context.Background(), pmUpdateBlkGrpReq)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	_, ret := mc.UpdateBlkGrp(ctx, pmUpdateBlkGrpReq)
 	if ret != nil {
 		logger.Error("SetBlkStatus...failed\n")
 		return -1
@@ -1101,8 +1122,8 @@ func (cfile *CFile) SetBlkStatus(blkgrpid int32, blkid, status int32) int32 {
 	return -1
 }
 func (cfile *CFile) writeChunk(dc dp.DataNodeClient, req *dp.WriteChunkReq, blkgrpid int32) {
-
-	_, err := dc.WriteChunk(context.Background(), req)
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	_, err := dc.WriteChunk(ctx, req)
 	if err != nil {
 		cfile.SetBlkStatus(blkgrpid, req.BlockID, -1)
 
@@ -1209,7 +1230,8 @@ func (cfile *CFile) flushChannel() {
 
 		pSyncChunkReq.ChunkInfo = &tmpChunkInfo
 
-		pSyncChunkAck, ret := mc.SyncChunk(context.Background(), pSyncChunkReq)
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		pSyncChunkAck, ret := mc.SyncChunk(ctx, pSyncChunkReq)
 		if ret != nil {
 			logger.Error("flushChannel SyncChunk Failed :%v\n", pSyncChunkReq.ChunkInfo)
 			connM.Close()
@@ -1222,7 +1244,8 @@ func (cfile *CFile) flushChannel() {
 				break
 			}
 			mc := mp.NewMetaNodeClient(connM)
-			pSyncChunkAck, ret = mc.SyncChunk(context.Background(), pSyncChunkReq)
+			ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+			pSyncChunkAck, ret = mc.SyncChunk(ctx, pSyncChunkReq)
 			if ret != nil {
 				logger.Error("flushChannel SyncChunk Failed again:%v\n", pSyncChunkReq.ChunkInfo)
 				cfile.Status = 1

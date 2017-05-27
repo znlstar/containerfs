@@ -375,7 +375,7 @@ func loadMetaData() int {
 	ret, vols := ns.GetVolList()
 	if ret != 0 {
 		logger.Error("loadMetaData,GetVolList failed,ret:%v", ret)
-		return 0
+		return ret
 	}
 	for _, v := range vols {
 		ns.CreateNameSpace(v, true)
@@ -435,8 +435,12 @@ func init() {
 
 	ret := loadMetaData()
 	if ret != 0 {
-		fmt.Println("loadMetaData failed...")
-		os.Exit(1)
+		if ret == 1 {
+			logger.Debug("loadMetaData  no volumes")
+		} else {
+			logger.Error("loadMetaData failed ...")
+			os.Exit(1)
+		}
 	}
 
 }

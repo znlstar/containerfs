@@ -70,7 +70,7 @@ func registryToVolMgr() {
 	datanodeRegistryReq.Ip = DataNodeServerAddr.IpInt
 	datanodeRegistryReq.Port = DataNodeServerAddr.Port
 	diskInfo := utils.DiskUsage(DataNodeServerAddr.Path)
-	capacity := int32(float64(diskInfo.All) / float64(1024*1024*1024))
+	capacity := int32(float64(diskInfo.All) / float64(1024*1024*1024) * 0.8)
 	datanodeRegistryReq.Capacity = capacity
 	datanodeRegistryReq.MountPoint = DataNodeServerAddr.Path
 
