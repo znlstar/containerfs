@@ -7,16 +7,6 @@ a cluster filesystem for the containers
 
 a volume = a metadata table + multiple block groups
 
-# Key Problem: Ino Generation
+# Design
 
-auto increase on the client side, and fetch the initial ino from the metadata table on mount
-
-or allocate on the metadata table side
-
-# Replication
-
-raft or paxos for the metadata table
-
-append-only write for blockgroups
-
-
+[here](doc/design.md)
