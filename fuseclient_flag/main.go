@@ -69,6 +69,8 @@ func main() {
 	log := flag.String("log", "/home", "ContainerFS log level")
 	loglevel := flag.String("loglevel", "error", "ContainerFS log level")
 
+	isReadOnly := flag.Int("readonly", 0, "Is readonly 1 for ture ,0 for false ,defalut 0")
+
 	flag.Parse()
 
 	cfs.VolMgrAddr = *addr1
@@ -88,40 +90,72 @@ func main() {
 		logger.SetLevel(logger.ERROR)
 	}
 
-	err := mount(*uuid, *mountPoint)
+	err := mount(*uuid, *mountPoint, *isReadOnly)
 	if err != nil {
 		fmt.Println("mount failed ...")
 	}
 }
 
-func mount(uuid, mountPoint string) error {
+func mount(uuid, mountPoint string, isReadOnly int) error {
 	cfs := cfs.OpenFileSystem(uuid)
-	c, err := fuse.Mount(
-		mountPoint,
-		fuse.MaxReadahead(128*1024),
-		fuse.AsyncRead(),
-		fuse.WritebackCache(),
-		fuse.FSName("ContainerFS-"+uuid),
-		fuse.LocalVolume(),
-		fuse.VolumeName("ContainerFS-"+uuid))
-	if err != nil {
-		return err
-	}
-	defer c.Close()
 
-	filesys := &FS{
-		cfs: cfs,
-	}
-	if err := fs.Serve(c, filesys); err != nil {
-		return err
-	}
-	// check if the mount process has an error to report
-	<-c.Ready
-	if err := c.MountError; err != nil {
-		return err
+	if isReadOnly == 0 {
+		c, err := fuse.Mount(
+			mountPoint,
+			fuse.MaxReadahead(128*1024),
+			fuse.AsyncRead(),
+			fuse.WritebackCache(),
+			fuse.FSName("ContainerFS-"+uuid),
+			fuse.LocalVolume(),
+			fuse.VolumeName("ContainerFS-"+uuid))
+		if err != nil {
+			return err
+		}
+		defer c.Close()
+
+		filesys := &FS{
+			cfs: cfs,
+		}
+		if err := fs.Serve(c, filesys); err != nil {
+			return err
+		}
+		// check if the mount process has an error to report
+		<-c.Ready
+		if err := c.MountError; err != nil {
+			return err
+		}
+
+		return nil
+	} else {
+		c, err := fuse.Mount(
+			mountPoint,
+			fuse.MaxReadahead(128*1024),
+			fuse.AsyncRead(),
+			fuse.WritebackCache(),
+			fuse.FSName("ContainerFS-"+uuid),
+			fuse.LocalVolume(),
+			fuse.VolumeName("ContainerFS-"+uuid),
+			fuse.ReadOnly())
+		if err != nil {
+			return err
+		}
+		defer c.Close()
+
+		filesys := &FS{
+			cfs: cfs,
+		}
+		if err := fs.Serve(c, filesys); err != nil {
+			return err
+		}
+		// check if the mount process has an error to report
+		<-c.Ready
+		if err := c.MountError; err != nil {
+			return err
+		}
+
+		return nil
 	}
 
-	return nil
 }
 
 var _ = fs.FS(&FS{})
@@ -184,6 +218,7 @@ func (d *Dir) setName(name string) {
 // Attr
 func (d *Dir) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Mode = os.ModeDir | 0755
+	a.Valid = time.Millisecond * 10
 	return nil
 }
 
@@ -501,7 +536,7 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.BlockSize = 128 * 1024 // this is for fuse attr quick update
 	a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
 	a.Mode = 0666
-	a.Valid = time.Second
+	a.Valid = time.Millisecond * 10
 
 	return nil
 }

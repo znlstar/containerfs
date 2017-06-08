@@ -21,7 +21,7 @@ service MetaNode {
     rpc GetFileChunks(GetFileChunksReq) returns (GetFileChunksAck){};
     rpc SyncChunk(SyncChunkReq) returns (SyncChunkAck){};
 
-    rpc UpdateBlkGrp(UpdateBlkGrpReq) returns (UpdateBlkGrpAck){};
+    rpc UpdateChunkInfo(UpdateChunkInfoReq) returns (UpdateChunkInfoAck){};
 
 }
 
@@ -154,18 +154,15 @@ message FinishChunkAck {
     int64 SequenceID = 2;
 }
 
-message UpdateBlkGrpReq {
-    string VolID = 1;
-    repeated UpdateBlkGrpInfo UpdateBlkGrpInfo = 2;
-}
-message UpdateBlkGrpAck {
-    int32 Ret = 1;
+message UpdateChunkInfoReq {
+    string  VolID = 1;
+    int64   ChunkID = 2;
+    int32   Position = 3;
+    int32   Status = 4;
 }
 
-message UpdateBlkGrpInfo {
-    int32 BlkGrpID = 1;
-    int32 BlockID = 2;
-    int32 Status = 3;
+message UpdateChunkInfoAck {
+    int32 Ret = 1;
 }
 
 message InodeInfo{
@@ -198,10 +195,12 @@ message ChunkInfo{
     int64 ChunkID = 1;
     int32 ChunkSize = 2;
     int32 BlockGroupID = 3;
+    repeated int32 Status = 4;
 }
 
 message ChunkInfoWithBG{
     int64 ChunkID = 1;
     int32 ChunkSize = 2;
     BlockGroup BlockGroup = 3;
+    repeated int32 Status = 4;
 }

@@ -809,7 +809,7 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 			bg.FreeCnt = bg.FreeCnt - 1
 			if bg.FreeCnt <= 0 {
 				bg.Status = 2
-				ns.SetBlockGroupStatus(blockGroupID, bg.Status)
+				//ns.SetBlockGroupStatus(blockGroupID, bg.Status)
 			}
 			blockGroup = bg
 			logger.Debug("find a using blockgroup,blgid:%v\n", bg.BlockGroupID)
@@ -834,7 +834,7 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 				bg.FreeCnt = bg.FreeCnt - 1
 				if bg.FreeCnt == 0 {
 					bg.Status = 2
-					ns.SetBlockGroupStatus(blockGroupID, bg.Status)
+					//ns.SetBlockGroupStatus(blockGroupID, bg.Status)
 				} else {
 					bg.Status = 1
 				}
@@ -876,7 +876,7 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 		status = 1
 		if blockGroup.Status != status && blockGroup.Status != 3 {
 			blockGroup.Status = 1
-			ns.SetBlockGroupStatus(blockGroupID, blockGroup.Status)
+			//ns.SetBlockGroupStatus(blockGroupID, blockGroup.Status)
 		}
 
 	}
@@ -884,7 +884,7 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 		status = 0
 		if blockGroup.Status != status && blockGroup.Status != 3 {
 			blockGroup.Status = 0
-			ns.SetBlockGroupStatus(blockGroupID, blockGroup.Status)
+			//ns.SetBlockGroupStatus(blockGroupID, blockGroup.Status)
 		}
 
 	}
@@ -893,6 +893,7 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 
 }
 
+/*
 // SetBlockGroupStatus
 func (ns *nameSpace) SetBlockGroupStatus(blockGroupID int32, status int32) {
 	conn, err := grpc.Dial(VolMgrAddress, grpc.WithInsecure())
@@ -907,30 +908,16 @@ func (ns *nameSpace) SetBlockGroupStatus(blockGroupID int32, status int32) {
 	pSetBlockGroupStatusReq.Status = status
 	vc.SetBlockGroupStatus(context.Background(), pSetBlockGroupStatusReq)
 }
+*/
 
-// UpdateBlkGrp
-func (ns *nameSpace) UpdateBlkGrp(blockGroupID int32, blockID int32, status int32) int32 {
+// UpdateChunkInfo
+func (ns *nameSpace) UpdateChunkInfo(in *mp.UpdateChunkInfoReq) int32 {
 
-	ok, blockGroup := ns.BlockGroupDBGet(blockGroupID)
-	if !ok {
-		return -1
-	}
-
-	flag := 0
-
-	for i := range blockGroup.BlockInfos {
-
-		if blockGroup.BlockInfos[i].BlockID == blockID {
-			if blockGroup.BlockInfos[i].Status != status {
-				blockGroup.BlockInfos[i].Status = status
-				flag = 1
-				break
-			}
-		}
-	}
-
-	if flag == 1 {
-		ns.BlockGroupDBSet(blockGroupID, blockGroup)
+	k := in.ChunkID
+	ok, v := ns.ChunkDBGet(k)
+	if ok {
+		v.Status[in.Position] = in.Status
+		ns.ChunkDBSet(k, v)
 	}
 
 	return 0

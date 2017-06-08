@@ -6,7 +6,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/ipdcode/containerfs/logger"
 	dp "github.com/ipdcode/containerfs/proto/dp"
-	mp "github.com/ipdcode/containerfs/proto/mp"
+	//mp "github.com/ipdcode/containerfs/proto/mp"
 	vp "github.com/ipdcode/containerfs/proto/vp"
 	"github.com/ipdcode/containerfs/utils"
 	"github.com/lxmgo/config"
@@ -88,14 +88,14 @@ func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegi
 
 	hostip := ip
 	hostport := strconv.Itoa(int(dn_port))
-	blk, err := VolMgrDB.Prepare("INSERT INTO blk(hostip, hostport, allocated, disabled,repair) VALUES(?, ?, ?, ?, ?)")
+	blk, err := VolMgrDB.Prepare("INSERT INTO blk(hostip, hostport, allocated, disabled) VALUES(?, ?, ?, ?)")
 	checkErr(err)
 	defer blk.Close()
 
 	VolMgrDB.Exec("lock tables blk write")
 
 	for i := int32(0); i < blkcount; i++ {
-		blk.Exec(hostip, hostport, 0, 0, 0)
+		blk.Exec(hostip, hostport, 0, 0)
 	}
 	VolMgrDB.Exec("unlock tables")
 
@@ -111,7 +111,7 @@ func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegi
 	}
 
 	sort.Ints(blkids)
-	logger.Debug("The disk(%s:%d) mount:%s have blks:%v", hostip, hostport, dn_mount, blkids)
+	logger.Debug("The disk(%s:%s) mount:%s have blks:%v", hostip, hostport, dn_mount, blkids)
 	ack.StartBlockID = int32(blkids[0])
 	ack.EndBlockID = int32(blkids[len(blkids)-1])
 	ack.Ret = 0 //success
@@ -277,7 +277,7 @@ func (s *VolMgrServer) DeleteVol(ctx context.Context, in *vp.DeleteVolReq) (*vp.
 		s := strings.Split(blks, ",")
 		for _, v := range s[:len(s)-1] {
 			blkid, _ := strconv.Atoi(v)
-			blk, err := VolMgrDB.Prepare("UPDATE blk SET allocated=0, repair=0 WHERE blkid=?")
+			blk, err := VolMgrDB.Prepare("UPDATE blk SET allocated=0 WHERE blkid=?")
 			if err != nil {
 				logger.Error("update blk:%d allocated=0 error:%s for delete volume:%v", blkid, volid)
 				ack.Ret = -1
@@ -310,6 +310,7 @@ func (s *VolMgrServer) DeleteVol(ctx context.Context, in *vp.DeleteVolReq) (*vp.
 	return &ack, nil
 }
 
+/*
 func (s *VolMgrServer) SetBlockGroupStatus(ctx context.Context, in *vp.SetBlockGroupStatusReq) (*vp.SetBlockGroupStatusAck, error) {
 	ack := vp.SetBlockGroupStatusAck{}
 	blkgrpid := in.BlockGroupID
@@ -325,6 +326,35 @@ func (s *VolMgrServer) SetBlockGroupStatus(ctx context.Context, in *vp.SetBlockG
 		logger.Error("update blkgrpid:%v statu:%v exec error:%v", blkgrpid, statu, err)
 		return &ack, err
 	}
+	return &ack, nil
+}
+*/
+
+func (s *VolMgrServer) UpdateChunkInfo(ctx context.Context, in *vp.UpdateChunkInfoReq) (*vp.UpdateChunkInfoAck, error) {
+	ack := vp.UpdateChunkInfoAck{}
+	ip := in.Ip
+	port := in.Port
+	volid := in.VolID
+	blkgrpid := in.BlockGroupID
+	blkid := in.BlockID
+	chkid := in.ChunkID
+	status := in.Status
+	position := in.Position
+
+	rp, err := VolMgrDB.Prepare("INSERT INTO repair(volid,blkgrpid,blkid,blkip,blkport,chkid,status,position) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		logger.Error("insert need repair volid:%v - blk:%v - chunk:%v prepare error:%v!",volid,blkid,chkid,err)
+		ack.Ret = -1
+		return &ack, err
+	}
+	defer rp.Close()
+	_,err = rp.Exec(volid,blkgrpid,blkid,ip,port,chkid,status,position)
+	if err != nil {
+		logger.Error("insert need repair volid:%v - blk:%v - chunk:%v exec error:%v!",volid,blkid,chkid,err)
+		ack.Ret = -1
+		return &ack, err
+	}
+	ack.Ret = 0
 	return &ack, nil
 }
 
@@ -504,7 +534,7 @@ func updateDataNodeStatu(ip string, port int, statu int) {
 		return
 	}
 	defer conn.Close()
-	mc := mp.NewMetaNodeClient(conn)
+	//mc := mp.NewMetaNodeClient(conn)
 
 	disk, err := VolMgrDB.Prepare("UPDATE disks SET statu=? WHERE ip=? and port=?")
 	if err != nil {
@@ -519,7 +549,7 @@ func updateDataNodeStatu(ip string, port int, statu int) {
 	}
 	if statu == 1 || statu == 2 {
 		logger.Debug("The disk(%s:%d) bad statu:%d, so make it all blks is disabled, and update metadata for allocated blks", ip, port, statu)
-		blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=1, repair=1 WHERE hostip=? and hostport=?")
+		blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=1 WHERE hostip=? and hostport=?")
 		checkErr(err)
 		defer blk.Close()
 		_, err = blk.Exec(ip, port)
@@ -527,11 +557,11 @@ func updateDataNodeStatu(ip string, port int, statu int) {
 			logger.Error("The disk(%s:%d) bad statu:%d update blk table disabled error:%s", ip, port, statu, err)
 		}
 
-		UpdateMeta(mc, ip, port, statu)
+		//UpdateMeta(mc, ip, port, statu)
 
 	} else if statu == 0 {
 		logger.Debug("The disk(%s:%d) recovy,so update from 1 to 0, make it all blks is able", ip, port, statu)
-		blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=0, repair=(CASE WHEN allocated=0 THEN 0 ELSE 1 END) WHERE hostip=? and hostport=?")
+		blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=0 WHERE hostip=? and hostport=?")
 		checkErr(err)
 		defer blk.Close()
 		_, err = blk.Exec(ip, port)
@@ -544,7 +574,7 @@ func updateDataNodeStatu(ip string, port int, statu int) {
 	return
 }
 
-// UpdateMeta
+/* UpdateMeta
 func UpdateMeta(mc mp.MetaNodeClient, ip string, port int, statu int) {
 	var blkid int
 	var badblks []int
@@ -604,6 +634,7 @@ func UpdateMeta(mc mp.MetaNodeClient, ip string, port int, statu int) {
 	}
 
 }
+*/
 
 func detectDataNodes() {
 	var ip string

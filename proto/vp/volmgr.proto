@@ -11,7 +11,7 @@ service VolMgr {
     rpc DatanodeRegistry(DatanodeRegistryReq) returns (DatanodeRegistryAck){};
     rpc DatanodeHeartbeat(DatanodeHeartbeatReq) returns (DatanodeHeartbeatAck){};
 
-    rpc SetBlockGroupStatus(SetBlockGroupStatusReq) returns (SetBlockGroupStatusAck){};
+    rpc UpdateChunkInfo(UpdateChunkInfoReq) returns (UpdateChunkInfoAck){};
 
 }
 
@@ -98,17 +98,17 @@ message DatanodeHeartbeatAck {
 }
 
 
-message SetBlockGroupStatusReq {
-    int32 BlockGroupID = 1;
-    int32 Status = 2;
+message UpdateChunkInfoReq {
+    string   Ip = 1;
+    int32   Port = 2;
+    string  VolID = 3;
+    int32   BlockGroupID = 4;
+    int32   BlockID = 5;
+    int64   ChunkID = 6;
+    int32   Position = 7;
+    int32   Status = 8;
+    
 }
-
-message SetBlockGroupStatusAck {
+message UpdateChunkInfoAck {
+    int32 Ret = 1;
 }
-
-
-// block table:
-// blockID | ip | port | status | blockGroupID
-
-// volume table:
-// volumeID | name | spacequota | spaceused | inodequota | inodeused | blockGroupID1 blockGroupID2 blockGroupID3 ... | status 
