@@ -37,7 +37,7 @@ func main() {
 	case "deletevol":
 		argNum := len(os.Args)
 		if argNum != 4 {
-			fmt.Println("createvol [voluuid]")
+			fmt.Println("delete [voluuid]")
 			os.Exit(1)
 		}
 		ret := fs.DeleteVol(os.Args[3])

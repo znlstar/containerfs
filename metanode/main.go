@@ -262,9 +262,9 @@ func (s *MetaNodeServer) AllocateChunk(ctx context.Context, in *mp.AllocateChunk
 		ack.Ret = ret
 		return &ack, nil
 	}
-	ok, chunkInfo := nameSpace.AllocateChunk(fileName)
-	if ok != 0 {
-		ack.Ret = 1
+	ret, chunkInfo := nameSpace.AllocateChunk(fileName)
+	if ret != 0 {
+		ack.Ret = ret
 		return &ack, nil
 	}
 
@@ -305,6 +305,7 @@ func (s *MetaNodeServer) GetFileChunks(ctx context.Context, in *mp.GetFileChunks
 		var chunkInfoWithBG mp.ChunkInfoWithBG
 		chunkInfoWithBG.ChunkID = v.ChunkID
 		chunkInfoWithBG.ChunkSize = v.ChunkSize
+		chunkInfoWithBG.Status = v.Status
 
 		ok1, blockGroup := nameSpace.BlockGroupDBGet(v.BlockGroupID)
 		if !ok1 {
@@ -338,20 +339,16 @@ func (s *MetaNodeServer) SyncChunk(ctx context.Context, in *mp.SyncChunkReq) (*m
 }
 
 /*
-rpc UpdateBlkGrp(UpdateBlkGrpReq) returns (UpdateBlkGrpAck){};
+rpc UpdateChunkInfo(UpdateBlkGrpReq) returns (UpdateBlkGrpAck){};
 */
-func (s *MetaNodeServer) UpdateBlkGrp(ctx context.Context, in *mp.UpdateBlkGrpReq) (*mp.UpdateBlkGrpAck, error) {
-
-	ack := mp.UpdateBlkGrpAck{}
+func (s *MetaNodeServer) UpdateChunkInfo(ctx context.Context, in *mp.UpdateChunkInfoReq) (*mp.UpdateChunkInfoAck, error) {
+	ack := mp.UpdateChunkInfoAck{}
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
 		ack.Ret = ret
 		return &ack, nil
 	}
-	for _, v := range in.UpdateBlkGrpInfo {
-		nameSpace.UpdateBlkGrp(v.BlkGrpID, v.BlockID, v.Status)
-	}
-	ack.Ret = 0
+	ack.Ret = nameSpace.UpdateChunkInfo(in)
 	return &ack, nil
 }
 
@@ -370,7 +367,7 @@ func startMetaDataService() {
 	}
 }
 
-func loadMetaData() int {
+func loadMetaData() int32 {
 	ns.CreateGNameSpace()
 	ret, vols := ns.GetVolList()
 	if ret != 0 {
