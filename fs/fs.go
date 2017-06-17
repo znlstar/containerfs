@@ -609,7 +609,6 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 	if ret != 0 {
 		return ret
 	}
-
 	for _, v1 := range chunkInfos {
 		for _, v2 := range v1.BlockGroup.BlockInfos {
 
@@ -901,7 +900,6 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 
 // read
 func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, readsize int64) int64 {
-	//t1 := time.Now()
 	if cfile.chunks == nil || len(cfile.chunks) == 0 {
 		return -1
 	}
@@ -948,7 +946,7 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 	if begin_chunk_num > len(cfile.chunks) || end_chunk_num+1 > len(cfile.chunks) || begin_chunk_num > cap(cfile.chunks) || end_chunk_num+1 > cap(cfile.chunks) {
 		return 0
 	}
-	//t2 := time.Now()
+
 	for i, _ := range cfile.chunks[begin_chunk_num : end_chunk_num+1] {
 		index := i + begin_chunk_num
 		if cur_offset+freesize < int64(cfile.chunks[index].ChunkSize) {
@@ -956,7 +954,6 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 		} else {
 			each_read_len = int64(cfile.chunks[index].ChunkSize) - cur_offset
 		}
-		//t3 := time.Now()
 		if len(cfile.ReaderMap[handleId].readBuf) == 0 {
 			buffer := new(bytes.Buffer)
 			cfile.ReaderMap[handleId].Ch = make(chan *bytes.Buffer)
@@ -972,18 +969,9 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 			logger.Debug("#### Read chunk:%v == bufferlen:%v == curoffset:%v == eachlen:%v ==offset:%v == readsize:%v ####", index, len(cfile.ReaderMap[handleId].readBuf), cur_offset, each_read_len, offset, readsize)
 		}
 
-		//t4 := time.Now()
-		/*var ch chan *bytes.Buffer
-		//ch = make(chan *bytes.Buffer)
-		//go cfile.streamread(index, ch, cur_offset, each_read_len)
-		//buffer = <-ch
-		*data = append(*data, buffer.Next(buffer.Len())...)
-		buffer.Reset()*/
-
 		buflen := int64(len(cfile.ReaderMap[handleId].readBuf))
 		bufcap := int64(cap(cfile.ReaderMap[handleId].readBuf))
 
-		//if cur_offset > buflen || cur_offset > bufcap || cur_offset+each_read_len > bufcap {
 		if cur_offset > buflen || cur_offset > bufcap {
 			logger.Error("== Read chunk:%v from datanode (offset:%v -- needreadsize:%v) lager than exist (buflen:%v -- bufcap:%v)\n", index, cur_offset, each_read_len, buflen, bufcap)
 			return 0
@@ -1005,8 +993,6 @@ func (cfile *CFile) Read(handleId fuse.HandleID, data *[]byte, offset int64, rea
 		}
 		freesize = freesize - each_read_len
 		length += each_read_len
-		//t5 := time.Now()
-		//logger.Debug("== t2-t1:%v == t3-t2:%v == t4-t3:%v == t5-t4:%v ===", t2.Sub(t1), t3.Sub(t2), t4.Sub(t3), t5.Sub(t4))
 	}
 	return length
 }
