@@ -1,91 +1,65 @@
 package main
 
 //import "github.com/chasex/redis-go-cluster"
+import "github.com/go-redis/redis"
 import "time"
 import "fmt"
-import "math/rand"
+import "sync"
+import (
+	"os"
+)
 
 //import "strconv"
 
+var RedisClient *redis.ClusterClient
+
+var wg sync.WaitGroup
+
+const (
+	str256 = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+)
+
+func put() {
+	RedisClient.Set("key", str256, 0).Err()
+	wg.Done()
+
+}
+
+func get() {
+	RedisClient.Get("key").Err()
+	wg.Done()
+
+}
+
 func main() {
 
-	/*
-		cluster1, _ := redis.NewCluster(
-			&redis.Options{
-				StartNodes:   []string{"127.0.0.1:7000", "127.0.0.1:7001", "127.0.0.1:7002", "127.0.0.1:7003", "127.0.0.1:7004", "127.0.0.1:7005"},
-				ConnTimeout:  1000 * time.Millisecond,
-				ReadTimeout:  1000 * time.Millisecond,
-				WriteTimeout: 1000 * time.Millisecond,
-				KeepAlive:    16,
-				AliveTime:    60 * time.Second,
-			})
-	*/
-	/*
-		cluster2, _ := redis.NewCluster(
-			&redis.Options{
-				StartNodes:   []string{"127.0.0.1:7000", "127.0.0.1:7001", "127.0.0.1:7002", "127.0.0.1:7003", "127.0.0.1:7004", "127.0.0.1:7005"},
-				ConnTimeout:  1000 * time.Millisecond,
-				ReadTimeout:  1000 * time.Millisecond,
-				WriteTimeout: 1000 * time.Millisecond,
-				KeepAlive:    16,
-				AliveTime:    60 * time.Second,
-			})
-	*/
-	var cnt int64
-	for cnt < 10000 {
-		//for true {
+	RedisClient = redis.NewClusterClient(&redis.ClusterOptions{
+		Addrs: []string{"172.22.189.48:7000", "172.22.189.48:7001", "172.22.189.49:7002", "172.22.189.49:7003", "172.22.189.50:7004", "172.22.189.50:7005"},
+	})
 
-		/*
-			reply1, err1 := redis.Int(cluster1.Do("INCR", "mycount"))
-			//reply2, err2 := redis.Int(cluster2.Do("INCR", "mycount"))
-
-			fmt.Printf("get reply1:%v,err1:%v\n", reply1, err1)
-			//fmt.Printf("get reply2:%v,err2:%v\n", reply2, err2)
-
-			time.Sleep(time.Second)
-			cnt++
-		*/
-
-		rand.Seed(int64(time.Now().Nanosecond()))
-		num := rand.Intn(10)
-
-		fmt.Println(num)
-
-		/*
-			val := "bar-" + cnt_str
-			_, err := cluster.Do("SET", key, val)
-			if err != nil {
-				time.Sleep(time.Second * 2)
-				_, err = cluster.Do("SET", key, val)
-				if err != nil {
-					time.Sleep(time.Second * 2)
-					_, err = cluster.Do("SET", key, val)
-					if err != nil {
-						fmt.Printf("set key:%v,val:%v\n failed ", key, val)
-						break
-					}
-				}
-			}
-			//fmt.Printf("set key:%v,val:%v\n", key, val)
-			a, err := redis.String(cluster.Do("GET", "foo"))
-			if err != nil {
-				time.Sleep(time.Second * 2)
-				a, err = redis.String(cluster.Do("GET", "foo"))
-				if err != nil {
-					time.Sleep(time.Second * 2)
-					a, err = redis.String(cluster.Do("GET", "foo"))
-					if err != nil {
-						fmt.Printf("get failed ... %v\n", err)
-						break
-					}
-				}
-
-			}
-			a = a
-			//fmt.Printf("get key:%v,val:%v\n", key, a)
-			cnt++
-
-		*/
-
+	if RedisClient == nil {
+		fmt.Println("connect redis failed...")
+		os.Exit(1)
 	}
+
+	t1 := time.Now()
+
+	for i := 0; i < 20000; i++ {
+		wg.Add(1)
+		go put()
+	}
+	t2 := time.Now()
+
+	for i := 0; i < 20000; i++ {
+		wg.Add(1)
+		go get()
+	}
+	t3 := time.Now()
+
+	result1 := fmt.Sprintf("d1 : %v\n", t2.Sub(t1))
+	result2 := fmt.Sprintf("d2 : %v\n", t3.Sub(t2))
+
+	print(result1)
+	print(result2)
+
 }

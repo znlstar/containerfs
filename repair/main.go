@@ -72,8 +72,8 @@ func checkErr(err error) {
 }
 
 func getNeedRepairChunks() {
-    var volid string
-    var blkgrpid int
+	var volid string
+	var blkgrpid int
 	var blkid int
 	var blkport int
 	var chkid int
@@ -91,18 +91,18 @@ func getNeedRepairChunks() {
 			continue
 		}
 		Wg.Add(1)
-		go repairchk(volid,blkgrpid,blkid,blkport,chkid,position)
+		go repairchk(volid, blkgrpid, blkid, blkport, chkid, position)
 	}
 	//logger.Debug("== Begin repair blks:%v ==", bs)
 }
 
 func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, position int) {
-	logger.Debug("=== Begin repair blkgrp:%v - blk:%v - chk:%v ====", blkgrpid,blkid,chkid)
+	logger.Debug("=== Begin repair blkgrp:%v - blk:%v - chk:%v ====", blkgrpid, blkid, chkid)
 
 	//if disk bad(I/O error)
 	var status int
 	var path string
-	disk,err := VolMgrDB.Query("SELECT mount,statu FROM disks WHERE ip=? and port=?", RepairServerAddr.host,blkport)
+	disk, err := VolMgrDB.Query("SELECT mount,statu FROM disks WHERE ip=? and port=?", RepairServerAddr.host, blkport)
 	if err != nil {
 		logger.Error("Get from disk table for this node bad chunk error:%s", err)
 		Wg.Add(-1)
@@ -110,21 +110,21 @@ func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, po
 	}
 	defer disk.Close()
 	for disk.Next() {
-	    err = disk.Scan(&path, &status)
-	    if err != nil {
+		err = disk.Scan(&path, &status)
+		if err != nil {
 			logger.Error("Scan db for get bad blk error:%v", err)
 			Wg.Add(-1)
-		    return
+			return
 		}
 	}
-    if status == 2 {
-        logger.Debug("The blk:%v bad chunk:%v on disk:%v-%v I/O error, so not repair util the disk recover",blkid,chkid,RepairServerAddr.host,blkport)
-        Wg.Add(-1)
+	if status == 2 {
+		logger.Debug("The blk:%v bad chunk:%v on disk:%v-%v I/O error, so not repair util the disk recover", blkid, chkid, RepairServerAddr.host, blkport)
+		Wg.Add(-1)
 		return
-    }
+	}
 
-    var blks string
-    var bakcnt int
+	var blks string
+	var bakcnt int
 	blkgrp, err := VolMgrDB.Query("SELECT blks FROM blkgrp WHERE blkgrpid=?", blkgrpid)
 	if err != nil {
 		logger.Error("Get from blkgrp table for  bad chunk error:%s", err)
@@ -156,44 +156,44 @@ func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, po
 				for blk.Next() {
 					err = blk.Scan(&srcip, &srcport, &disabled)
 					if err != nil {
-						logger.Error("Scan db for get need repair blk:%v - bakblk:%v chunk:%v error:%v", blkid, srcblkid,chkid,err)
+						logger.Error("Scan db for get need repair blk:%v - bakblk:%v chunk:%v error:%v", blkid, srcblkid, chkid, err)
 					}
 				}
 				if err != nil || disabled != 0 {
-				    bakcnt += 1
-				    continue
+					bakcnt += 1
+					continue
 				}
 				if bakcnt == 2 {
-				    logger.Debug("The bad chunk no good bakchunk(bakchunk badcnt:%v) for repair",bakcnt)
-				    Wg.Add(-1)
-				    return
+					logger.Debug("The bad chunk no good bakchunk(bakchunk badcnt:%v) for repair", bakcnt)
+					Wg.Add(-1)
+					return
 				}
 				ret := beginRepairchunk(volid, srcip, srcport, srcblkid, path, blkid, chkid, position)
 				if ret != 0 {
-				    continue
+					continue
 				} else {
-				    rpr, err := VolMgrDB.Prepare("delete from repair where blkid=? and chkid=?")
-				    if err != nil {
-                        logger.Error("delete have repaire complete blk:%v-chunk:%v from repair tables prepare err:%v", blkid, chkid, err)
-                        continue
-				    }
-				    defer rpr.Close()
-				    _, err = rpr.Exec(blkid,chkid)
-				    if err != nil {
-				        logger.Error("delete have repaire complete blk:%v-chunk:%v from repair tables exec err:%v", blkid, chkid, err)
-				        continue
-				    }
-				    logger.Debug("Repair volume:%v-blkgrp:%v-blk:%v-chunk:%v have all step complete!",volid,blkgrpid,blkid,chkid)
-				    Wg.Add(-1)
-				    return
+					rpr, err := VolMgrDB.Prepare("delete from repair where blkid=? and chkid=?")
+					if err != nil {
+						logger.Error("delete have repaire complete blk:%v-chunk:%v from repair tables prepare err:%v", blkid, chkid, err)
+						continue
+					}
+					defer rpr.Close()
+					_, err = rpr.Exec(blkid, chkid)
+					if err != nil {
+						logger.Error("delete have repaire complete blk:%v-chunk:%v from repair tables exec err:%v", blkid, chkid, err)
+						continue
+					}
+					logger.Debug("Repair volume:%v-blkgrp:%v-blk:%v-chunk:%v have all step complete!", volid, blkgrpid, blkid, chkid)
+					Wg.Add(-1)
+					return
 				}
 			}
 		}
 	}
 }
 
-func beginRepairchunk(volid string, srcip string, srcport int, srcblkid int, path string, blkid int, chkid int, position int)(ret int){
-	logger.Debug("Begin repair chunkfile path:%v-%v from srcip:%v-srcport:%v-srcblk:%v", path,chkid, srcip, srcport, srcblkid)
+func beginRepairchunk(volid string, srcip string, srcport int, srcblkid int, path string, blkid int, chkid int, position int) (ret int) {
+	logger.Debug("Begin repair chunkfile path:%v-%v from srcip:%v-srcport:%v-srcblk:%v", path, chkid, srcip, srcport, srcblkid)
 	srcAddr := srcip + ":" + strconv.Itoa(RepairServerAddr.port)
 	conn, err := grpc.Dial(srcAddr, grpc.WithInsecure())
 	if err != nil {
@@ -203,59 +203,59 @@ func beginRepairchunk(volid string, srcip string, srcport int, srcblkid int, pat
 	defer conn.Close()
 	c := rp.NewRepairClient(conn)
 	getSrcDataReq := &rp.GetSrcDataReq{
-		BlkId:    int32(srcblkid),
-		SrcIp:    srcip,
-		SrcPort:  int32(srcport),
-		ChkId:  int32(chkid),
+		BlkId:   int32(srcblkid),
+		SrcIp:   srcip,
+		SrcPort: int32(srcport),
+		ChkId:   int32(chkid),
 	}
 	stream, err := c.GetSrcData(context.Background(), getSrcDataReq)
 	if err != nil {
-		logger.Error("Repair chunkfile:%v-%v-%v from srcblk:%v fail err:%v", path,blkid,chkid,srcblkid, err)
+		logger.Error("Repair chunkfile:%v-%v-%v from srcblk:%v fail err:%v", path, blkid, chkid, srcblkid, err)
 		return -1
 	}
 
 	dfile := path + "/block-" + strconv.FormatInt(int64(blkid), 10) + "/chunk-" + strconv.FormatInt(int64(chkid), 10)
 	f, err := os.OpenFile(dfile, os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0666)
-    if err != nil {
-            logger.Error("Open repair blk chunk:%v error:%v", dfile, err)
-            return -1
-    }
-    defer f.Close()
-    w := bufio.NewWriter(f)
+	if err != nil {
+		logger.Error("Open repair blk chunk:%v error:%v", dfile, err)
+		return -1
+	}
+	defer f.Close()
+	w := bufio.NewWriter(f)
 
-    ack, err := stream.Recv()
-    if err != nil || len(ack.Databuf) ==0 || len(ack.Databuf) != 64*1024*1024 {
-        return -1
-    }
-    n, err := w.Write(ack.Databuf)
-    if err != nil || n != 64*1024*1024 {
-        return -1
-    }
+	ack, err := stream.Recv()
+	if err != nil || len(ack.Databuf) == 0 || len(ack.Databuf) != 64*1024*1024 {
+		return -1
+	}
+	n, err := w.Write(ack.Databuf)
+	if err != nil || n != 64*1024*1024 {
+		return -1
+	}
 
-    //update meta for the repair complete blk
-    conn, err = DialMeta()
-    if err != nil {
-        logger.Error("Dial to metanode fail :%v for update blkds\n", err)
-        return -1
-    }
-    defer conn.Close()
-    mc := mp.NewMetaNodeClient(conn)
-    pmUpdateChunkInfo := &mp.UpdateChunkInfoReq{
-        VolID: volid,
-        ChunkID: int64(chkid),
-        Position: int32(position),
-        Status: int32(0),
-    }
-    _, err = mc.UpdateChunkInfo(context.Background(), pmUpdateChunkInfo)
-    if err != nil {
-        logger.Error("Update have repaire complete chunk to metadata err:%v", err)
-        return -1
-    }
-	logger.Debug("Repair chunkfile:%v-%v-%v from srcblk:%v and Update it to metadata finished!!!", path,blkid,chkid,srcblkid)
+	//update meta for the repair complete blk
+	conn, err = DialMeta()
+	if err != nil {
+		logger.Error("Dial to metanode fail :%v for update blkds\n", err)
+		return -1
+	}
+	defer conn.Close()
+	mc := mp.NewMetaNodeClient(conn)
+	pmUpdateChunkInfo := &mp.UpdateChunkInfoReq{
+		VolID:    volid,
+		ChunkID:  int64(chkid),
+		Position: int32(position),
+		Status:   int32(0),
+	}
+	_, err = mc.UpdateChunkInfo(context.Background(), pmUpdateChunkInfo)
+	if err != nil {
+		logger.Error("Update have repaire complete chunk to metadata err:%v", err)
+		return -1
+	}
+	logger.Debug("Repair chunkfile:%v-%v-%v from srcblk:%v and Update it to metadata finished!!!", path, blkid, chkid, srcblkid)
 	return 0
 }
 
-func (s *RepairServer) GetSrcData(in *rp.GetSrcDataReq, stream rp.Repair_GetSrcDataServer) (error) {
+func (s *RepairServer) GetSrcData(in *rp.GetSrcDataReq, stream rp.Repair_GetSrcDataServer) error {
 	var ack rp.GetSrcDataAck
 	srcid := in.BlkId
 	srcip := in.SrcIp
@@ -273,7 +273,7 @@ func (s *RepairServer) GetSrcData(in *rp.GetSrcDataReq, stream rp.Repair_GetSrcD
 	for disk.Next() {
 		err = disk.Scan(&srcmp)
 		if err != nil {
-			logger.Error("Scan db for get need repair chunk:%v srcblk:%v mountpath error:%v", chkid,srcid, err)
+			logger.Error("Scan db for get need repair chunk:%v srcblk:%v mountpath error:%v", chkid, srcid, err)
 			return err
 		}
 	}
@@ -283,28 +283,28 @@ func (s *RepairServer) GetSrcData(in *rp.GetSrcDataReq, stream rp.Repair_GetSrcD
 		logger.Error("Read SrcChkPath:%v error:%v", srcchkpath, err)
 		return err
 	}
-    if fi.Size() != 64*1024*1024 {
+	if fi.Size() != 64*1024*1024 {
 		return err
-    }
+	}
 
-    f, err := os.Open(srcchkpath)
-    if err != nil {
-        return err
-    }
-    defer f.Close()
-    buf := make([]byte, 64*1024*1024)
-    r := bufio.NewReader(f)
-    for {
-                n, err := r.Read(buf)
-                if err != nil {
-                        return err
-                }
-                ack.Databuf = buf[:n]
-                if err := stream.Send(&ack); err != nil {
-                        return err
-                }
-    }
-    return nil
+	f, err := os.Open(srcchkpath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	buf := make([]byte, 64*1024*1024)
+	r := bufio.NewReader(f)
+	for {
+		n, err := r.Read(buf)
+		if err != nil {
+			return err
+		}
+		ack.Databuf = buf[:n]
+		if err := stream.Send(&ack); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func DialMeta() (*grpc.ClientConn, error) {
