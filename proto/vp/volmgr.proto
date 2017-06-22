@@ -24,6 +24,7 @@ message CreateVolReq {
 message CreateVolAck {
     int32 Ret = 1;
     string UUID = 2;
+    uint64 RaftGroupID = 3;
 }
 
 message GetVolInfoReq {
@@ -45,9 +46,14 @@ message DeleteVolAck {
 message GetVolListReq {
 }
 
+message VolIDs {
+    string UUID = 1 ;
+    uint64 RaftGroupID = 2 ;
+}
+
 message GetVolListAck {
     int32 Ret = 1;
-    repeated string volIDs = 2;
+    repeated VolIDs volIDs = 2;
 }
 
 message VolInfo {

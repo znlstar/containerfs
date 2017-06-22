@@ -1,24 +1,21 @@
 package main
 
 import (
-	"flag"
-	"fmt"
-	"math"
-	"os"
-	//	"strconv"
-	"sync"
-	"syscall"
-	"time"
-
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
-	"golang.org/x/net/context"
-	//"math/rand"
-
+	"flag"
+	"fmt"
 	cfs "github.com/ipdcode/containerfs/fs"
 	"github.com/ipdcode/containerfs/logger"
 	mp "github.com/ipdcode/containerfs/proto/mp"
-	//	"../utils"
+	"golang.org/x/net/context"
+	"math"
+	"os"
+	"runtime/debug"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
 )
 
 var uuid string
@@ -64,7 +61,7 @@ func main() {
 	uuid := flag.String("uuid", "xxx", "ContainerFS Volume UUID")
 	mountPoint := flag.String("mountpoint", "/mnt", "ContainerFS MountPoint")
 	addr1 := flag.String("volmgr", "127.0.0.1:10001", "ContainerFS volmgr host")
-	addr2 := flag.String("metanode", "127.0.0.1:10002", "ContainerFS metanode host")
+	addr2 := flag.String("metanode", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS metanode hosts")
 
 	log := flag.String("log", "/home", "ContainerFS log level")
 	loglevel := flag.String("loglevel", "error", "ContainerFS log level")
@@ -74,7 +71,7 @@ func main() {
 	flag.Parse()
 
 	cfs.VolMgrAddr = *addr1
-	cfs.MetaNodeAddr = *addr2
+	cfs.MetaNodePeers = strings.Split(*addr2, ",")
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(*log, "fuse.log", 10, 100, logger.MB) //each 100M rolling
@@ -89,6 +86,22 @@ func main() {
 	default:
 		logger.SetLevel(logger.ERROR)
 	}
+
+	defer func() {
+		if err := recover(); err != nil {
+			logger.Error("panic !!! :%v", err)
+			logger.Error("stacks:%v", string(debug.Stack()))
+		}
+	}()
+
+	cfs.MetaNodeAddr, _ = cfs.GetLeader(*uuid)
+
+	ticker := time.NewTicker(time.Second * 60)
+	go func() {
+		for _ = range ticker.C {
+			cfs.MetaNodeAddr, _ = cfs.GetLeader(*uuid)
+		}
+	}()
 
 	err := mount(*uuid, *mountPoint, *isReadOnly)
 	if err != nil {

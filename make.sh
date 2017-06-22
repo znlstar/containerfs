@@ -29,6 +29,12 @@ cd ./fuseclient_flag
   cp cfs-fuseclient_flag ../output
 cd ..
 
+cd ./client_flag
+  go get
+  go build -o cfs-client_flag main.go
+  cp cfs-client_flag ../output
+cd ..
+
 cp ./service/* ./output
 cd ./output
 tar zcvf cfs.tar.gz ./*

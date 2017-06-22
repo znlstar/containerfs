@@ -3,7 +3,11 @@ syntax="proto3";
 package mp;
 
 service MetaNode {
+
+    rpc GetMetaLeader(GetMetaLeaderReq) returns (GetMetaLeaderAck){};
+
     rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
+    rpc SnapShootNameSpace(SnapShootNameSpaceReq) returns (SnapShootNameSpaceAck){};
     rpc DeleteNameSpace(DeleteNameSpaceReq) returns (DeleteNameSpaceAck){};
 
     rpc GetFSInfo(GetFSInfoReq) returns (GetFSInfoAck){};
@@ -27,16 +31,34 @@ service MetaNode {
 
 message NULL{
 }
+
+message GetMetaLeaderReq{
+    string VolID = 1;
+}
+message GetMetaLeaderAck{
+    int32 Ret = 1;
+    string Leader = 2;
+}
+
 message CreateNameSpaceReq{
+    string VolID = 1;
+    int32  Type = 2;
+    uint64 RaftGroupID = 3;
+}
+
+message CreateNameSpaceAck{
+    int32 Ret = 1;
+}
+message SnapShootNameSpaceReq{
     string VolID = 1;
     int32  Type =2 ;
 }
-message CreateNameSpaceAck{
+message SnapShootNameSpaceAck{
     int32 Ret = 1;
 }
 message DeleteNameSpaceReq{
     string VolID = 1;
-    int32  Type =2 ;
+    int32  Type = 2;
 }
 message DeleteNameSpaceAck{
     int32 Ret = 1;

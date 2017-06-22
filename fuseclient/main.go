@@ -1,26 +1,21 @@
 package main
 
 import (
-	"fmt"
-	"log"
-	"math"
-	"os"
-	//	"strconv"
-	"sync"
-	"syscall"
-	"time"
-
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
-	"github.com/lxmgo/config"
-	"golang.org/x/net/context"
-	//"math/rand"
-
+	"fmt"
 	cfs "github.com/ipdcode/containerfs/fs"
 	"github.com/ipdcode/containerfs/logger"
 	mp "github.com/ipdcode/containerfs/proto/mp"
+	"github.com/lxmgo/config"
+	"golang.org/x/net/context"
+	"log"
+	"math"
+	"os"
 	"runtime/debug"
-	//	"../utils"
+	"sync"
+	"syscall"
+	"time"
 )
 
 var uuid string
@@ -72,7 +67,7 @@ func main() {
 	mountPoint = c.String("mountpoint")
 	cfs.VolMgrAddr = c.String("volmgr")
 	//cfs.EtcdEndPoints = c.Strings("etcd")
-	cfs.MetaNodeAddr = c.String("metanode")
+	cfs.MetaNodePeers = c.Strings("metanode")
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(c.String("log"), "fuse.log", 10, 100, logger.MB) //each 100M rolling
@@ -91,6 +86,15 @@ func main() {
 		if err := recover(); err != nil {
 			logger.Error("panic !!! :%v", err)
 			logger.Error("stacks:%v", string(debug.Stack()))
+		}
+	}()
+
+	cfs.MetaNodeAddr, _ = cfs.GetLeader(uuid)
+	fmt.Println(cfs.MetaNodeAddr)
+	ticker := time.NewTicker(time.Second * 60)
+	go func() {
+		for _ = range ticker.C {
+			cfs.MetaNodeAddr, _ = cfs.GetLeader(uuid)
 		}
 	}()
 
