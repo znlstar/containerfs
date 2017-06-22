@@ -19,8 +19,9 @@ func main() {
 	}
 
 	fs.VolMgrAddr = c.String("volmgr::host")
-	fs.MetaNodeAddr = c.String("metanode::host")
+	fs.MetaNodePeers = c.Strings("metanode::host")
 
+	fs.MetaNodeAddr = fs.MetaNodePeers[0]
 	switch os.Args[2] {
 
 	case "createvol":
@@ -37,10 +38,20 @@ func main() {
 	case "deletevol":
 		argNum := len(os.Args)
 		if argNum != 4 {
-			fmt.Println("delete [voluuid]")
+			fmt.Println("deletevol [voluuid]")
 			os.Exit(1)
 		}
 		ret := fs.DeleteVol(os.Args[3])
+		if ret != 0 {
+			fmt.Println("failed")
+		}
+	case "snapshootvol":
+		argNum := len(os.Args)
+		if argNum != 4 {
+			fmt.Println("snapshootvol [voluuid]")
+			os.Exit(1)
+		}
+		ret := fs.SnapShootVol(os.Args[3])
 		if ret != 0 {
 			fmt.Println("failed")
 		}

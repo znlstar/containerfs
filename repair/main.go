@@ -1,15 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"database/sql"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/ipdcode/containerfs/logger"
 	mp "github.com/ipdcode/containerfs/proto/mp"
 	rp "github.com/ipdcode/containerfs/proto/rp"
-	//vp "github.com/ipdcode/containerfs/proto/vp"
-	//"github.com/ipdcode/containerfs/utils"
-	"bufio"
 	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -36,9 +34,6 @@ var RepairServerAddr addr
 // MetaNodeAddr
 var MetaNodeAddr string
 
-// EtcdAddrs
-//var EtcdAddrs []string
-
 // Wg
 var Wg sync.WaitGroup
 
@@ -55,7 +50,6 @@ const (
 	Blksize = 10 /*G*/
 )
 
-// Mutexvar g_RpcConfig RpcConfigOpts
 var Mutex sync.RWMutex
 var err string
 
@@ -78,7 +72,6 @@ func getNeedRepairChunks() {
 	var blkport int
 	var chkid int
 	var position int
-	//var chks []int
 	rpr, err := VolMgrDB.Query("SELECT volid,blkgrpid,blkid,blkport,chkid, position FROM repair WHERE blkip=? and status=2 LIMIT 10", RepairServerAddr.host)
 	if err != nil {
 		logger.Error("Get from blk table for need repair blkds in this node error:%s", err)
@@ -93,7 +86,6 @@ func getNeedRepairChunks() {
 		Wg.Add(1)
 		go repairchk(volid, blkgrpid, blkid, blkport, chkid, position)
 	}
-	//logger.Debug("== Begin repair blks:%v ==", bs)
 }
 
 func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, position int) {

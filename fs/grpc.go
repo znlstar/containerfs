@@ -1,14 +1,50 @@
 package cfs
 
 import (
+	"errors"
 	"fmt"
-	"github.com/ipdcode/containerfs/logger"
+	mp "github.com/ipdcode/containerfs/proto/mp"
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"time"
 )
 
+func GetLeader(volumeID string) (string, error) {
+
+	var leader string
+	var flag bool
+	for _, ip := range MetaNodePeers {
+		fmt.Println(ip)
+		conn, err := grpc.Dial(ip, grpc.WithInsecure())
+		if err != nil {
+			continue
+		}
+		defer conn.Close()
+		mc := mp.NewMetaNodeClient(conn)
+		pmGetMetaLeaderReq := &mp.GetMetaLeaderReq{
+			VolID: volumeID,
+		}
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		pmGetMetaLeaderAck, err1 := mc.GetMetaLeader(ctx, pmGetMetaLeaderReq)
+		if err1 != nil {
+			continue
+		}
+		if pmGetMetaLeaderAck.Ret != 0 {
+			continue
+		}
+		leader = pmGetMetaLeaderAck.Leader
+		flag = true
+		break
+	}
+	if !flag {
+		return "", errors.New("Get leader failed")
+	}
+	return leader, nil
+
+}
+
 // DialMeta
-func DialMeta() (*grpc.ClientConn, error) {
+func DialMeta(volumeID string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
 
@@ -16,14 +52,10 @@ func DialMeta() (*grpc.ClientConn, error) {
 
 	if err != nil {
 		time.Sleep(300 * time.Millisecond)
-		fmt.Printf("DialMeta 1: addr:%v\n", MetaNodeAddr)
-		logger.Error("DialMeta 1: addr:%v", MetaNodeAddr)
-
+		MetaNodeAddr, _ = GetLeader(volumeID)
 		conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 		if err != nil {
 			time.Sleep(300 * time.Millisecond)
-			fmt.Printf("DialMeta 2: addr:%v\n", MetaNodeAddr)
-			logger.Error("DialMeta 3: addr:%v", MetaNodeAddr)
 			conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 		}
 	}

@@ -6,7 +6,6 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/ipdcode/containerfs/logger"
 	dp "github.com/ipdcode/containerfs/proto/dp"
-	//mp "github.com/ipdcode/containerfs/proto/mp"
 	vp "github.com/ipdcode/containerfs/proto/vp"
 	"github.com/ipdcode/containerfs/utils"
 	"github.com/lxmgo/config"
@@ -32,9 +31,6 @@ type addr struct {
 
 // VolMgrServerAddr
 var VolMgrServerAddr addr
-
-// MetaNodeAddr
-var MetaNodeAddr string
 
 // Wg
 var Wg sync.WaitGroup
@@ -104,12 +100,12 @@ func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegi
 	}
 	defer blk.Close()
 
-	VolMgrDB.Exec("lock tables blk write")
+	VolMgrDB.Exec("lock table blk write")
 
 	for i := int32(0); i < blkcount; i++ {
 		blk.Exec(hostip, hostport, 0, 0)
 	}
-	VolMgrDB.Exec("unlock tables")
+	VolMgrDB.Exec("unlock table")
 
 	blkids := make([]int, 0)
 	rows, err := VolMgrDB.Query("SELECT blkid FROM blk WHERE hostip = ? and hostport = ?", hostip, hostport)
@@ -171,6 +167,11 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	volsize := in.SpaceQuota
 	metadomain := in.MetaDomain
 	voluuid, err := utils.GenUUID()
+	if err != nil {
+		logger.Error("Create volume uuid err:%v", err)
+		ack.Ret = 1
+		return &ack, err
+	}
 
 	//the volume need block group total numbers
 	var blkgrpnum int32
@@ -228,11 +229,12 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 			count += 1
 		}
 		logger.Debug("The volume(%s -- %s) one blkgroup have blks:%s", volname, voluuid, blks)
-		if count < 1 || count > 3 {
-			logger.Debug("The volume(%s -- %s) one blkgroup no enough or over 3th blks:%s, so create volume failed!", volname, voluuid, count)
-			ack.Ret = 1
-			return &ack, err
-		}
+		/*
+			if count < 1 || count > 3 {
+				logger.Debug("The volume(%s -- %s) one blkgroup no enough or over 3th blks:%s, so create volume failed!", volname, voluuid, count)
+				ack.Ret = 1
+				return &ack, err
+			}*/
 
 		blkgrp, err := VolMgrDB.Prepare("INSERT INTO blkgrp(blks, volume_uuid) VALUES(?, ?)")
 		if err != nil {
@@ -244,8 +246,26 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		blkgrp.Exec(blks, voluuid)
 	}
 
+	var raftgroupid uint64
+
+	vols, err := VolMgrDB.Query("SELECT raftgroupid FROM volumes WHERE uuid = ?", voluuid)
+	if err != nil {
+		logger.Error("Get volume(%s) from db error:%s", voluuid, err)
+		ack.Ret = 1
+		return &ack, err
+	}
+	defer vols.Close()
+	for vols.Next() {
+		err = vols.Scan(&raftgroupid)
+		if err != nil {
+			ack.Ret = 1
+			return &ack, err
+		}
+	}
+
 	ack.Ret = 0 //success
 	ack.UUID = voluuid
+	ack.RaftGroupID = raftgroupid
 	return &ack, nil
 }
 
@@ -441,7 +461,7 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 func (s *VolMgrServer) GetVolList(ctx context.Context, in *vp.GetVolListReq) (*vp.GetVolListAck, error) {
 	ack := vp.GetVolListAck{}
 
-	vols, err := VolMgrDB.Query("SELECT uuid FROM volumes")
+	vols, err := VolMgrDB.Query("SELECT raftgroupid,uuid FROM volumes")
 	if err != nil {
 		logger.Error("Get volumes from db error:%v", err)
 		ack.Ret = 1
@@ -450,15 +470,22 @@ func (s *VolMgrServer) GetVolList(ctx context.Context, in *vp.GetVolListReq) (*v
 	defer vols.Close()
 
 	var name string
+	var raftgrpid uint64
+	pVolIDs := []*vp.VolIDs{}
+
 	for vols.Next() {
-		err = vols.Scan(&name)
+		err = vols.Scan(&raftgrpid, &name)
 		if err != nil {
 			ack.Ret = 1
 			return &ack, err
 		}
-		ack.VolIDs = append(ack.VolIDs, name)
+		tmpVolIDs := vp.VolIDs{}
+		tmpVolIDs.UUID = name
+		tmpVolIDs.RaftGroupID = raftgrpid
+		pVolIDs = append(pVolIDs, &tmpVolIDs)
 	}
 	ack.Ret = 0
+	ack.VolIDs = pVolIDs
 	return &ack, nil
 }
 
@@ -518,14 +545,6 @@ func detectdatanode(ip string, port int, statu int) {
 
 func updateDataNodeStatu(ip string, port int, statu int) {
 
-	conn, err := DialMeta()
-	if err != nil {
-		logger.Error("Dial to metanode fail :%v for update blkds\n", err)
-		return
-	}
-	defer conn.Close()
-	//mc := mp.NewMetaNodeClient(conn)
-
 	disk, err := VolMgrDB.Prepare("UPDATE disks SET statu=? WHERE ip=? and port=?")
 	if err != nil {
 		return
@@ -547,8 +566,6 @@ func updateDataNodeStatu(ip string, port int, statu int) {
 			logger.Error("The disk(%s:%d) bad statu:%d update blk table disabled error:%s", ip, port, statu, err)
 		}
 
-		//UpdateMeta(mc, ip, port, statu)
-
 	} else if statu == 0 {
 		logger.Debug("The disk(%s:%d) recovy,so update from 1 to 0, make it all blks is able", ip, port, statu)
 		blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=0 WHERE hostip=? and hostport=?")
@@ -559,7 +576,6 @@ func updateDataNodeStatu(ip string, port int, statu int) {
 			logger.Error("The disk(%s:%d) recovy , but update blk table able error:%s", ip, port, statu, err)
 		}
 
-		//UpdateMeta(mc, ip, port, statu) // if repair complete, do this
 	}
 	return
 }
@@ -601,27 +617,6 @@ func StartVolMgrService() {
 	}
 }
 
-// DialMeta
-func DialMeta() (*grpc.ClientConn, error) {
-	var conn *grpc.ClientConn
-	var err error
-
-	conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
-
-	if err != nil {
-		time.Sleep(300 * time.Millisecond)
-		logger.Error("DialMeta 1: addr:%v", MetaNodeAddr)
-
-		conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
-		if err != nil {
-			time.Sleep(300 * time.Millisecond)
-			logger.Error("DialMeta 1: addr:%v", MetaNodeAddr)
-			conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
-		}
-	}
-	return conn, err
-}
-
 func init() {
 	c, err := config.NewConfig(os.Args[1])
 	if err != nil {
@@ -632,7 +627,6 @@ func init() {
 	VolMgrServerAddr.port = port
 	VolMgrServerAddr.log = c.String("log")
 	VolMgrServerAddr.host = c.String("host")
-	MetaNodeAddr = c.String("metanode::host")
 	os.MkdirAll(VolMgrServerAddr.log, 0777)
 
 	mysqlConf.dbhost = c.String("mysql::host")

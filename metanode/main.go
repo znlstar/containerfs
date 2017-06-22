@@ -3,36 +3,56 @@ package main
 import (
 	"fmt"
 	"github.com/ipdcode/containerfs/logger"
-
-	//"github.com/chasex/redis-go-cluster"
-	"github.com/go-redis/redis"
-
 	ns "github.com/ipdcode/containerfs/metanode/namespace"
+	"github.com/ipdcode/containerfs/metanode/raftopt"
 	mp "github.com/ipdcode/containerfs/proto/mp"
-
 	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+	"jd.com/sharkstore/raft"
+	"jd.com/sharkstore/raft/proto"
 	"net"
 	"os"
 	"runtime"
 	"runtime/debug"
-	"sync"
+	"strconv"
+	"time"
 )
 
 type addr struct {
 	host   string
-	port   int
-	peer   []string
-	domain string
+	nodeID uint64
+	peers  []proto.Peer
+	ips    []string
+	waldir string
 	log    string
 }
 
 var MetaNodeServerAddr addr
 
 type MetaNodeServer struct {
-	Mutex sync.Mutex
+	NodeID     uint64
+	Addr       *raftopt.Address
+	Resolver   *raftopt.Resolver
+	RaftServer *raft.RaftServer
+}
+
+func (s *MetaNodeServer) GetMetaLeader(ctx context.Context, in *mp.GetMetaLeaderReq) (*mp.GetMetaLeaderAck, error) {
+	ack := mp.GetMetaLeaderAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	leaderID, _ := s.RaftServer.LeaderTerm(nameSpace.RaftGroupID)
+	if leaderID <= 0 {
+		ack.Ret = 1
+		return &ack, nil
+	}
+	ack.Ret = 0
+	ack.Leader = raftopt.AddrDatabase[leaderID].Grpc
+	return &ack, nil
 }
 
 /*
@@ -40,37 +60,73 @@ rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
 */
 func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameSpaceReq) (*mp.CreateNameSpaceAck, error) {
 	ack := mp.CreateNameSpaceAck{}
-	ack.Ret = ns.CreateNameSpace(in.VolID, false)
-
-	// send to follower metadatas to registry a new map
+	ack.Ret = ns.CreateNameSpace(s.RaftServer, MetaNodeServerAddr.peers, MetaNodeServerAddr.nodeID, MetaNodeServerAddr.waldir, in.VolID, in.RaftGroupID, false)
+	// send to follower metadatas to create
 	if in.Type == 0 {
-		for _, addr := range MetaNodeServerAddr.peer {
-			if addr == MetaNodeServerAddr.host {
+		for _, addr := range raftopt.AddrDatabase {
+			if addr.Grpc == s.Addr.Grpc {
 				continue
 			}
-			conn2, err2 := grpc.Dial(addr, grpc.WithInsecure())
+			conn2, err2 := grpc.Dial(addr.Grpc, grpc.WithInsecure())
 			if err2 != nil {
-				logger.Error("Leader told Follower to create NameSpace Failed ...")
+				logger.Error("told peers to  create NameSpace Failed ...")
 				continue
 			}
 			defer conn2.Close()
 			mc := mp.NewMetaNodeClient(conn2)
 			pmCreateNameSpaceReq := &mp.CreateNameSpaceReq{
-				VolID: in.VolID,
-				Type:  1,
+				VolID:       in.VolID,
+				RaftGroupID: in.RaftGroupID,
+				Type:        1,
 			}
 			pmCreateNameSpaceAck, ret := mc.CreateNameSpace(context.Background(), pmCreateNameSpaceReq)
 			if ret != nil {
-				logger.Error("Leader told Follower to create NameSpace Failed ...")
+				logger.Error("told peers to  create NameSpace Failed ...")
 				continue
 			}
 			if pmCreateNameSpaceAck.Ret != 0 {
-				logger.Error("Leader told Follower to create NameSpace Failed ...")
+				logger.Error("told peers to create NameSpace Failed ...")
 				continue
 			}
 		}
 	}
+	return &ack, nil
+}
 
+/*
+rpc SnapShootNameSpace() returns {};
+*/
+func (s *MetaNodeServer) SnapShootNameSpace(ctx context.Context, in *mp.SnapShootNameSpaceReq) (*mp.SnapShootNameSpaceAck, error) {
+	ack := mp.SnapShootNameSpaceAck{}
+	ack.Ret = ns.SnapShootNameSpace(s.RaftServer, in.VolID, MetaNodeServerAddr.waldir)
+	// send to follower metadatas to SnapShoot
+	if in.Type == 0 {
+		for _, addr := range raftopt.AddrDatabase {
+			if addr.Grpc == s.Addr.Grpc {
+				continue
+			}
+			conn2, err2 := grpc.Dial(addr.Grpc, grpc.WithInsecure())
+			if err2 != nil {
+				logger.Error("told peers to SnapShoot NameSpace Failed ...")
+				continue
+			}
+			defer conn2.Close()
+			mc := mp.NewMetaNodeClient(conn2)
+			pmSnapShootNameSpaceReq := &mp.SnapShootNameSpaceReq{
+				VolID: in.VolID,
+				Type:  1,
+			}
+			pmSnapShootNameSpaceAck, ret := mc.SnapShootNameSpace(context.Background(), pmSnapShootNameSpaceReq)
+			if ret != nil {
+				logger.Error("told peers to SnapShoot NameSpace Failed ...")
+				continue
+			}
+			if pmSnapShootNameSpaceAck.Ret != 0 {
+				logger.Error("told peers to SnapShoot NameSpace Failed ...")
+				continue
+			}
+		}
+	}
 	return &ack, nil
 }
 
@@ -79,17 +135,17 @@ rpc DeleteNameSpace(DeleteNameSpaceReq) returns (DeleteNameSpaceAck){};
 */
 func (s *MetaNodeServer) DeleteNameSpace(ctx context.Context, in *mp.DeleteNameSpaceReq) (*mp.DeleteNameSpaceAck, error) {
 	ack := mp.DeleteNameSpaceAck{}
-	ack.Ret = ns.DeleteNameSpace(in.VolID)
+	ack.Ret = ns.DeleteNameSpace(s.RaftServer, in.VolID)
 
-	// send to follower metadatas to delete volume map
+	// send to follower metadatas to delete
 	if in.Type == 0 {
-		for _, addr := range MetaNodeServerAddr.peer {
+		for _, addr := range MetaNodeServerAddr.ips {
 			if addr == MetaNodeServerAddr.host {
 				continue
 			}
 			conn2, err2 := grpc.Dial(addr, grpc.WithInsecure())
 			if err2 != nil {
-				logger.Error("Leader told Follower to delete NameSpace Failed ...")
+				logger.Error("told peers to  delete NameSpace Failed ...")
 				continue
 			}
 			defer conn2.Close()
@@ -100,11 +156,11 @@ func (s *MetaNodeServer) DeleteNameSpace(ctx context.Context, in *mp.DeleteNameS
 			}
 			pmDeleteNameSpaceAck, ret := mc.DeleteNameSpace(context.Background(), pmDeleteNameSpaceReq)
 			if ret != nil {
-				logger.Error("Leader told Follower to delete NameSpace Failed ...")
+				logger.Error("told peers to  delete NameSpace Failed ...")
 				continue
 			}
 			if pmDeleteNameSpaceAck.Ret != 0 {
-				logger.Error("Leader told Follower to delete NameSpace Failed ...")
+				logger.Error("told peers to  delete NameSpace Failed ...")
 				continue
 			}
 		}
@@ -352,14 +408,14 @@ func (s *MetaNodeServer) UpdateChunkInfo(ctx context.Context, in *mp.UpdateChunk
 	return &ack, nil
 }
 
-func startMetaDataService() {
+func startMetaDataService(metaServer *MetaNodeServer) {
 
-	lis, err := net.Listen("tcp", MetaNodeServerAddr.host)
+	lis, err := net.Listen("tcp", metaServer.Addr.Grpc)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to listen on:%v", MetaNodeServerAddr.host))
+		panic(fmt.Sprintf("Failed to listen on:%v", metaServer.Addr.Grpc))
 	}
 	s := grpc.NewServer()
-	mp.RegisterMetaNodeServer(s, &MetaNodeServer{})
+	mp.RegisterMetaNodeServer(s, metaServer)
 	// Register reflection service on gRPC server.
 	reflection.Register(s)
 	if err := s.Serve(lis); err != nil {
@@ -367,7 +423,7 @@ func startMetaDataService() {
 	}
 }
 
-func loadMetaData() int32 {
+func loadMetaData(rs *raft.RaftServer) int32 {
 	ns.CreateGNameSpace()
 	ret, vols := ns.GetVolList()
 	if ret != 0 {
@@ -375,13 +431,13 @@ func loadMetaData() int32 {
 		return ret
 	}
 	for _, v := range vols {
-		ns.CreateNameSpace(v, true)
+		logger.Debug("loadMetaData,Vol:%v", v)
+		ns.CreateNameSpace(rs, MetaNodeServerAddr.peers, MetaNodeServerAddr.nodeID, MetaNodeServerAddr.waldir, v.UUID, v.RaftGroupID, true)
 	}
 	return 0
 }
 
 func init() {
-	//ns.CreateGNameSpace()
 
 	c, err := config.NewConfig(os.Args[1])
 	if err != nil {
@@ -389,37 +445,22 @@ func init() {
 		os.Exit(1)
 	}
 
-	MetaNodeServerAddr.host = c.String("metanode::host")
-	MetaNodeServerAddr.peer = c.Strings("metanode::peer")
-	MetaNodeServerAddr.log = c.String("metanode::log")
 	ns.VolMgrAddress = c.String("volmgr::host")
-	endPoints := c.Strings("redis::endpoints")
-	/*
-		for i := 0; i < 10; i++ {
-			ns.RedisClusters[i], err = redis.NewCluster(
-				&redis.Options{
-					StartNodes:   endPoints,
-					ConnTimeout:  50 * time.Millisecond,
-					ReadTimeout:  50 * time.Millisecond,
-					WriteTimeout: 50 * time.Millisecond,
-					KeepAlive:    16,
-					AliveTime:    60 * time.Second,
-				})
-		}
-	*/
-
-	ns.RedisClient = redis.NewClusterClient(&redis.ClusterOptions{
-		Addrs: endPoints,
-	})
-
-	if ns.RedisClient == nil {
-		fmt.Println("connect redis failed...")
-		os.Exit(1)
+	MetaNodeServerAddr.host = c.String("metanode::host")
+	tmpNodeID, err := c.Int("metanode::nodeid")
+	MetaNodeServerAddr.nodeID = uint64(tmpNodeID)
+	MetaNodeServerAddr.peers, err = parsePeers(c.Strings("metanode::peers"))
+	if err != nil {
+		logger.Error("parse peers failed!. peers=%v", c.String("metanode::peers"))
 	}
+
+	MetaNodeServerAddr.ips = c.Strings("metanode::ips")
+	MetaNodeServerAddr.waldir = c.String("metanode::waldir")
+	MetaNodeServerAddr.log = c.String("metanode::log")
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(MetaNodeServerAddr.log, "metanode.log", 10, 100, logger.MB) //each 100M rolling
-	switch level := c.String("loglevel"); level {
+	switch level := c.String("metanode::loglevel"); level {
 	case "error":
 		logger.SetLevel(logger.ERROR)
 	case "debug":
@@ -430,15 +471,40 @@ func init() {
 		logger.SetLevel(logger.ERROR)
 	}
 
-	ret := loadMetaData()
-	if ret != 0 {
-		if ret == 1 {
-			logger.Debug("loadMetaData  no volumes")
-		} else {
-			logger.Error("loadMetaData failed ...")
-			os.Exit(1)
+}
+
+func parsePeers(peersstr []string) (peers []proto.Peer, err error) {
+	for _, s := range peersstr {
+		p, err := strconv.Atoi(s)
+		if err != nil {
+			return nil, err
 		}
+		peers = append(peers, proto.Peer{ID: uint64(p)})
 	}
+	return
+}
+
+func showLeaders(s *MetaNodeServer) {
+
+	ret, vols := ns.GetVolList()
+	if ret != 0 {
+		logger.Error("showLeaders,GetVolList failed,ret:%v", ret)
+		return
+	}
+	for _, v := range vols {
+		logger.Error("showLeaders UUID:%v", v.UUID)
+
+		_, nameSpace := ns.GetNameSpace(v.UUID)
+		if nameSpace != nil {
+			logger.Debug("Volume %v Leaders :", v.UUID)
+			l, t := s.RaftServer.LeaderTerm(nameSpace.RaftGroupID)
+			logger.Debug("RaftGroup LeaderID %v Term %v", l, t)
+		} else {
+			logger.Debug("No Volume %v Leader!", v.UUID)
+		}
+
+	}
+	return
 
 }
 
@@ -455,5 +521,54 @@ func main() {
 		}
 	}()
 
-	startMetaDataService()
+	raftopt.AddInit(MetaNodeServerAddr.ips)
+
+	fmt.Println("MetaNodeServerAddr:")
+	fmt.Println(MetaNodeServerAddr)
+
+	var metaServer MetaNodeServer
+
+	// resolver
+	r := raftopt.NewResolver()
+	metaServer.Resolver = r
+
+	// address
+	addrInfo, ok := raftopt.AddrDatabase[MetaNodeServerAddr.nodeID]
+	if !ok {
+		logger.Error("no such address info. nodeId: %d", MetaNodeServerAddr.nodeID)
+	}
+	metaServer.Addr = addrInfo
+
+	//  new raft server
+	err := raftopt.StartRaftServer(&metaServer.RaftServer, metaServer.Resolver, addrInfo, MetaNodeServerAddr.nodeID)
+	if err != nil {
+		logger.Error("StartRaftServer failed ...")
+		os.Exit(1)
+	}
+	logger.Debug("StartRaftServer success ...")
+
+	// parse peers
+	for _, p := range MetaNodeServerAddr.peers {
+		r.AddNode(p.ID)
+	}
+	logger.Debug("AddNode success ...")
+
+	ret := loadMetaData(metaServer.RaftServer)
+	if ret != 0 {
+		if ret == 1 {
+			logger.Debug("loadMetaData  no volumes")
+		} else {
+			logger.Error("loadMetaData failed ...")
+			os.Exit(1)
+		}
+	}
+
+	ticker := time.NewTicker(time.Second * 10)
+	go func() {
+		for _ = range ticker.C {
+			showLeaders(&metaServer)
+		}
+	}()
+
+	startMetaDataService(&metaServer)
 }

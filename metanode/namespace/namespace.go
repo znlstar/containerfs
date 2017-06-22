@@ -2,19 +2,19 @@ package namespace
 
 import (
 	"bytes"
-	mp "github.com/ipdcode/containerfs/proto/mp"
-	vp "github.com/ipdcode/containerfs/proto/vp"
-
-	"github.com/ipdcode/containerfs/logger"
-	"github.com/ipdcode/containerfs/utils"
-
-	// "github.com/chasex/redis-go-cluster"
-	"github.com/go-redis/redis"
-
 	"encoding/json"
 	"fmt"
+	"github.com/ipdcode/containerfs/logger"
+	"github.com/ipdcode/containerfs/metanode/raftopt"
+	mp "github.com/ipdcode/containerfs/proto/mp"
+	vp "github.com/ipdcode/containerfs/proto/vp"
+	"github.com/ipdcode/containerfs/utils"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"jd.com/sharkstore/raft"
+	"jd.com/sharkstore/raft/proto"
+	"jd.com/sharkstore/raft/storage/wal"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,12 +28,12 @@ const (
 // VolMgrAddress
 var VolMgrAddress string
 
-//var RedisClusters [10]*redis.Cluster
-var RedisClient *redis.ClusterClient
-
 type nameSpace struct {
-	VolID           string
-	bgFreeCntLocker sync.Mutex
+	sync.RWMutex
+	VolID       string
+	RaftGroupID uint64
+	RaftGroup   *raftopt.KvStateMachine
+	RaftStorage *wal.Storage
 }
 
 var AllNameSpace map[string]*nameSpace
@@ -46,72 +46,129 @@ func CreateGNameSpace() {
 	gMutex.Unlock()
 }
 
+func createRaftGroup(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir string, UUID string, raftGroupID uint64) (*raftopt.KvStateMachine, *wal.Storage, error) {
+	sm, sg, err := raftopt.CreateKvStateMachine(rs, peers, nodeID, dir, UUID, raftGroupID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return sm, sg, nil
+}
+
+func initNameSpace(rs *raft.RaftServer, nameSpace *nameSpace, UUID string) int32 {
+
+	time.Sleep(time.Second * 2)
+
+	logger.Error("initNameSpace IsLeader %v", rs.IsLeader(nameSpace.RaftGroupID))
+	if !rs.IsLeader(nameSpace.RaftGroupID) {
+		return 0
+	}
+
+	ret, tmpBlockGroups := nameSpace.GetVolInfo(UUID)
+	if ret != 0 {
+		return ret
+	}
+
+	if len(tmpBlockGroups) <= 0 {
+		return 0
+	}
+
+	var blockgroupIDs []int32
+	for _, v := range tmpBlockGroups {
+		v.FreeCnt = 160
+		logger.Error("initNameSpace BlockGroupDBSet %v,%v", v.BlockGroupID, v)
+
+		err := nameSpace.BlockGroupDBSet(v.BlockGroupID, v)
+		if err != nil {
+			continue
+		}
+		blockgroupIDs = append(blockgroupIDs, v.BlockGroupID)
+	}
+
+	err := nameSpace.VolumeDBSet(blockgroupIDs)
+	if err != nil {
+		return 1
+	}
+
+	tmpInodeInfo := mp.InodeInfo{
+		InodeID: 0, Name: "/",
+		AccessTime: time.Now().Unix(),
+		ModifiTime: time.Now().Unix(),
+		InodeType:  false}
+
+	err = nameSpace.InodeDBSet("0", &tmpInodeInfo)
+	if err != nil {
+		return 1
+	}
+
+	tmpChunkInfo := mp.ChunkInfo{}
+	err = nameSpace.ChunkDBSet(0, &tmpChunkInfo)
+	if err != nil {
+		return 1
+	}
+
+	err = nameSpace.InitInodeID()
+	if err != nil {
+		return 1
+	}
+
+	err = nameSpace.InitChunkID()
+	if err != nil {
+		return 1
+	}
+
+	return 0
+}
+
 // CreateNameSpace
-func CreateNameSpace(UUID string, IsLoad bool) int32 {
+func CreateNameSpace(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir string, UUID string, raftGroupID uint64, IsLoad bool) int32 {
+	var err error
+	var errno int32
+
 	nameSpace := nameSpace{}
 	nameSpace.VolID = UUID
+	nameSpace.RaftGroupID = raftGroupID
+	nameSpace.RaftGroup, nameSpace.RaftStorage, err = createRaftGroup(rs, peers, nodeID, dir, UUID, nameSpace.RaftGroupID)
+	if err != nil {
+		logger.Error("createRaftGroup, failed,err:%v", err)
+		errno = -1
+		return errno
+	}
+
+	logger.Error("createRaftGroup, sucess")
 
 	gMutex.Lock()
 	AllNameSpace[UUID] = &nameSpace
 	gMutex.Unlock()
 
 	if !IsLoad {
-		ret, tmpBlockGroups := nameSpace.GetVolInfo(UUID)
-		if ret != 0 {
-			return ret
-		}
-
-		if len(tmpBlockGroups) <= 0 {
-			return 0
-		}
-
-		var blockgroupIDs []int32
-
-		for _, v := range tmpBlockGroups {
-			v.FreeCnt = 160
-			err := nameSpace.BlockGroupDBSet(v.BlockGroupID, v)
-			if err != nil {
-				continue
-			}
-			blockgroupIDs = append(blockgroupIDs, v.BlockGroupID)
-		}
-
-		err := nameSpace.VolumeDBSet(UUID, blockgroupIDs)
-		if err != nil {
-			return 1
-		}
-
-		tmpInodeInfo := mp.InodeInfo{
-			InodeID: 0, Name: "/",
-			AccessTime: time.Now().Unix(),
-			ModifiTime: time.Now().Unix(),
-			InodeType:  false}
-		err = nameSpace.InodeDBSet("0", &tmpInodeInfo)
-		if err != nil {
-			return 1
-		}
-
-		tmpChunkInfo := mp.ChunkInfo{}
-		err = nameSpace.ChunkDBSet(0, &tmpChunkInfo)
-		if err != nil {
-			return 1
-		}
+		go initNameSpace(rs, &nameSpace, UUID)
 	}
+	return errno
+}
 
+// SnapShootNameSpace
+func SnapShootNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
+
+	ret, nameSpace := GetNameSpace(UUID)
+	if ret != 0 {
+		return ret
+	}
+	raftopt.TakeKvSnapShoot(nameSpace.RaftGroup, nameSpace.RaftStorage, path.Join(dir, UUID, "wal", "snap"))
 	return 0
 }
 
 // DeleteNameSpace
-func DeleteNameSpace(UUID string) int32 {
+func DeleteNameSpace(rs *raft.RaftServer, UUID string) int32 {
+
+	ret, nameSpace := GetNameSpace(UUID)
+	if ret != 0 {
+		return 0
+	}
+	rs.RemoveRaft(nameSpace.RaftGroupID)
 
 	gMutex.Lock()
 	delete(AllNameSpace, UUID)
 	gMutex.Unlock()
-
-	RedisClient.Del(UUID)
-	RedisClient.Del(UUID + "-InodeID")
-	RedisClient.Del(UUID + "-ChunkID")
-
 	return 0
 }
 
@@ -128,19 +185,20 @@ func GetNameSpace(UUID string) (int32, *nameSpace) {
 
 // GetFSInfo
 func (ns *nameSpace) GetFSInfo(volID string) mp.GetFSInfoAck {
+
+	ns.RLock()
+	defer ns.RUnlock()
+
 	ack := mp.GetFSInfoAck{}
 	var totalSpace uint64 = 0
 	var freeSpace uint64 = 0
-	blkgrps, err := ns.VolumeDBGet(volID)
-	if err != nil {
+
+	ret, blkgrps := ns.VolumeDBGet()
+	if !ret {
 		return ack
 	}
-
 	for _, v := range blkgrps {
-		ret, bg := ns.BlockGroupDBGet(v)
-		if !ret {
-			continue
-		}
+		_, bg := ns.BlockGroupDBGet(v)
 		totalSpace = totalSpace + (Blksize * 1073741824)
 		freeSpace = freeSpace + 64*1024*1024*uint64(bg.FreeCnt)
 	}
@@ -148,6 +206,7 @@ func (ns *nameSpace) GetFSInfo(volID string) mp.GetFSInfoAck {
 	ack.TotalSpace = totalSpace
 	ack.FreeSpace = freeSpace
 	ack.Ret = 0
+
 	return ack
 }
 
@@ -169,7 +228,7 @@ func (ns *nameSpace) GetVolInfo(name string) (int32, []*vp.BlockGroup) {
 }
 
 // GetVolList
-func GetVolList() (int32, []string) {
+func GetVolList() (int32, []*vp.VolIDs) {
 	conn, err := grpc.Dial(VolMgrAddress, grpc.WithInsecure())
 	if err != nil {
 		logger.Debug("Dial failed: %v", err)
@@ -784,21 +843,20 @@ func (ns *nameSpace) BlockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 
 // ChooseBlockGroup
 func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
-	blkgrps, err := ns.VolumeDBGet(ns.VolID)
-	if err != nil {
-		return 1, -1, nil
-	}
+
+	ns.RLock()
+	defer ns.RUnlock()
 
 	var blockGroupID int32
 	var blockGroup *vp.BlockGroup
 	flag := false
 
-	logger.Debug("blkgrps:%v\n", blkgrps)
-
-	ns.bgFreeCntLocker.Lock()
-
-	for i := range blkgrps {
-		ret, bg := ns.BlockGroupDBGet(blkgrps[i])
+	ret, blkgrps := ns.VolumeDBGet()
+	if !ret {
+		return 1, -1, nil
+	}
+	for _, v := range blkgrps {
+		ret, bg := ns.BlockGroupDBGet(v)
 		if !ret {
 			continue
 		}
@@ -817,14 +875,15 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 			break
 		}
 	}
-	ns.bgFreeCntLocker.Unlock()
 
 	// find the free blockgroup
 	if flag == false {
-		ns.bgFreeCntLocker.Lock()
-
-		for i := range blkgrps {
-			ret, bg := ns.BlockGroupDBGet(blkgrps[i])
+		ret, blkgrps := ns.VolumeDBGet()
+		if !ret {
+			return 1, -1, nil
+		}
+		for _, v := range blkgrps {
+			ret, bg := ns.BlockGroupDBGet(v)
 			if !ret {
 				continue
 			}
@@ -844,8 +903,6 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 				break
 			}
 		}
-		ns.bgFreeCntLocker.Unlock()
-
 	}
 
 	if flag {
@@ -854,13 +911,11 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 	} else {
 		return 1, -1, nil
 	}
+
 }
 
 // ReleaseBlockGroup
 func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
-
-	ns.bgFreeCntLocker.Lock()
-	defer ns.bgFreeCntLocker.Unlock()
 
 	ok, blockGroup := ns.BlockGroupDBGet(blockGroupID)
 	if !ok {
@@ -892,23 +947,6 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 	ns.BlockGroupDBSet(blockGroupID, blockGroup)
 
 }
-
-/*
-// SetBlockGroupStatus
-func (ns *nameSpace) SetBlockGroupStatus(blockGroupID int32, status int32) {
-	conn, err := grpc.Dial(VolMgrAddress, grpc.WithInsecure())
-	if err != nil {
-		logger.Debug("Dial failed: %v", err)
-		return
-	}
-	defer conn.Close()
-	vc := vp.NewVolMgrClient(conn)
-	pSetBlockGroupStatusReq := &vp.SetBlockGroupStatusReq{}
-	pSetBlockGroupStatusReq.BlockGroupID = blockGroupID
-	pSetBlockGroupStatusReq.Status = status
-	vc.SetBlockGroupStatus(context.Background(), pSetBlockGroupStatusReq)
-}
-*/
 
 // UpdateChunkInfo
 func (ns *nameSpace) UpdateChunkInfo(in *mp.UpdateChunkInfoReq) int32 {
@@ -948,146 +986,92 @@ func (ns *nameSpace) GetAllKeyByFullPath(in string) (keys []string) {
 	return
 }
 
-/*
-// VolumeEtcdSet
-func (ns *nameSpace) VolumeDBSet(volID string, v []int32) {
-	val, _ := json.Marshal(v)
-	RedisClusters[1].Do("HMSET", ns.VolID, "VolDB", val)
-}
+// InitInodeID
+func (ns *nameSpace) InitInodeID() error {
 
-// VolumeEtcdGet
-func (ns *nameSpace) VolumeDBGet(volID string) []int32 {
-	value, _ := redis.Strings(RedisClusters[1].Do("HMGET", ns.VolID, "VolDB"))
-	var blkgrps []int32
-	json.Unmarshal([]byte(value[0]), &blkgrps)
-	return blkgrps
-}
-
-
-// AllocateInodeID
-func (ns *nameSpace) AllocateInodeID() (int64, error) {
-	id, err := redis.Int64(RedisClusters[0].Do("INCR", ns.VolID+"-InodeID"))
-	return id, err
-}
-
-// AllocateChunkID
-func (ns *nameSpace) AllocateChunkID() (int64, error) {
-	id, err := redis.Int64(RedisClusters[1].Do("INCR", ns.VolID+"-ChunkID"))
-	return id, err
-}
-
-// InodeDBGet
-func (ns *nameSpace) InodeDBGet(k string) (bool, *mp.InodeInfo) {
-	value, err := redis.Strings(RedisClusters[1].Do("HMGET", ns.VolID, "InodeDB/"+k))
-	inodeInfo := mp.InodeInfo{}
-	err = json.Unmarshal([]byte(value[0]), &inodeInfo)
+	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "InodeID/", strconv.Itoa(0))
 	if err != nil {
-		return false, nil
-	}
-	return true, &inodeInfo
-}
-
-// InodeDBSet
-func (ns *nameSpace) InodeDBSet(k string, v *mp.InodeInfo) {
-	val, _ := json.Marshal(v)
-	RedisClusters[1].Do("HMSET", ns.VolID, "InodeDB/"+k, val)
-}
-
-// InodeDBDelete
-func (ns *nameSpace) InodeDBDelete(k string) {
-	RedisClusters[1].Do("HDEL", ns.VolID, "InodeDB/"+k)
-}
-
-// BlockGroupDBGet
-func (ns *nameSpace) BlockGroupDBGet(k int32) (bool, *vp.BlockGroup) {
-	value, err := redis.Strings(RedisClusters[1].Do("HMGET", ns.VolID, "BGDB/"+strconv.Itoa(int(k))))
-	blockGroup := vp.BlockGroup{}
-	err = json.Unmarshal([]byte(value[0]), &blockGroup)
-	if err != nil {
-		return false, nil
-	}
-	return true, &blockGroup
-
-}
-
-// BlockGroupDBSet
-func (ns *nameSpace) BlockGroupDBSet(k int32, v *vp.BlockGroup) {
-	val, _ := json.Marshal(v)
-	RedisClusters[1].Do("HMSET", ns.VolID, "BGDB/"+strconv.Itoa(int(k)), val)
-}
-
-// BlockGroupDBDelete
-func (ns *nameSpace) BlockGroupDBDelete(k int32) {
-	RedisClusters[1].Do("HDEL", ns.VolID, "BGDB/"+strconv.Itoa(int(k)))
-}
-
-// ChunkDBGet
-func (ns *nameSpace) ChunkDBGet(k int64) (bool, *mp.ChunkInfo) {
-	value, err := redis.Strings(RedisClusters[1].Do("HMGET", ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10)))
-	chunkInfo := mp.ChunkInfo{}
-	err = json.Unmarshal([]byte(value[0]), &chunkInfo)
-	if err != nil {
-		return false, nil
-	}
-	return true, &chunkInfo
-
-}
-
-// ChunkDBSet
-func (ns *nameSpace) ChunkDBSet(k int64, v *mp.ChunkInfo) {
-	val, _ := json.Marshal(v)
-	RedisClusters[1].Do("HMSET", ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10), val)
-}
-
-// ChunkDBDelete
-func (ns *nameSpace) ChunkDBDelete(k int64) {
-	RedisClusters[1].Do("HDEL", ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10))
-}
-
-*/
-
-// VolumeEtcdSet
-func (ns *nameSpace) VolumeDBSet(volID string, v []int32) error {
-	val, _ := json.Marshal(v)
-	err := RedisClient.HSet(ns.VolID, "VolDB", val).Err()
-	if err != nil {
-		time.Sleep(time.Second * 2)
-		err = RedisClient.HSet(ns.VolID, "VolDB", val).Err()
+		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "InodeID/", strconv.Itoa(0))
 		if err != nil {
-			logger.Error("VolumeDBSet vol:%v,key:%v,err:%v\n", ns.VolID, "VolDB", err)
+			logger.Error("AllocateInodeID put vol:%v,key:%v,err:%v\n", ns.VolID, "InodeID/", err)
+			return err
+		}
+	}
+
+	return nil
+}
+
+// InitChunkID
+func (ns *nameSpace) InitChunkID() error {
+
+	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "ChunkID/", strconv.Itoa(0))
+	if err != nil {
+		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "ChunkID/", strconv.Itoa(0))
+		if err != nil {
+			logger.Error("AllocateChunkID put vol:%v,key:%v,err:%v\n", ns.VolID, "ChunkID/", err)
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (ns *nameSpace) VolumeDBSet(v []int32) error {
+	val, _ := json.Marshal(v)
+	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "VolumeDB/", string(val))
+	if err != nil {
+		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "VolumeDB/", string(val))
+		if err != nil {
+			logger.Error("VolumeDBSet vol:%v,key:%v,v:%v,err:%v\n", ns.VolID, "VolumeDB/", string(val), err)
 			return err
 		}
 	}
 	return nil
-
 }
 
-// VolumeEtcdGet
-func (ns *nameSpace) VolumeDBGet(volID string) ([]int32, error) {
-	value, err := RedisClient.HGet(ns.VolID, "VolDB").Result()
+// BlockGroupDBGet
+func (ns *nameSpace) VolumeDBGet() (bool, []int32) {
+	value, err := raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "VolumeDB/")
 	if err != nil {
-		time.Sleep(time.Second * 2)
-		value, err = RedisClient.HGet(ns.VolID, "VolDB").Result()
+		value, err = raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "VolumeDB/")
 		if err != nil {
-			logger.Error("VolumeDBGet vol:%v,key:%v,err:%v\n", ns.VolID, "VolDB", err)
-			return nil, err
+			logger.Error("BlockGroupDBGet vol:%v,key:%v,err:%v\n", ns.VolID, "VolumeDB/", err)
+			return false, nil
 		}
 	}
 
 	var blkgrps []int32
-	json.Unmarshal([]byte(value), &blkgrps)
-	return blkgrps, nil
+	err = json.Unmarshal([]byte(value), &blkgrps)
+	if err != nil {
+		return false, nil
+	}
+	return true, blkgrps
+
 }
 
 // AllocateInodeID
 func (ns *nameSpace) AllocateInodeID() (int64, error) {
-	id, err := RedisClient.Incr(ns.VolID + "-InodeID").Result()
+	ns.Lock()
+	defer ns.Unlock()
+
+	value, err := raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "InodeID/")
 	if err != nil {
-		time.Sleep(time.Second * 2)
-		id, err = RedisClient.Incr(ns.VolID + "-InodeID").Result()
+		value, err = raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "InodeID/")
 		if err != nil {
-			logger.Error("AllocateInodeID Incr failed err :%v\n", err)
-			return -1, err
+			logger.Error("AllocateInodeID get vol:%v,key:%v,err:%v\n", ns.VolID, "InodeID/", err)
+			return 0, err
+		}
+	}
+
+	id, _ := strconv.ParseInt(value, 10, 64)
+	id = id + 1
+
+	err = raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "InodeID/", strconv.FormatInt(id, 10))
+	if err != nil {
+		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "InodeID/", strconv.FormatInt(id, 10))
+		if err != nil {
+			logger.Error("AllocateInodeID put vol:%v,key:%v,v:%v,err:%v\n", ns.VolID, "InodeID/", strconv.FormatInt(id, 10), err)
+			return 0, err
 		}
 	}
 
@@ -1096,12 +1080,26 @@ func (ns *nameSpace) AllocateInodeID() (int64, error) {
 
 // AllocateChunkID
 func (ns *nameSpace) AllocateChunkID() (int64, error) {
-	id, err := RedisClient.Incr(ns.VolID + "-ChunkID").Result()
+	ns.Lock()
+	defer ns.Unlock()
+
+	value, err := raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "ChunkID/")
 	if err != nil {
-		time.Sleep(time.Second * 2)
-		id, err = RedisClient.Incr(ns.VolID + "-ChunkID").Result()
+		value, err = raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "ChunkID/")
 		if err != nil {
-			logger.Error("AllocateChunkID Incr failed err :%v\n", err)
+			logger.Error("AllocateChunkID get vol:%v,key:%v,err:%v\n", ns.VolID, "ChunkID/", err)
+			return -1, err
+		}
+	}
+
+	id, _ := strconv.ParseInt(value, 10, 64)
+	id = id + 1
+
+	err = raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "ChunkID/", strconv.FormatInt(id, 10))
+	if err != nil {
+		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "ChunkID/", strconv.FormatInt(id, 10))
+		if err != nil {
+			logger.Error("AllocateChunkID put vol:%v,key:%v,v:%v,err:%v\n", ns.VolID, "ChunkID/", strconv.FormatInt(id, 10), err)
 			return -1, err
 		}
 	}
@@ -1111,16 +1109,11 @@ func (ns *nameSpace) AllocateChunkID() (int64, error) {
 
 // InodeDBGet
 func (ns *nameSpace) InodeDBGet(k string) (bool, *mp.InodeInfo) {
-	value, err := RedisClient.HGet(ns.VolID, "InodeDB/"+k).Result()
+	value, err := raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "InodeDB/"+k)
 	if err != nil {
-		if err != redis.Nil {
-			time.Sleep(time.Second * 2)
-			value, err = RedisClient.HGet(ns.VolID, "InodeDB/"+k).Result()
-			if err != nil {
-				logger.Error("InodeDBGet vol:%v,key:%v,err:%v\n", ns.VolID, "InodeDB/"+k, err)
-				return false, nil
-			}
-		} else {
+		value, err = raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "InodeDB/"+k)
+		if err != nil {
+			logger.Error("InodeDBGet vol:%v,key:%v,err:%v\n", ns.VolID, "InodeDB/"+k, err)
 			return false, nil
 		}
 	}
@@ -1136,10 +1129,9 @@ func (ns *nameSpace) InodeDBGet(k string) (bool, *mp.InodeInfo) {
 // InodeDBSet
 func (ns *nameSpace) InodeDBSet(k string, v *mp.InodeInfo) error {
 	val, _ := json.Marshal(v)
-	err := RedisClient.HSet(ns.VolID, "InodeDB/"+k, val).Err()
+	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "InodeDB/"+k, string(val))
 	if err != nil {
-		time.Sleep(time.Second * 2)
-		err := RedisClient.HSet(ns.VolID, "InodeDB/"+k, val).Err()
+		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "InodeDB/"+k, string(val))
 		if err != nil {
 			logger.Error("InodeDBSet vol:%v,key:%v,err:%v\n", ns.VolID, "InodeDB/"+k, err)
 			return err
@@ -1151,12 +1143,11 @@ func (ns *nameSpace) InodeDBSet(k string, v *mp.InodeInfo) error {
 
 // InodeDBDelete
 func (ns *nameSpace) InodeDBDelete(k string) error {
-	err := RedisClient.HDel(ns.VolID, "InodeDB/"+k).Err()
+	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "InodeDB/"+k, "!delete!")
 	if err != nil {
-		time.Sleep(time.Second * 2)
-		err = RedisClient.HDel(ns.VolID, "InodeDB/"+k).Err()
+		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "InodeDB/"+k, "!delete!")
 		if err != nil {
-			logger.Error("InodeDBDelete vol:%v,key:%v,err:%v\n", ns.VolID, "InodeDB/"+k, err)
+			logger.Error("InodeDBSet vol:%v,key:%v,err:%v\n", ns.VolID, "InodeDB/"+k, err)
 			return err
 		}
 	}
@@ -1165,16 +1156,11 @@ func (ns *nameSpace) InodeDBDelete(k string) error {
 
 // BlockGroupDBGet
 func (ns *nameSpace) BlockGroupDBGet(k int32) (bool, *vp.BlockGroup) {
-	value, err := RedisClient.HGet(ns.VolID, "BGDB/"+strconv.Itoa(int(k))).Result()
+	value, err := raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "BGDB/"+strconv.Itoa(int(k)))
 	if err != nil {
-		if err != redis.Nil {
-			time.Sleep(time.Second * 2)
-			value, err = RedisClient.HGet(ns.VolID, "BGDB/"+strconv.Itoa(int(k))).Result()
-			if err != nil {
-				logger.Error("BlockGroupDBGet vol:%v,key:%v,err:%v\n", ns.VolID, "BGDB/"+strconv.Itoa(int(k)), err)
-				return false, nil
-			}
-		} else {
+		value, err = raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "BGDB/"+strconv.Itoa(int(k)))
+		if err != nil {
+			logger.Error("BlockGroupDBGet vol:%v,key:%v,err:%v\n", ns.VolID, "BGDB/"+strconv.Itoa(int(k)), err)
 			return false, nil
 		}
 	}
@@ -1191,10 +1177,9 @@ func (ns *nameSpace) BlockGroupDBGet(k int32) (bool, *vp.BlockGroup) {
 // BlockGroupDBSet
 func (ns *nameSpace) BlockGroupDBSet(k int32, v *vp.BlockGroup) error {
 	val, _ := json.Marshal(v)
-	err := RedisClient.HSet(ns.VolID, "BGDB/"+strconv.Itoa(int(k)), val).Err()
+	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "BGDB/"+strconv.Itoa(int(k)), string(val))
 	if err != nil {
-		time.Sleep(time.Second * 2)
-		err = RedisClient.HSet(ns.VolID, "BGDB/"+strconv.Itoa(int(k)), val).Err()
+		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "BGDB/"+strconv.Itoa(int(k)), string(val))
 		if err != nil {
 			logger.Error("BlockGroupDBSet vol:%v,key:%v,err=%v\n", ns.VolID, "BGDB/"+strconv.Itoa(int(k)), err)
 			return err
@@ -1203,31 +1188,28 @@ func (ns *nameSpace) BlockGroupDBSet(k int32, v *vp.BlockGroup) error {
 	return nil
 }
 
+/*
 // BlockGroupDBDelete
-func (ns *nameSpace) BlockGroupDBDelete(k int32) {
-	err := RedisClient.HDel(ns.VolID, "BGDB/"+strconv.Itoa(int(k))).Err()
+func (ns *nameSpace) BlockGroupDBDelete(k int32) error {
+	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "BGDB/"+strconv.Itoa(int(k)), "!delete!")
 	if err != nil {
-		time.Sleep(time.Second * 2)
-		err = RedisClient.HDel(ns.VolID, "BGDB/"+strconv.Itoa(int(k))).Err()
+		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "BGDB/"+strconv.Itoa(int(k)), "!delete!")
 		if err != nil {
-			logger.Error("InodeDBDelete vol:%v,key:%v,err:%v\n", ns.VolID, "BGDB/"+strconv.Itoa(int(k)), err)
+			logger.Error("BlockGroupDBSet vol:%v,key:%v,err=%v\n", ns.VolID, "BGDB/"+strconv.Itoa(int(k)), err)
+			return err
 		}
 	}
-
+	return nil
 }
+*/
 
 // ChunkDBGet
 func (ns *nameSpace) ChunkDBGet(k int64) (bool, *mp.ChunkInfo) {
-	value, err := RedisClient.HGet(ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10)).Result()
+	value, err := raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "ChunkDB/"+strconv.FormatInt(k, 10))
 	if err != nil {
-		if err != redis.Nil {
-			time.Sleep(time.Second * 2)
-			value, err = RedisClient.HGet(ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10)).Result()
-			if err != nil {
-				logger.Error("ChunkDBGet vol:%v,key:%v,err:%v\n", ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10), err)
-				return false, nil
-			}
-		} else {
+		value, err = raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "ChunkDB/"+strconv.FormatInt(k, 10))
+		if err != nil {
+			logger.Error("ChunkDBGet vol:%v,key:%v,err:%v\n", ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10), err)
 			return false, nil
 		}
 	}
@@ -1243,10 +1225,9 @@ func (ns *nameSpace) ChunkDBGet(k int64) (bool, *mp.ChunkInfo) {
 // ChunkDBSet
 func (ns *nameSpace) ChunkDBSet(k int64, v *mp.ChunkInfo) error {
 	val, _ := json.Marshal(v)
-	err := RedisClient.HSet(ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10), val).Err()
+	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "ChunkDB/"+strconv.FormatInt(k, 10), string(val))
 	if err != nil {
-		time.Sleep(time.Second * 2)
-		err = RedisClient.HSet(ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10), val).Err()
+		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "ChunkDB/"+strconv.FormatInt(k, 10), string(val))
 		if err != nil {
 			logger.Error("ChunkDBSet vol:%v,key:%v,err:%v\n", ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10), err)
 			return err
@@ -1257,14 +1238,15 @@ func (ns *nameSpace) ChunkDBSet(k int64, v *mp.ChunkInfo) error {
 }
 
 // ChunkDBDelete
-func (ns *nameSpace) ChunkDBDelete(k int64) {
-	err := RedisClient.HDel(ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10)).Err()
+func (ns *nameSpace) ChunkDBDelete(k int64) error {
+	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "ChunkDB/"+strconv.FormatInt(k, 10), "!delete!")
 	if err != nil {
-		time.Sleep(time.Second * 2)
-		err = RedisClient.HDel(ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10)).Err()
+		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "ChunkDB/"+strconv.FormatInt(k, 10), "!delete!")
 		if err != nil {
-			logger.Error("ChunkDBDelete vol:%v,key:%v,err:%v\n", ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10), err)
+			logger.Error("ChunkDBSet vol:%v,key:%v,err:%v\n", ns.VolID, "ChunkDB/"+strconv.FormatInt(k, 10), err)
+			return err
 		}
-	}
 
+	}
+	return nil
 }

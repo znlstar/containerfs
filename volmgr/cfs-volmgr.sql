@@ -28,8 +28,7 @@ CREATE TABLE `blk` (
   `hostport` int(16) NOT NULL,
   `allocated` tinyint(2) DEFAULT NULL,
   `disabled` tinyint(2) DEFAULT NULL,
-  `createdTime` TIMESTAMP(6) not NULL DEFAULT CURRENT_TIMESTAMP(6),
-  `updatedTime` TIMESTAMP(6) not NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  `createdTime` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`blkid`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1067 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -46,8 +45,7 @@ CREATE TABLE `blkgrp` (
   `blkgrpid` bigint(32) NOT NULL AUTO_INCREMENT,
   `blks` varchar(32) NOT NULL,
   `volume_uuid` varchar(32) NOT NULL,
-  `createdTime` TIMESTAMP(6) not NULL DEFAULT CURRENT_TIMESTAMP(6),
-  `updatedTime` TIMESTAMP(6) not NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  `createdTime` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`blkgrpid`)
 ) ENGINE=InnoDB AUTO_INCREMENT=125 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -68,8 +66,7 @@ CREATE TABLE `disks` (
   `used` bigint(32) DEFAULT NULL,
   `free` bigint(32) DEFAULT NULL,
   `statu` tinyint(2) DEFAULT NULL,
-  `createdTime` TIMESTAMP(6) not NULL DEFAULT CURRENT_TIMESTAMP(6),
-  `updatedTime` TIMESTAMP(6) not NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  `createdTime` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`ip`,`port`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -91,8 +88,7 @@ CREATE TABLE `repair` (
   `chkid` bigint(32) NOT NULL,
   `position` tinyint(8) NOT NULL,
   `status` tinyint(8) NOT NULL,
-  `createdTime` TIMESTAMP(6) not NULL DEFAULT CURRENT_TIMESTAMP(6),
-  `updatedTime` TIMESTAMP(6) not NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)
+  `createdTime` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
@@ -105,13 +101,13 @@ DROP TABLE IF EXISTS `volumes`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `volumes` (
+  `raftgroupid` bigint(32) NOT NULL AUTO_INCREMENT,
   `uuid` varchar(32) NOT NULL,
   `name` varchar(32) NOT NULL,
   `size` bigint(32) NOT NULL,
   `metadomain` varchar(32) NOT NULL,
-  `createdTime` TIMESTAMP(6) not NULL DEFAULT CURRENT_TIMESTAMP(6),
-  `updatedTime` TIMESTAMP(6) not NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-  PRIMARY KEY (`uuid`)
+  `createdTime` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`raftgroupid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
