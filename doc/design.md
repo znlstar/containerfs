@@ -49,25 +49,18 @@ Linux kernel
 ## Struct
 #### volume namespace
 <pre>
-&nbsp;type raftGroups struct {
-&nbsp;	InodeDB      *raftopt.KvStateMachine
-&nbsp;	ChunkDB      *raftopt.KvStateMachine
-&nbsp;	BlockGroupDB *raftopt.KvStateMachine
-&nbsp;
-&nbsp;	InodeID *raftopt.IncrStateMachine
-&nbsp;	ChunkID *raftopt.IncrStateMachine
-&nbsp;}
-&nbsp;
 &nbsp;type nameSpace struct {
-&nbsp;	VolID        string
-&nbsp;	RaftGroupsID uint64
-&nbsp;	RaftGroups   *raftGroups
+&nbsp;	sync.RWMutex
+&nbsp;	VolID       string
+&nbsp;	RaftGroupID uint64
+&nbsp;	RaftGroup   *raftopt.KvStateMachine
+&nbsp;	RaftStorage *wal.Storage
 &nbsp;}
 </pre>
 
 #### inode
 <pre>
-&nbsp;InodeDB : map[string]*protobuf.InodeInfo 
+&nbsp;InodeDB : *protobuf.InodeInfo 
 &nbsp;type InodeInfo struct {
 &nbsp;        ParentInodeID    int64   `protobuf:"varint,1,opt,name=ParentInodeID" json:"ParentInodeID,omitempty"`
 &nbsp;        InodeID          int64   `protobuf:"varint,2,opt,name=InodeID" json:"InodeID,omitempty"`
@@ -82,7 +75,7 @@ Linux kernel
 </pre>
 #### chunk
 <pre>
-&nbsp;ChunkDB : map[string]*protobuf.ChunkInfo
+&nbsp;ChunkDB : *protobuf.ChunkInfo
 &nbsp;type ChunkInfo struct {
 &nbsp;        ChunkSize  int32        `protobuf:"varint,1,opt,name=ChunkSize" json:"ChunkSize,omitempty"`
 &nbsp;        BlockGroupID int32        `protobuf:"varint,2,opt,name=BlockGroupID" json:"BlockGroupID,omitempty"`
