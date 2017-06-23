@@ -68,10 +68,10 @@ func DialData(host string) (*grpc.ClientConn, error) {
 	var err error
 	conn, err = grpc.Dial(host, grpc.WithInsecure())
 	if err != nil {
-		time.Sleep(1000 * time.Millisecond)
+		time.Sleep(300 * time.Millisecond)
 		conn, err = grpc.Dial(host, grpc.WithInsecure())
 		if err != nil {
-			time.Sleep(1000 * time.Millisecond)
+			time.Sleep(300 * time.Millisecond)
 			conn, err = grpc.Dial(host, grpc.WithInsecure())
 		}
 	}

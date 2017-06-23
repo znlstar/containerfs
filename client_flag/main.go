@@ -46,6 +46,8 @@ func main() {
 		} else {
 			fmt.Printf("get volume info failed , ret :%d", ret)
 		}
+	default:
+		fmt.Println("wrong operation")
 	}
 
 }
