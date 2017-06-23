@@ -569,7 +569,11 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.cfile.Close(int(req.Flags))
+	var err error
+	ret := f.cfile.Close(int(req.Flags))
+	if ret != 0 {
+		err = fuse.Errno(syscall.EIO)
+	}
 	f.handles--
 
 	if int(req.Flags)&cfs.O_WRONLY != 0 || int(req.Flags)&cfs.O_RDWR != 0 {
@@ -581,7 +585,7 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 		f.cfile = nil
 	}
 
-	return nil
+	return err
 }
 
 var _ = fs.HandleReader(&File{})

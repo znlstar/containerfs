@@ -239,6 +239,8 @@ func main() {
 
 		cfs := fs.OpenFileSystem(os.Args[3])
 		get(cfs, os.Args[4], os.Args[5], offset, size)
+	default:
+		fmt.Println("wrong operation")
 	}
 
 }

@@ -1251,6 +1251,7 @@ func (cfile *CFile) flushChannel() {
 		if copies < 2 {
 			logger.Error("WriteChunk copies < 2")
 			cfile.Status = 1
+			cfile.wg.Add(-1)
 			break
 		}
 
@@ -1284,6 +1285,7 @@ func (cfile *CFile) flushChannel() {
 			if err != nil {
 				logger.Error("Dial failed:%v\n", err)
 				cfile.Status = 1
+				cfile.wg.Add(-1)
 				break
 			}
 			mc := mp.NewMetaNodeClient(connM)
@@ -1292,11 +1294,13 @@ func (cfile *CFile) flushChannel() {
 			if ret != nil {
 				logger.Error("flushChannel SyncChunk Failed again:%v\n", pSyncChunkReq.ChunkInfo)
 				cfile.Status = 1
+				cfile.wg.Add(-1)
 				break
 			}
 		}
 		if pSyncChunkAck.Ret != 0 {
 			cfile.Status = 1
+			cfile.wg.Add(-1)
 			logger.Error("flushChannel SyncChunk Failed :%v\n", pSyncChunkReq.ChunkInfo)
 			break
 		}
@@ -1334,12 +1338,17 @@ func (cfile *CFile) Sync() int32 {
 func (cfile *CFile) Close(flags int) int32 {
 	if cfile.Status != 0 {
 		logger.Error("cfile status error , Close func just return")
-		return 0
+		return -1
 	}
 
 	if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
 		cfile.close2Channel()
 		cfile.wg.Wait()
+	}
+
+	if cfile.Status != 0 {
+		logger.Error("cfile status error , Close func return")
+		return -1
 	}
 
 	return 0
