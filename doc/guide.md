@@ -48,8 +48,8 @@
 		2) cfs-metanode.ini
 
 			第一个节点：
-		    [metanode]
-		    host     = 192.168.100.101
+			[metanode]
+			host     = 192.168.100.101
 			nodeid   = 1
 			peers    = 1,2,3
 			ips      = 192.168.100.101,192.168.100.102,192.168.100.103
@@ -60,14 +60,14 @@
 			host = 192.168.100.100:10001
 
 			第二个节点：
-		    [metanode]
-		    host     = 192.168.100.102
+			[metanode]
+			host     = 192.168.100.102
 			nodeid   = 2
 			(其他一样)
 
 			第三个节点：
-		    [metanode]
-		    host     = 192.168.100.103
+			[metanode]
+			host     = 192.168.100.103
 			nodeid   = 3
 			(其他一样)
 
