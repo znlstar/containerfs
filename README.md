@@ -10,3 +10,7 @@ a volume = a metadata table + multiple block groups
 # Design
 
 [here](doc/design.md)
+
+# Guide
+
+[here](doc/guide.md)
