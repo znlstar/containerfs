@@ -2,9 +2,9 @@
 
 一、本系统有三个组件：
 
-1、volume manager 简称 volmgr:主要负责 volume 、blockgroup 、block 的分配管理
-2、meta data node 简称 metanode:主要负责文件系统元数据管理
-3、datanode:主要负责接收实体数据的读写删除
+1、volume manager 简称 volmgr:主要负责 volume 、blockgroup 、block 的分配管理 
+2、meta data node 简称 metanode:主要负责文件系统元数据管理 
+3、datanode:主要负责接收实体数据的读写删除 
 
 二、集群搭建
 
@@ -16,7 +16,7 @@
 
 2、组件安装：
 
-	0. volmgr 需要 mysql,请导入cfs-volmgr.sql,[这里](../volmgr/cfs-volmgr.sql)
+	0. volmgr 需要 mysql,请导入cfs-volmgr.sql, [这里](../volmgr/cfs-volmgr.sql)
 	1. 解压 cfs-server.tar.gz 到 /home 
 	2. cd /home/cfs-server/ 
 	3. dos2unix install.sh
@@ -84,7 +84,7 @@
 
 	service cfs-volmgr start
 	service cfs-metanode start
-	service cfs-datanode start (如果一个服务器上部署多个 datanode 需要自己增加一下 service ,[例子](../service/cfs-datanode.service) )
+	service cfs-datanode start (如果一个服务器上部署多个 datanode 需要自己增加一下 service , [例子](../service/cfs-datanode.service) )
 
 三、集群使用
 
