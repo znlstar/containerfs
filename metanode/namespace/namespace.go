@@ -25,7 +25,7 @@ const (
 	Blksize = 10 //Blksize G
 )
 
-// VolMgrAddress
+//VolMgrAddress
 var VolMgrAddress string
 
 type nameSpace struct {
@@ -39,7 +39,7 @@ type nameSpace struct {
 var AllNameSpace map[string]*nameSpace
 var gMutex sync.RWMutex
 
-// CreateGNameSpace
+//CreateGNameSpace
 func CreateGNameSpace() {
 	gMutex.Lock()
 	AllNameSpace = make(map[string]*nameSpace)
@@ -119,7 +119,7 @@ func initNameSpace(rs *raft.RaftServer, nameSpace *nameSpace, UUID string) int32
 	return 0
 }
 
-// CreateNameSpace
+//CreateNameSpace
 func CreateNameSpace(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir string, UUID string, raftGroupID uint64, IsLoad bool) int32 {
 	var err error
 	var errno int32
@@ -146,7 +146,7 @@ func CreateNameSpace(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir
 	return errno
 }
 
-// SnapShootNameSpace
+//SnapShootNameSpace
 func SnapShootNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
 
 	ret, nameSpace := GetNameSpace(UUID)
@@ -157,7 +157,7 @@ func SnapShootNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
 	return 0
 }
 
-// DeleteNameSpace
+//DeleteNameSpace
 func DeleteNameSpace(rs *raft.RaftServer, UUID string) int32 {
 
 	ret, nameSpace := GetNameSpace(UUID)
@@ -172,7 +172,7 @@ func DeleteNameSpace(rs *raft.RaftServer, UUID string) int32 {
 	return 0
 }
 
-// GetNameSpace
+//GetNameSpace
 func GetNameSpace(UUID string) (int32, *nameSpace) {
 	gMutex.RLock()
 	defer gMutex.RUnlock()
@@ -183,7 +183,7 @@ func GetNameSpace(UUID string) (int32, *nameSpace) {
 	}
 }
 
-// GetFSInfo
+//GetFSInfo
 func (ns *nameSpace) GetFSInfo(volID string) mp.GetFSInfoAck {
 
 	ns.RLock()
@@ -227,7 +227,7 @@ func (ns *nameSpace) GetVolInfo(name string) (int32, []*vp.BlockGroup) {
 	return 0, pGetVolInfoAck.VolInfo.BlockGroups
 }
 
-// GetVolList
+//GetVolList
 func GetVolList() (int32, []*vp.VolIDs) {
 	conn, err := grpc.Dial(VolMgrAddress, grpc.WithInsecure())
 	if err != nil {
@@ -248,7 +248,7 @@ func GetVolList() (int32, []*vp.VolIDs) {
 	return 0, pGetVolListAck.VolIDs
 }
 
-// CreateDir
+//CreateDir
 func (ns *nameSpace) CreateDir(path string) int32 {
 	var ret int32
 	ret = 0
@@ -317,7 +317,7 @@ func (ns *nameSpace) CreateDir(path string) int32 {
 	return ret
 }
 
-// Stat
+//Stat
 func (ns *nameSpace) Stat(path string) (*mp.InodeInfo, int32) {
 	var ret int32
 	ret = 0
@@ -341,7 +341,7 @@ func (ns *nameSpace) Stat(path string) (*mp.InodeInfo, int32) {
 	return pInodeInfo, 0
 }
 
-// List
+//List
 func (ns *nameSpace) List(path string) ([]*mp.InodeInfo, int32) {
 	var ret int32
 	ret = 0
@@ -380,7 +380,7 @@ func (ns *nameSpace) List(path string) ([]*mp.InodeInfo, int32) {
 	return tmpInodeInfos, ret
 }
 
-// DeleteDir
+//DeleteDir
 func (ns *nameSpace) DeleteDir(path string) int32 {
 	var ret int32
 	ret = 0
@@ -444,7 +444,7 @@ func (ns *nameSpace) DeleteDir(path string) int32 {
 	return ret
 }
 
-// Rename
+//Rename
 func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
 	var ret int32
 	ret = 0
@@ -485,18 +485,18 @@ func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
 		return 1 /*EPERM*/
 	}
 
-	// delete old inode key
+	//delete old inode key
 	tmpKey := strconv.FormatInt(pInodeInfo.InodeID, 10)
 	err := ns.InodeDBDelete(tmpKey)
 	if err != nil {
 		return 1
 	}
-	// delete old parentID + name key
+	//delete old parentID + name key
 	err = ns.InodeDBDelete(strconv.FormatInt(pInodeInfo.ParentInodeID, 10) + "-" + utils.GetSelfName(path1))
 	if err != nil {
 		return 1
 	}
-	// add a new parentID + name key
+	//add a new parentID + name key
 	name := utils.GetSelfName(path2)
 	tmpInodeInfo := mp.InodeInfo{
 		ParentInodeID:    pParentInodeInfo2.InodeID,
@@ -509,7 +509,7 @@ func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
 		ChunkIDs:         pInodeInfo.ChunkIDs,
 		ChildrenInodeIDs: pInodeInfo.ChildrenInodeIDs}
 
-	// add a new inode key
+	//add a new inode key
 	tmpKey = strconv.FormatInt(pInodeInfo.InodeID, 10)
 	err = ns.InodeDBSet(tmpKey, &tmpInodeInfo)
 	if err != nil {
@@ -522,9 +522,9 @@ func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
 		return 1
 	}
 	/*
-		// modify parents inodeinfo if they are not same
+		//modify parents inodeinfo if they are not same
 		if key2s[key2sNum-2] != key1s[key1sNum-2] {
-			// update patent1 inode info
+			//update patent1 inode info
 			var pTmpParentInodeInfo1 *mp.InodeInfo
 			_, pTmpParentInodeInfo1 = ns.InodeDBGet(key1s[key1sNum-2])
 			for index, value := range pTmpParentInodeInfo1.ChildrenInodeIDs {
@@ -536,7 +536,7 @@ func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
 			ns.InodeDBSet(strconv.FormatInt(pTmpParentInodeInfo1.InodeID, 10), pTmpParentInodeInfo1)
 			ns.InodeDBSet(strconv.FormatInt(pTmpParentInodeInfo1.ParentInodeID, 10)+"-"+utils.GetParentName(path1), pTmpParentInodeInfo1)
 
-			// update patent2 inode info
+			//update patent2 inode info
 			pParentInodeInfo2.ChildrenInodeIDs = append(pParentInodeInfo2.ChildrenInodeIDs, pInodeInfo.InodeID)
 			parent2Name := utils.GetParentName(path2)
 			if parent2Name == "/" {
@@ -552,7 +552,7 @@ func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
 	return ret
 }
 
-// CreateFile
+//CreateFile
 func (ns *nameSpace) CreateFile(path string) int32 {
 
 	if path == "/" {
@@ -632,7 +632,7 @@ func (ns *nameSpace) CreateFile(path string) int32 {
 	return ret
 }
 
-// DeleteFile
+//DeleteFile
 func (ns *nameSpace) DeleteFile(path string) int32 {
 	var ret int32
 	ret = 0
@@ -701,7 +701,7 @@ func (ns *nameSpace) DeleteFile(path string) int32 {
 	return ret
 }
 
-// AllocateChunk
+//AllocateChunk
 func (ns *nameSpace) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 	var ret int32
 
@@ -733,7 +733,7 @@ func (ns *nameSpace) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 
 }
 
-// GetFileChunks
+//GetFileChunks
 func (ns *nameSpace) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
 	var ret int32
 	var ok bool
@@ -760,7 +760,7 @@ func (ns *nameSpace) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
 
 }
 
-// SyncChunk
+//SyncChunk
 func (ns *nameSpace) SyncChunk(path string, chunkinfo *mp.ChunkInfo) int32 {
 	var ret int32
 	var ok bool
@@ -778,7 +778,7 @@ func (ns *nameSpace) SyncChunk(path string, chunkinfo *mp.ChunkInfo) int32 {
 	var lastChunkInfo *mp.ChunkInfo
 	var lastChunkID int64
 	if len(pTmpInodeInfo.ChunkIDs) > 0 {
-		// for appned write
+		//for appned write
 		lastChunkID = pTmpInodeInfo.ChunkIDs[len(pTmpInodeInfo.ChunkIDs)-1]
 		if lastChunkID == chunkinfo.ChunkID {
 			ok, lastChunkInfo = ns.ChunkDBGet(chunkinfo.ChunkID)
@@ -812,7 +812,7 @@ func (ns *nameSpace) SyncChunk(path string, chunkinfo *mp.ChunkInfo) int32 {
 
 }
 
-// BlockGroupVp2Mp
+//BlockGroupVp2Mp
 func (ns *nameSpace) BlockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 	var mpBlockGroup = mp.BlockGroup{}
 
@@ -841,7 +841,7 @@ func (ns *nameSpace) BlockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 
 }
 
-// ChooseBlockGroup
+//ChooseBlockGroup
 func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 
 	ns.RLock()
@@ -876,7 +876,7 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 		}
 	}
 
-	// find the free blockgroup
+	//find the free blockgroup
 	if flag == false {
 		ret, blkgrps := ns.VolumeDBGet()
 		if !ret {
@@ -914,7 +914,7 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 
 }
 
-// ReleaseBlockGroup
+//ReleaseBlockGroup
 func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 
 	ok, blockGroup := ns.BlockGroupDBGet(blockGroupID)
@@ -948,7 +948,7 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 
 }
 
-// UpdateChunkInfo
+//UpdateChunkInfo
 func (ns *nameSpace) UpdateChunkInfo(in *mp.UpdateChunkInfoReq) int32 {
 
 	k := in.ChunkID
@@ -961,7 +961,7 @@ func (ns *nameSpace) UpdateChunkInfo(in *mp.UpdateChunkInfoReq) int32 {
 	return 0
 }
 
-// GetAllKeyByFullPath
+//GetAllKeyByFullPath
 func (ns *nameSpace) GetAllKeyByFullPath(in string) (keys []string) {
 	tmp := strings.Split(in, "/")
 	keys = make([]string, 1)
@@ -986,7 +986,7 @@ func (ns *nameSpace) GetAllKeyByFullPath(in string) (keys []string) {
 	return
 }
 
-// InitInodeID
+//InitInodeID
 func (ns *nameSpace) InitInodeID() error {
 
 	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "InodeID/", strconv.Itoa(0))
@@ -1001,7 +1001,7 @@ func (ns *nameSpace) InitInodeID() error {
 	return nil
 }
 
-// InitChunkID
+//InitChunkID
 func (ns *nameSpace) InitChunkID() error {
 
 	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "ChunkID/", strconv.Itoa(0))
@@ -1029,7 +1029,7 @@ func (ns *nameSpace) VolumeDBSet(v []int32) error {
 	return nil
 }
 
-// BlockGroupDBGet
+//BlockGroupDBGet
 func (ns *nameSpace) VolumeDBGet() (bool, []int32) {
 	value, err := raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "VolumeDB/")
 	if err != nil {
@@ -1049,7 +1049,7 @@ func (ns *nameSpace) VolumeDBGet() (bool, []int32) {
 
 }
 
-// AllocateInodeID
+//AllocateInodeID
 func (ns *nameSpace) AllocateInodeID() (int64, error) {
 	ns.Lock()
 	defer ns.Unlock()
@@ -1078,7 +1078,7 @@ func (ns *nameSpace) AllocateInodeID() (int64, error) {
 	return id, nil
 }
 
-// AllocateChunkID
+//AllocateChunkID
 func (ns *nameSpace) AllocateChunkID() (int64, error) {
 	ns.Lock()
 	defer ns.Unlock()
@@ -1107,7 +1107,7 @@ func (ns *nameSpace) AllocateChunkID() (int64, error) {
 	return id, nil
 }
 
-// InodeDBGet
+//InodeDBGet
 func (ns *nameSpace) InodeDBGet(k string) (bool, *mp.InodeInfo) {
 	value, err := raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "InodeDB/"+k)
 	if err != nil {
@@ -1126,7 +1126,7 @@ func (ns *nameSpace) InodeDBGet(k string) (bool, *mp.InodeInfo) {
 	return true, &inodeInfo
 }
 
-// InodeDBSet
+//InodeDBSet
 func (ns *nameSpace) InodeDBSet(k string, v *mp.InodeInfo) error {
 	val, _ := json.Marshal(v)
 	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "InodeDB/"+k, string(val))
@@ -1141,7 +1141,7 @@ func (ns *nameSpace) InodeDBSet(k string, v *mp.InodeInfo) error {
 
 }
 
-// InodeDBDelete
+//InodeDBDelete
 func (ns *nameSpace) InodeDBDelete(k string) error {
 	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "InodeDB/"+k, "!delete!")
 	if err != nil {
@@ -1154,7 +1154,7 @@ func (ns *nameSpace) InodeDBDelete(k string) error {
 	return nil
 }
 
-// BlockGroupDBGet
+//BlockGroupDBGet
 func (ns *nameSpace) BlockGroupDBGet(k int32) (bool, *vp.BlockGroup) {
 	value, err := raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "BGDB/"+strconv.Itoa(int(k)))
 	if err != nil {
@@ -1174,7 +1174,7 @@ func (ns *nameSpace) BlockGroupDBGet(k int32) (bool, *vp.BlockGroup) {
 
 }
 
-// BlockGroupDBSet
+//BlockGroupDBSet
 func (ns *nameSpace) BlockGroupDBSet(k int32, v *vp.BlockGroup) error {
 	val, _ := json.Marshal(v)
 	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "BGDB/"+strconv.Itoa(int(k)), string(val))
@@ -1189,7 +1189,7 @@ func (ns *nameSpace) BlockGroupDBSet(k int32, v *vp.BlockGroup) error {
 }
 
 /*
-// BlockGroupDBDelete
+//BlockGroupDBDelete
 func (ns *nameSpace) BlockGroupDBDelete(k int32) error {
 	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "BGDB/"+strconv.Itoa(int(k)), "!delete!")
 	if err != nil {
@@ -1203,7 +1203,7 @@ func (ns *nameSpace) BlockGroupDBDelete(k int32) error {
 }
 */
 
-// ChunkDBGet
+//ChunkDBGet
 func (ns *nameSpace) ChunkDBGet(k int64) (bool, *mp.ChunkInfo) {
 	value, err := raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "ChunkDB/"+strconv.FormatInt(k, 10))
 	if err != nil {
@@ -1222,7 +1222,7 @@ func (ns *nameSpace) ChunkDBGet(k int64) (bool, *mp.ChunkInfo) {
 
 }
 
-// ChunkDBSet
+//ChunkDBSet
 func (ns *nameSpace) ChunkDBSet(k int64, v *mp.ChunkInfo) error {
 	val, _ := json.Marshal(v)
 	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "ChunkDB/"+strconv.FormatInt(k, 10), string(val))
@@ -1237,7 +1237,7 @@ func (ns *nameSpace) ChunkDBSet(k int64, v *mp.ChunkInfo) error {
 	return nil
 }
 
-// ChunkDBDelete
+//ChunkDBDelete
 func (ns *nameSpace) ChunkDBDelete(k int64) error {
 	err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "ChunkDB/"+strconv.FormatInt(k, 10), "!delete!")
 	if err != nil {
