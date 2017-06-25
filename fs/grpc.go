@@ -2,7 +2,6 @@ package cfs
 
 import (
 	"errors"
-	"fmt"
 	mp "github.com/ipdcode/containerfs/proto/mp"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -14,8 +13,7 @@ func GetLeader(volumeID string) (string, error) {
 	var leader string
 	var flag bool
 	for _, ip := range MetaNodePeers {
-		fmt.Println(ip)
-		conn, err := grpc.Dial(ip, grpc.WithInsecure())
+		conn, err := grpc.Dial(ip, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
 		if err != nil {
 			continue
 		}
@@ -49,15 +47,15 @@ func DialMeta(volumeID string) (*grpc.ClientConn, error) {
 	var err error
 
 	MetaNodeAddr, _ = GetLeader(volumeID)
-	conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
+	conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
 	if err != nil {
 		time.Sleep(500 * time.Millisecond)
 		MetaNodeAddr, _ = GetLeader(volumeID)
-		conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
+		conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
 		if err != nil {
 			time.Sleep(500 * time.Millisecond)
 			MetaNodeAddr, _ = GetLeader(volumeID)
-			conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
+			conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
 		}
 	}
 	return conn, err
@@ -67,13 +65,13 @@ func DialMeta(volumeID string) (*grpc.ClientConn, error) {
 func DialData(host string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
-	conn, err = grpc.Dial(host, grpc.WithInsecure())
+	conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
 	if err != nil {
 		time.Sleep(300 * time.Millisecond)
-		conn, err = grpc.Dial(host, grpc.WithInsecure())
+		conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
 		if err != nil {
 			time.Sleep(300 * time.Millisecond)
-			conn, err = grpc.Dial(host, grpc.WithInsecure())
+			conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
 		}
 	}
 	return conn, err
@@ -83,13 +81,13 @@ func DialData(host string) (*grpc.ClientConn, error) {
 func DialVolmgr(host string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
-	conn, err = grpc.Dial(host, grpc.WithInsecure())
+	conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
 	if err != nil {
 		time.Sleep(300 * time.Millisecond)
-		conn, err = grpc.Dial(host, grpc.WithInsecure())
+		conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
 		if err != nil {
 			time.Sleep(300 * time.Millisecond)
-			conn, err = grpc.Dial(host, grpc.WithInsecure())
+			conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
 		}
 	}
 	return conn, err
