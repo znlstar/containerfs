@@ -14,6 +14,7 @@ import (
 	"jd.com/sharkstore/raft"
 	"jd.com/sharkstore/raft/proto"
 	"jd.com/sharkstore/raft/storage/wal"
+	"math/rand"
 	"path"
 	"strconv"
 	"strings"
@@ -841,6 +842,7 @@ func (ns *nameSpace) BlockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 
 }
 
+/*
 //ChooseBlockGroup
 func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 
@@ -902,6 +904,57 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 				flag = true
 				break
 			}
+		}
+	}
+
+	if flag {
+		ns.BlockGroupDBSet(blockGroupID, blockGroup)
+		return 0, blockGroupID, blockGroup
+	} else {
+		return 1, -1, nil
+	}
+
+}
+*/
+
+func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
+
+	ns.RLock()
+	defer ns.RUnlock()
+
+	var blockGroupID int32
+	var blockGroup *vp.BlockGroup
+	flag := false
+
+	ret, blkgrps := ns.VolumeDBGet()
+	if !ret {
+		return 1, -1, nil
+	}
+
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	for true {
+		id := r.Intn(len(blkgrps))
+		bgid := blkgrps[id]
+
+		ret, bg := ns.BlockGroupDBGet(bgid)
+		if !ret {
+			continue
+		}
+		logger.Debug("bg1:%v\n", bg)
+
+		if bg.Status != 2 {
+			blockGroupID = bg.BlockGroupID
+			bg.FreeCnt = bg.FreeCnt - 1
+			if bg.FreeCnt <= 0 {
+				bg.Status = 2
+			} else {
+				bg.Status = 1
+			}
+			blockGroup = bg
+			logger.Debug("find a blockgroup,blgid:%v\n", bg.BlockGroupID)
+			flag = true
+			break
 		}
 	}
 

@@ -1279,8 +1279,7 @@ func (cfile *CFile) flushChannel() {
 			logger.Error("flushChannel SyncChunk Failed :%v\n", pSyncChunkReq.ChunkInfo)
 			connM.Close()
 			var err error
-			time.Sleep(time.Second)
-			MetaNodeAddr, _ = GetLeader(cfile.cfs.VolID)
+			time.Sleep(2 * time.Second)
 			connM, err = DialMeta(cfile.cfs.VolID)
 			if err != nil {
 				logger.Error("Dial failed:%v\n", err)

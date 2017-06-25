@@ -48,14 +48,15 @@ func DialMeta(volumeID string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
 
+	MetaNodeAddr, _ = GetLeader(volumeID)
 	conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
-
 	if err != nil {
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 		MetaNodeAddr, _ = GetLeader(volumeID)
 		conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 		if err != nil {
-			time.Sleep(300 * time.Millisecond)
+			time.Sleep(500 * time.Millisecond)
+			MetaNodeAddr, _ = GetLeader(volumeID)
 			conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
 		}
 	}
