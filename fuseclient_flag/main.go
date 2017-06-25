@@ -95,11 +95,12 @@ func main() {
 	}()
 
 	cfs.MetaNodeAddr, _ = cfs.GetLeader(*uuid)
-
-	ticker := time.NewTicker(time.Second * 60)
+	fmt.Printf("Leader:%v\n", cfs.MetaNodeAddr)
+	ticker := time.NewTicker(time.Second * 1)
 	go func() {
 		for _ = range ticker.C {
 			cfs.MetaNodeAddr, _ = cfs.GetLeader(*uuid)
+			fmt.Printf("Leader:%v\n", cfs.MetaNodeAddr)
 		}
 	}()
 
@@ -640,6 +641,7 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 		f.cfile.ReaderMap[req.Handle] = &rdinfo
 	}
 	if req.Offset == f.cfile.FileSize {
+		logger.Debug("Request Read file offset equal filesize")
 		return nil
 	}
 
@@ -648,6 +650,7 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 		logger.Error("== Read reqsize:%v, but return datasize:%v ==\n", req.Size, length)
 	}
 	if length < 0 {
+		logger.Error("Request Read file I/O Error(return data from cfs less than zero)")
 		return fuse.Errno(syscall.EIO)
 	}
 	return nil

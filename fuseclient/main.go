@@ -90,11 +90,12 @@ func main() {
 	}()
 
 	cfs.MetaNodeAddr, _ = cfs.GetLeader(uuid)
-	fmt.Println(cfs.MetaNodeAddr)
+	fmt.Printf("Leader:%v\n", cfs.MetaNodeAddr)
 	ticker := time.NewTicker(time.Second * 1)
 	go func() {
 		for _ = range ticker.C {
 			cfs.MetaNodeAddr, _ = cfs.GetLeader(uuid)
+			fmt.Printf("Leader:%v\n", cfs.MetaNodeAddr)
 		}
 	}()
 
@@ -194,6 +195,7 @@ func (d *Dir) setName(name string) {
 // Attr
 func (d *Dir) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Mode = os.ModeDir | 0755
+	a.Valid = time.Millisecond * 10
 	return nil
 }
 
