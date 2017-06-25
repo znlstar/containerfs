@@ -91,7 +91,7 @@ func main() {
 
 	cfs.MetaNodeAddr, _ = cfs.GetLeader(uuid)
 	fmt.Println(cfs.MetaNodeAddr)
-	ticker := time.NewTicker(time.Second * 60)
+	ticker := time.NewTicker(time.Second * 1)
 	go func() {
 		for _ = range ticker.C {
 			cfs.MetaNodeAddr, _ = cfs.GetLeader(uuid)
