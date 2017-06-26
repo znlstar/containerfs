@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"database/sql"
+	"errors"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/ipdcode/containerfs/logger"
@@ -33,6 +34,7 @@ var RepairServerAddr addr
 
 // MetaNodeAddr
 var MetaNodeAddr string
+var MetaNodePeers []string
 
 // Wg
 var Wg sync.WaitGroup
@@ -225,7 +227,7 @@ func beginRepairchunk(volid string, srcip string, srcport int, srcblkid int, pat
 	}
 
 	//update meta for the repair complete blk
-	conn, err = DialMeta()
+	conn, err = DialMeta(volid)
 	if err != nil {
 		logger.Error("Dial to metanode fail :%v for update blkds\n", err)
 		return -1
@@ -299,21 +301,54 @@ func (s *RepairServer) GetSrcData(in *rp.GetSrcDataReq, stream rp.Repair_GetSrcD
 	return nil
 }
 
-func DialMeta() (*grpc.ClientConn, error) {
+func GetLeader(volumeID string) (string, error) {
+
+	var leader string
+	var flag bool
+	for _, ip := range MetaNodePeers {
+		conn, err := grpc.Dial(ip, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+		if err != nil {
+			continue
+		}
+		defer conn.Close()
+		mc := mp.NewMetaNodeClient(conn)
+		pmGetMetaLeaderReq := &mp.GetMetaLeaderReq{
+			VolID: volumeID,
+		}
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		pmGetMetaLeaderAck, err1 := mc.GetMetaLeader(ctx, pmGetMetaLeaderReq)
+		if err1 != nil {
+			continue
+		}
+		if pmGetMetaLeaderAck.Ret != 0 {
+			continue
+		}
+		leader = pmGetMetaLeaderAck.Leader
+		flag = true
+		break
+	}
+	if !flag {
+		return "", errors.New("Get leader failed")
+	}
+	return leader, nil
+
+}
+
+// DialMeta
+func DialMeta(volumeID string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
 
-	conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
-
+	MetaNodeAddr, _ = GetLeader(volumeID)
+	conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
 	if err != nil {
-		time.Sleep(300 * time.Millisecond)
-		logger.Error("DialMeta 1: addr:%v", MetaNodeAddr)
-
-		conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
+		time.Sleep(500 * time.Millisecond)
+		MetaNodeAddr, _ = GetLeader(volumeID)
+		conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
 		if err != nil {
-			time.Sleep(300 * time.Millisecond)
-			logger.Error("DialMeta 1: addr:%v", MetaNodeAddr)
-			conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure())
+			time.Sleep(500 * time.Millisecond)
+			MetaNodeAddr, _ = GetLeader(volumeID)
+			conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
 		}
 	}
 	return conn, err
@@ -353,7 +388,7 @@ func init() {
 	mysqlConf.dbpassword = c.String("mysql::passwd")
 	mysqlConf.dbname = c.String("mysql::db")
 
-	MetaNodeAddr = c.String("metanode::host")
+	MetaNodePeers = c.Strings("metanode::host")
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(RepairServerAddr.log, "repair.log", 10, 100, logger.MB) //each 100M rolling
