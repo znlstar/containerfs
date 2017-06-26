@@ -71,7 +71,8 @@ func CreateVol(name string, capacity string) int32 {
 	}
 
 	// send to metadata to registry a new map
-	conn2, err3 := DialMeta(name)
+
+	conn2, err3 := grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
 	if err3 != nil {
 		logger.Error("CreateVol failed,Dial to metanode fail :%v\n", err3)
 		return -1
