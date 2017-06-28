@@ -13,6 +13,8 @@ import (
 	"jd.com/sharkstore/raft"
 	"jd.com/sharkstore/raft/proto"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"runtime"
 	"runtime/debug"
@@ -492,17 +494,11 @@ func showLeaders(s *MetaNodeServer) {
 		return
 	}
 	for _, v := range vols {
-		logger.Error("showLeaders UUID:%v", v.UUID)
-
 		_, nameSpace := ns.GetNameSpace(v.UUID)
 		if nameSpace != nil {
-			logger.Debug("Volume %v Leaders :", v.UUID)
 			l, t := s.RaftServer.LeaderTerm(nameSpace.RaftGroupID)
-			logger.Debug("RaftGroup LeaderID %v Term %v", l, t)
-		} else {
-			logger.Debug("No Volume %v Leader!", v.UUID)
+			logger.Debug("--------- Volume UUID %v,RaftGroup LeaderID %v Term %v ---------", v.UUID, l, t)
 		}
-
 	}
 	return
 
@@ -562,6 +558,10 @@ func main() {
 			os.Exit(1)
 		}
 	}
+
+	go func() {
+		http.ListenAndServe("127.0.0.1:10000", nil)
+	}()
 
 	ticker := time.NewTicker(time.Second * 10)
 	go func() {
