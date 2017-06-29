@@ -13,21 +13,15 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"io"
-	"math/rand"
 	"os"
 	"strconv"
 	"sync"
 	"time"
 )
 
-// MetaNodePeers ...
 var MetaNodePeers []string
-
-// VolMgrAddr ...
-var VolMgrAddr string
-
-//MetaNodeAddr ...
-var MetaNodeAddr string
+var VolMgrAddr string   //VolMgrAddr
+var MetaNodeAddr string //MetaNodeAddr
 
 const (
 	O_RDONLY = os.O_RDONLY // 0    00000000000000000000000000000000
@@ -42,7 +36,7 @@ const (
 // chunksize and buffersize for write
 const (
 	chunkSize  = 64 * 1024 * 1024
-	bufferSize = 1024 * 1024
+	bufferSize = 256 * 1024
 )
 
 // fs
@@ -408,16 +402,12 @@ func (cfs *CFS) CreateFile(path string, flags int) (int32, *CFile) {
 		return ret, nil
 	}
 
-	conn, err := DialMeta(cfs.VolID)
-	if err != nil {
-		return -1, nil
-	}
-
 	tmpBuffer := wBuffer{
 		buffer:   new(bytes.Buffer),
 		freeSize: bufferSize,
 	}
 
+	wChannel := make(chan *wBuffer, 128)
 	cfile = CFile{
 		Path:      path,
 		OpenFlag:  flags,
@@ -425,10 +415,10 @@ func (cfs *CFS) CreateFile(path string, flags int) (int32, *CFile) {
 		FileSize:  0,
 		ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
 
-		wBuffer: tmpBuffer,
-		ConnM:   conn,
+		wChannel: wChannel,
+		wBuffer:  tmpBuffer,
 	}
-	//go cfile.send()
+	go cfile.flushChannel()
 
 	return 0, &cfile
 }
@@ -443,10 +433,6 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 
 	if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
 
-		conn, err := DialMeta(cfs.VolID)
-		if err != nil {
-			return -1, nil
-		}
 		if (flags & O_APPEND) != 0 {
 			chunkInfos := make([]*mp.ChunkInfoWithBG, 0)
 
@@ -467,16 +453,17 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 					chunkInfo: lastChunk,
 				}
 
+				wChannel := make(chan *wBuffer, 128)
 				cfile = CFile{
 					Path:      path,
 					OpenFlag:  flags,
 					cfs:       cfs,
 					Writer:    writer,
 					FileSize:  tmpFileSize,
+					wChannel:  wChannel,
 					wBuffer:   tmpBuffer,
 					chunks:    chunkInfos,
 					ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
-					ConnM:     conn,
 				}
 			} else {
 
@@ -484,20 +471,21 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 					buffer:   new(bytes.Buffer),
 					freeSize: bufferSize,
 				}
+				wChannel := make(chan *wBuffer, 128)
 				cfile = CFile{
 					Path:      path,
 					OpenFlag:  flags,
 					cfs:       cfs,
 					Writer:    writer,
 					FileSize:  0,
+					wChannel:  wChannel,
 					wBuffer:   tmpBuffer,
 					ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
-					ConnM:     conn,
 				}
 
 			}
 
-			//go cfile.send()
+			go cfile.flushChannel()
 		} else {
 
 			cfs.DeleteFile(path)
@@ -510,18 +498,19 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 				freeSize: bufferSize,
 			}
 
+			wChannel := make(chan *wBuffer, 128)
 			cfile = CFile{
 				Path:      path,
 				OpenFlag:  flags,
 				cfs:       cfs,
 				Writer:    writer,
 				FileSize:  0,
+				wChannel:  wChannel,
 				wBuffer:   tmpBuffer,
 				chunks:    nil,
 				ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
-				ConnM:     conn,
 			}
-			//go cfile.send()
+			go cfile.flushChannel()
 		}
 	} else {
 		chunkInfos := make([]*mp.ChunkInfoWithBG, 0)
@@ -536,6 +525,7 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 			buffer:   new(bytes.Buffer),
 			freeSize: bufferSize,
 		}
+		wChannel := make(chan *wBuffer, 128)
 
 		cfile = CFile{
 			Path:      path,
@@ -543,12 +533,13 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 			cfs:       cfs,
 			Writer:    writer,
 			FileSize:  tmpFileSize,
+			wChannel:  wChannel,
 			wBuffer:   tmpBuffer,
 			chunks:    chunkInfos,
 			ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
 		}
 
-		//go cfile.send()
+		go cfile.flushChannel()
 	}
 	return 0, &cfile
 }
@@ -557,13 +548,6 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 func (cfs *CFS) UpdateOpenFile(cfile *CFile, flags int) int32 {
 
 	if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
-
-		conn, err := DialMeta(cfs.VolID)
-		if err != nil {
-			return -1
-		}
-
-		cfile.ConnM = conn
 
 		if (flags & O_APPEND) != 0 {
 			chunkInfos := make([]*mp.ChunkInfoWithBG, 0)
@@ -582,7 +566,7 @@ func (cfs *CFS) UpdateOpenFile(cfile *CFile, flags int) int32 {
 				}
 				cfile.wBuffer = tmpBuffer
 			}
-			//go cfile.send()
+			//go cfile.flushChannel()
 
 		} else {
 			cfs.DeleteFile(cfile.Path)
@@ -599,7 +583,7 @@ func (cfs *CFS) UpdateOpenFile(cfile *CFile, flags int) int32 {
 			cfile.chunks = nil
 			cfile.ReaderMap = make(map[fuse.HandleID]*ReaderInfo)
 
-			//go cfile.send()
+			//go cfile.flushChannel()
 		}
 	}
 	return 0
@@ -818,20 +802,17 @@ type CFile struct {
 	Path     string
 	OpenFlag int
 	FileSize int64
-	Status   int32 // 0 ok
+	Status   int // 0 ok
 
 	// for write
-	//WMutex sync.Mutex
+	WMutex sync.Mutex
 	Writer int32
 	//FirstW bool
-	wBuffer        wBuffer
-	wgWriteReps    sync.WaitGroup
-	ConnM          *grpc.ClientConn
-	wLastDataNode  [3]string
-	ConnD          [3]*grpc.ClientConn
-	Dc             [3]dp.DataNodeClient
-	CurChunkID     int64
-	CurChunkStatus [3]int32
+	wBuffer       wBuffer
+	wChannel      chan *wBuffer // write channel
+	wg            sync.WaitGroup
+	wgWriteReps   sync.WaitGroup
+	wLastDataNode [3]string
 
 	// for read
 	//lastoffset int64
@@ -841,42 +822,13 @@ type CFile struct {
 	ReaderMap map[fuse.HandleID]*ReaderInfo
 }
 
-func generateRandomNumber(start int, end int, count int) []int {
-	if end < start || (end-start) < count {
-		return nil
-	}
-
-	nums := make([]int, 0)
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	for len(nums) < count {
-		num := r.Intn((end - start)) + start
-
-		exist := false
-		for _, v := range nums {
-			if v == num {
-				exist = true
-				break
-			}
-		}
-
-		if !exist {
-			nums = append(nums, num)
-		}
-	}
-
-	return nums
-}
-
 func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64, size int64) {
 	var conn *grpc.ClientConn
 	var err error
 	var buffer *bytes.Buffer
 	outflag := 0
 	inflag := 0
-	idxs := generateRandomNumber(0, 3, 3)
-
-	for n := 0; n < len(cfile.chunks[chunkidx].BlockGroup.BlockInfos); n++ {
-		i := idxs[n]
+	for i := 0; i < len(cfile.chunks[chunkidx].BlockGroup.BlockInfos); i++ {
 		if cfile.chunks[chunkidx].Status[i] != 0 {
 			logger.Error("streamreadChunkReq chunk status:%v error, so retry other datanode!", cfile.chunks[chunkidx].Status[i])
 			outflag += 1
@@ -912,9 +864,11 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 			ack, err := stream.Recv()
 
 			if err == io.EOF {
+				//logger.Error("=== Recv11 err:%v ===", err)
 				break
 			}
 			if err != nil {
+				//if err != nil {
 				logger.Error("=== streamreadChunkReq Recv err:%v ===", err)
 				inflag += 1
 				outflag += 1
@@ -922,12 +876,14 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 			}
 			if ack != nil {
 				if len(ack.Databuf) == 0 {
+					//logger.Error("1== This time Recv from datanode size is 0")
 					continue
 				} else {
 					buffer.Write(ack.Databuf)
 					inflag = 0
 				}
 			} else {
+				//logger.Error("2== This time Recv from datanode size is 0")
 				continue
 			}
 
@@ -940,19 +896,19 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 		} else if inflag == 3 {
 			buffer = new(bytes.Buffer)
 			buffer.Write([]byte{})
-			logger.Error("Stream Read the chunk three copy Recv error")
+			logger.Debug("=== inflag:%v == buflen:%v ==", inflag, buffer.Len())
 			ch <- buffer
 			conn.Close()
 			break
 		} else if inflag < 3 {
-			logger.Error("Stream Read the chunk %v copy Recv error, so need retry other datanode!!!", inflag)
+			logger.Error("=== streamreadChunkReq Recv error, so need retry other datanode!!!")
 			continue
 		}
 	}
 	if outflag == 3 {
 		buffer = new(bytes.Buffer)
 		buffer.Write([]byte{})
-		logger.Error("Stream Read the chunk three copy Datanode error")
+		logger.Debug("=== outflag:%v == buflen:%v ==", outflag, buffer.Len())
 		ch <- buffer
 		conn.Close()
 	}
@@ -1065,6 +1021,8 @@ func (cfile *CFile) Write(buf []byte, len int32) int32 {
 		return -2
 	}
 
+	cfile.WMutex.Lock()
+	defer cfile.WMutex.Unlock()
 	var w int32
 	w = 0
 
@@ -1087,13 +1045,11 @@ func (cfile *CFile) Write(buf []byte, len int32) int32 {
 			cfile.wBuffer.freeSize = bufferSize
 		}
 		if len-w < cfile.wBuffer.freeSize {
-			if len != w {
-				cfile.wBuffer.buffer.Write(buf[w:len])
-				cfile.wBuffer.freeSize = cfile.wBuffer.freeSize - (len - w)
-				cfile.FileSize = cfile.FileSize + int64(len-w)
-				cfile.wBuffer.chunkInfo.ChunkSize = cfile.wBuffer.chunkInfo.ChunkSize + int32(len-w)
-				w = len
-			}
+			cfile.wBuffer.buffer.Write(buf[w:len])
+			cfile.wBuffer.freeSize = cfile.wBuffer.freeSize - (len - w)
+			cfile.FileSize = cfile.FileSize + int64(len-w)
+			cfile.wBuffer.chunkInfo.ChunkSize = cfile.wBuffer.chunkInfo.ChunkSize + int32(len-w)
+			w = len
 			break
 		} else {
 			cfile.wBuffer.buffer.Write(buf[w : w+cfile.wBuffer.freeSize])
@@ -1104,20 +1060,17 @@ func (cfile *CFile) Write(buf []byte, len int32) int32 {
 		}
 
 		if cfile.wBuffer.freeSize == 0 {
-			ret := cfile.push()
-			if ret != 0 {
-				return -1
-			}
+			cfile.push2Channel()
 		}
 	}
 
 	return w
 }
 
-func (cfile *CFile) push() int32 {
+func (cfile *CFile) push2Channel() int32 {
 
 	if cfile.Status != 0 {
-		logger.Error("cfile status error , push func return err ")
+		logger.Error("cfile status error , push2Channel func return err ")
 		return 0
 	}
 
@@ -1125,23 +1078,42 @@ func (cfile *CFile) push() int32 {
 		return 0
 	}
 	wBuffer := cfile.wBuffer // record cur buffer
+	cfile.wg.Add(1)
+	cfile.wChannel <- &wBuffer // push to channel
 
-	return cfile.send(&wBuffer)
+	return 0
 }
 
-func (cfile *CFile) Flush() int32 {
+func (cfile *CFile) close2Channel() int32 {
 
 	if cfile.Status != 0 {
-		logger.Error("cfile status error , Flush func return err ")
-		return cfile.Status
+		logger.Error("cfile status error , close2Channel func return err ")
+		return 0
 	}
-	//avoid repeat push for integer file ETC. 64MB , the last push has already done in Write func
+
+	/*
+	   1. avoid repeat push for integer file ETC. 64MB , the last push has already done in Write func
+	*/
 	if cfile.wBuffer.freeSize != 0 && cfile.wBuffer.chunkInfo != nil {
-		wBuffer := cfile.wBuffer
-		cfile.wBuffer.freeSize = 0
-		return cfile.send(&wBuffer)
+		wBuffer := cfile.wBuffer // record cur buffer
+		cfile.wg.Add(1)
+		cfile.wChannel <- &wBuffer // push to channel
 	}
 	return 0
+}
+
+//DestroyChannel: destroy channel
+func (cfile *CFile) DestroyChannel() {
+
+	if cfile.Status != 0 {
+		logger.Error("cfile status error , DestroyChannel func return err ")
+		return
+	}
+	var wEndBuffer wBuffer
+	wEndBuffer.buffer = nil
+	wEndBuffer.freeSize = 0
+	wEndBuffer.chunkInfo = nil
+	cfile.wChannel <- &wEndBuffer // send the end flag to channel
 }
 
 func (cfile *CFile) SetChunkStatus(ip string, port int32, blkgrpid int32, blkid int32, chunkid int64, position int32, status int32) int32 {
@@ -1173,139 +1145,188 @@ func (cfile *CFile) SetChunkStatus(ip string, port int32, blkgrpid int32, blkid 
 
 	return 0
 }
-func (cfile *CFile) writeChunk(ip string, port int32, dc dp.DataNodeClient, req *dp.WriteChunkReq, blkgrpid int32, copies *int, position int32) {
+func (cfile *CFile) writeChunk(ip string, port int32, dc dp.DataNodeClient, req *dp.WriteChunkReq, blkgrpid int32, copies *int, position int32, chunkStatus *int32) {
 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
 	ret, err := dc.WriteChunk(ctx, req)
 	if err != nil {
 		cfile.SetChunkStatus(ip, port, blkgrpid, req.BlockID, req.ChunkID, position, 1)
-		cfile.CurChunkStatus[position] = 1
+		*chunkStatus = 1
 	} else {
 		if ret.Ret != 0 {
 			cfile.SetChunkStatus(ip, port, blkgrpid, req.BlockID, req.ChunkID, position, 1)
-			cfile.CurChunkStatus[position] = 1
+			*chunkStatus = 1
 		} else {
 			*copies = *copies + 1
 		}
 	}
 	cfile.wgWriteReps.Add(-1)
+
 }
 
-func (cfile *CFile) send(v *wBuffer) int32 {
+func (cfile *CFile) flushChannel() {
 
-	dataBuf := v.buffer.Next(v.buffer.Len())
+	// update chunkinfo to metanode
+	connM, err := DialMeta(cfile.cfs.VolID)
+	if err != nil {
+		logger.Error("Dial failed:%v\n", err)
+		logger.Error("process exit!!!")
+		os.Exit(1)
+	}
+	defer connM.Close()
+
+	var addr [3]string
+	var connD [3]*grpc.ClientConn
+	var dc [3]dp.DataNodeClient
+	var curChunkID int64 = -1
+	var curChunkStatus [3]int32
+
 	copies := 0
 
-	if v.chunkInfo.ChunkID != cfile.CurChunkID {
-		cfile.CurChunkID = v.chunkInfo.ChunkID
-		cfile.CurChunkStatus[0] = 0
-		cfile.CurChunkStatus[1] = 0
-		cfile.CurChunkStatus[2] = 0
-	}
+	for {
+		v := <-cfile.wChannel
 
-	for i := range v.chunkInfo.BlockGroup.BlockInfos {
-
-		if cfile.CurChunkStatus[i] != 0 {
-			continue
+		if v.buffer == nil && v.chunkInfo == nil && v.freeSize == 0 {
+			if connD[0] != nil {
+				connD[0].Close()
+			}
+			if connD[1] != nil {
+				connD[1].Close()
+			}
+			if connD[2] != nil {
+				connD[2].Close()
+			}
+			break
 		}
 
-		ip := utils.Inet_ntoa(v.chunkInfo.BlockGroup.BlockInfos[i].DataNodeIP).String()
-		port := int(v.chunkInfo.BlockGroup.BlockInfos[i].DataNodePort)
-		addr := ip + ":" + strconv.Itoa(port)
+		dataBuf := v.buffer.Next(v.buffer.Len())
 
-		if addr != cfile.wLastDataNode[i] {
-			if cfile.ConnD[i] != nil {
-				cfile.ConnD[i].Close()
-			}
-			var err error
-			cfile.ConnD[i], err = DialData(addr)
-			if err != nil {
-				logger.Error("send to datanode failed,Dial failed:%v\n", err)
+		copies = 0
+
+		if v.chunkInfo.ChunkID != curChunkID {
+			curChunkStatus[0] = 0
+			curChunkStatus[1] = 0
+			curChunkStatus[2] = 0
+			curChunkID = v.chunkInfo.ChunkID
+		}
+
+		for i := range v.chunkInfo.BlockGroup.BlockInfos {
+
+			if curChunkStatus[i] != 0 {
 				continue
 			}
-			cfile.Dc[i] = dp.NewDataNodeClient(cfile.ConnD[i])
-			cfile.wLastDataNode[i] = addr
+			ip := utils.Inet_ntoa(v.chunkInfo.BlockGroup.BlockInfos[i].DataNodeIP).String()
+			port := int(v.chunkInfo.BlockGroup.BlockInfos[i].DataNodePort)
+
+			addr[i] = ip + ":" + strconv.Itoa(port)
+			if addr[i] != cfile.wLastDataNode[i] {
+				if connD[i] != nil {
+					connD[i].Close()
+				}
+				var err error
+				connD[i], err = DialData(addr[i])
+				if err != nil {
+					logger.Error("flushChannel to datanode failed,Dial failed:%v\n", err)
+					curChunkStatus[i] = 1
+					continue
+				}
+				dc[i] = dp.NewDataNodeClient(connD[i])
+				cfile.wLastDataNode[i] = addr[i]
+			}
+
+			blockID := v.chunkInfo.BlockGroup.BlockInfos[i].BlockID
+			chunkID := v.chunkInfo.ChunkID
+
+			pWriteChunkReq := &dp.WriteChunkReq{
+				ChunkID: chunkID,
+				BlockID: blockID,
+				Databuf: dataBuf,
+			}
+
+			cfile.wgWriteReps.Add(1)
+			go cfile.writeChunk(ip, v.chunkInfo.BlockGroup.BlockInfos[i].DataNodePort, dc[i], pWriteChunkReq, v.chunkInfo.BlockGroup.BlockGroupID, &copies, int32(i), &curChunkStatus[i])
+
 		}
 
-		blockID := v.chunkInfo.BlockGroup.BlockInfos[i].BlockID
-		chunkID := v.chunkInfo.ChunkID
+		cfile.wgWriteReps.Wait()
 
-		pWriteChunkReq := &dp.WriteChunkReq{
-			ChunkID: chunkID,
-			BlockID: blockID,
-			Databuf: dataBuf,
-		}
-
-		cfile.wgWriteReps.Add(1)
-		go cfile.writeChunk(ip, v.chunkInfo.BlockGroup.BlockInfos[i].DataNodePort, cfile.Dc[i], pWriteChunkReq, v.chunkInfo.BlockGroup.BlockGroupID, &copies, int32(i))
-
-	}
-
-	cfile.wgWriteReps.Wait()
-
-	if copies < 1 {
-		logger.Error("WriteChunk copies < 2")
-		cfile.Status = 1
-		return cfile.Status
-	}
-
-	mc := mp.NewMetaNodeClient(cfile.ConnM)
-	pSyncChunkReq := &mp.SyncChunkReq{
-		FileName: cfile.Path,
-		VolID:    cfile.cfs.VolID,
-	}
-
-	var tmpChunkInfo mp.ChunkInfo
-	tmpChunkInfo.ChunkSize = v.chunkInfo.ChunkSize
-	tmpChunkInfo.ChunkID = v.chunkInfo.ChunkID
-	tmpChunkInfo.BlockGroupID = v.chunkInfo.BlockGroup.BlockGroupID
-
-	for i := 0; i < 3; i++ {
-		tmpChunkInfo.Status = append(tmpChunkInfo.Status, cfile.CurChunkStatus[i])
-	}
-
-	pSyncChunkReq.ChunkInfo = &tmpChunkInfo
-
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	pSyncChunkAck, ret := mc.SyncChunk(ctx, pSyncChunkReq)
-	if ret != nil {
-		logger.Error("send SyncChunk Failed :%v\n", pSyncChunkReq.ChunkInfo)
-		cfile.ConnM.Close()
-		var err error
-		time.Sleep(2 * time.Second)
-		cfile.ConnM, err = DialMeta(cfile.cfs.VolID)
-		if err != nil {
-			logger.Error("Dial failed:%v\n", err)
+		if copies < 2 {
+			logger.Error("WriteChunk copies < 2")
 			cfile.Status = 1
-			return cfile.Status
+			cfile.wg.Add(-1)
+			break
 		}
-		mc := mp.NewMetaNodeClient(cfile.ConnM)
+
+		mc := mp.NewMetaNodeClient(connM)
+		pSyncChunkReq := &mp.SyncChunkReq{
+			FileName: cfile.Path,
+			VolID:    cfile.cfs.VolID,
+		}
+
+		var tmpChunkInfo mp.ChunkInfo
+		tmpChunkInfo.ChunkSize = v.chunkInfo.ChunkSize
+		tmpChunkInfo.ChunkID = v.chunkInfo.ChunkID
+		tmpChunkInfo.BlockGroupID = v.chunkInfo.BlockGroup.BlockGroupID
+
+		for i := 0; i < 3; i++ {
+			tmpChunkInfo.Status = append(tmpChunkInfo.Status, curChunkStatus[i])
+
+		}
+
+		pSyncChunkReq.ChunkInfo = &tmpChunkInfo
+
 		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-		pSyncChunkAck, ret = mc.SyncChunk(ctx, pSyncChunkReq)
+		pSyncChunkAck, ret := mc.SyncChunk(ctx, pSyncChunkReq)
 		if ret != nil {
-			logger.Error("send SyncChunk Failed again:%v\n", pSyncChunkReq.ChunkInfo)
+			logger.Error("flushChannel SyncChunk Failed :%v\n", pSyncChunkReq.ChunkInfo)
+			connM.Close()
+			var err error
+			time.Sleep(2 * time.Second)
+			connM, err = DialMeta(cfile.cfs.VolID)
+			if err != nil {
+				logger.Error("Dial failed:%v\n", err)
+				cfile.Status = 1
+				cfile.wg.Add(-1)
+				break
+			}
+			mc := mp.NewMetaNodeClient(connM)
+			ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+			pSyncChunkAck, ret = mc.SyncChunk(ctx, pSyncChunkReq)
+			if ret != nil {
+				logger.Error("flushChannel SyncChunk Failed again:%v\n", pSyncChunkReq.ChunkInfo)
+				cfile.Status = 1
+				cfile.wg.Add(-1)
+				break
+			}
+		}
+		if pSyncChunkAck.Ret != 0 {
 			cfile.Status = 1
-			return cfile.Status
+			cfile.wg.Add(-1)
+			logger.Error("flushChannel SyncChunk Failed :%v\n", pSyncChunkReq.ChunkInfo)
+			break
 		}
-	}
-	if pSyncChunkAck.Ret != 0 {
-		cfile.Status = 1
-		logger.Error("send SyncChunk Failed :%v\n", pSyncChunkReq.ChunkInfo)
-		return cfile.Status
-	}
 
-	chunkNum := len(cfile.chunks)
-	v.chunkInfo.Status = tmpChunkInfo.Status
-	if chunkNum == 0 {
-		cfile.chunks = append(cfile.chunks, v.chunkInfo)
-	} else {
-		if cfile.chunks[chunkNum-1].ChunkID == v.chunkInfo.ChunkID {
-			cfile.chunks[chunkNum-1].ChunkSize = v.chunkInfo.ChunkSize
-			cfile.chunks[chunkNum-1].Status = v.chunkInfo.Status
-		} else {
+		chunkNum := len(cfile.chunks)
+
+		v.chunkInfo.Status = tmpChunkInfo.Status
+
+		if chunkNum == 0 {
 			cfile.chunks = append(cfile.chunks, v.chunkInfo)
+		} else {
+			if cfile.chunks[chunkNum-1].ChunkID == v.chunkInfo.ChunkID {
+				cfile.chunks[chunkNum-1].ChunkSize = v.chunkInfo.ChunkSize
+				cfile.chunks[chunkNum-1].Status = v.chunkInfo.Status
+			} else {
+				cfile.chunks = append(cfile.chunks, v.chunkInfo)
+			}
 		}
+
+		cfile.wg.Add(-1)
 	}
-	return cfile.Status
+}
+
+// flush
+func (cfile *CFile) Flush() int32 {
+	return 0
 }
 
 // sync
@@ -1313,39 +1334,23 @@ func (cfile *CFile) Sync() int32 {
 	return 0
 }
 
-func (cfile *CFile) CloseConns() {
-
-	if cfile.ConnM != nil {
-		cfile.ConnM.Close()
-	}
-	if cfile.ConnD[0] != nil {
-		cfile.ConnD[0].Close()
-	}
-	if cfile.ConnD[1] != nil {
-		cfile.ConnD[1].Close()
-	}
-	if cfile.ConnD[2] != nil {
-		cfile.ConnD[2].Close()
-	}
-	cfile.wLastDataNode = [3]string{}
-	cfile.Dc = [3]dp.DataNodeClient{}
-	cfile.CurChunkID = -1
-	cfile.CurChunkStatus = [3]int32{}
-}
-
 // close
 func (cfile *CFile) Close(flags int) int32 {
-	/*
-		if cfile.Status != 0 {
-			logger.Error("cfile status error , Close func just return")
-			return -1
-		}
+	if cfile.Status != 0 {
+		logger.Error("cfile status error , Close func just return")
+		return -1
+	}
 
-		if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
-			return cfile.Flush()
-		}
-		return 0
-	*/
+	if (flags&O_WRONLY) != 0 || (flags&O_RDWR) != 0 {
+		cfile.close2Channel()
+		cfile.wg.Wait()
+	}
+
+	if cfile.Status != 0 {
+		logger.Error("cfile status error , Close func return")
+		return -1
+	}
+
 	return 0
 }
 

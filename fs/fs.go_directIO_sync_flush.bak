@@ -20,14 +20,9 @@ import (
 	"time"
 )
 
-// MetaNodePeers ...
 var MetaNodePeers []string
-
-// VolMgrAddr ...
-var VolMgrAddr string
-
-//MetaNodeAddr ...
-var MetaNodeAddr string
+var VolMgrAddr string   //VolMgrAddr
+var MetaNodeAddr string //MetaNodeAddr
 
 const (
 	O_RDONLY = os.O_RDONLY // 0    00000000000000000000000000000000

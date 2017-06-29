@@ -3,16 +3,16 @@ package main
 import (
 	"bazil.org/fuse"
 	"bazil.org/fuse/fs"
-	"flag"
 	"fmt"
 	cfs "github.com/ipdcode/containerfs/fs"
 	"github.com/ipdcode/containerfs/logger"
 	mp "github.com/ipdcode/containerfs/proto/mp"
+	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
+	"log"
 	"math"
 	"os"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -58,25 +58,20 @@ type File struct {
 
 func main() {
 
-	uuid := flag.String("uuid", "xxx", "ContainerFS Volume UUID")
-	mountPoint := flag.String("mountpoint", "/mnt", "ContainerFS MountPoint")
-	addr1 := flag.String("volmgr", "127.0.0.1:10001", "ContainerFS volmgr host")
-	addr2 := flag.String("metanode", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS metanode hosts")
-
-	log := flag.String("log", "/home", "ContainerFS log level")
-	loglevel := flag.String("loglevel", "error", "ContainerFS log level")
-
-	isReadOnly := flag.Int("readonly", 0, "Is readonly 1 for ture ,0 for false ,defalut 0")
-
-	flag.Parse()
-
-	cfs.VolMgrAddr = *addr1
-	cfs.MetaNodePeers = strings.Split(*addr2, ",")
+	c, err := config.NewConfig(os.Args[1])
+	if err != nil {
+		fmt.Println("NewConfig err")
+		os.Exit(1)
+	}
+	uuid = c.String("uuid")
+	mountPoint = c.String("mountpoint")
+	cfs.VolMgrAddr = c.String("volmgr")
+	//cfs.EtcdEndPoints = c.Strings("etcd")
+	cfs.MetaNodePeers = c.Strings("metanode")
 
 	logger.SetConsole(true)
-	logger.SetRollingFile(*log, "fuse.log", 10, 100, logger.MB) //each 100M rolling
-
-	switch *loglevel {
+	logger.SetRollingFile(c.String("log"), "fuse.log", 10, 100, logger.MB) //each 100M rolling
+	switch level := c.String("loglevel"); level {
 	case "error":
 		logger.SetLevel(logger.ERROR)
 	case "debug":
@@ -94,82 +89,50 @@ func main() {
 		}
 	}()
 
-	cfs.MetaNodeAddr, _ = cfs.GetLeader(*uuid)
+	cfs.MetaNodeAddr, _ = cfs.GetLeader(uuid)
 	fmt.Printf("Leader:%v\n", cfs.MetaNodeAddr)
 	ticker := time.NewTicker(time.Second * 60)
 	go func() {
 		for _ = range ticker.C {
-			cfs.MetaNodeAddr, _ = cfs.GetLeader(*uuid)
+			cfs.MetaNodeAddr, _ = cfs.GetLeader(uuid)
 			fmt.Printf("Leader:%v\n", cfs.MetaNodeAddr)
 		}
 	}()
 
-	err := mount(*uuid, *mountPoint, *isReadOnly)
+	err = mount(uuid, mountPoint)
 	if err != nil {
-		fmt.Println("mount failed ...")
+		log.Fatal(err)
 	}
 }
 
-func mount(uuid, mountPoint string, isReadOnly int) error {
+func mount(uuid, mountPoint string) error {
 	cfs := cfs.OpenFileSystem(uuid)
+	c, err := fuse.Mount(
+		mountPoint,
+		fuse.MaxReadahead(128*1024),
+		fuse.AsyncRead(),
+		fuse.WritebackCache(),
+		fuse.FSName("ContainerFS-"+uuid),
+		fuse.LocalVolume(),
+		fuse.VolumeName("ContainerFS-"+uuid))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
 
-	if isReadOnly == 0 {
-		c, err := fuse.Mount(
-			mountPoint,
-			fuse.MaxReadahead(128*1024),
-			fuse.AsyncRead(),
-			fuse.WritebackCache(),
-			fuse.FSName("ContainerFS-"+uuid),
-			fuse.LocalVolume(),
-			fuse.VolumeName("ContainerFS-"+uuid))
-		if err != nil {
-			return err
-		}
-		defer c.Close()
-
-		filesys := &FS{
-			cfs: cfs,
-		}
-		if err := fs.Serve(c, filesys); err != nil {
-			return err
-		}
-		// check if the mount process has an error to report
-		<-c.Ready
-		if err := c.MountError; err != nil {
-			return err
-		}
-
-		return nil
-	} else {
-		c, err := fuse.Mount(
-			mountPoint,
-			fuse.MaxReadahead(128*1024),
-			fuse.AsyncRead(),
-			fuse.WritebackCache(),
-			fuse.FSName("ContainerFS-"+uuid),
-			fuse.LocalVolume(),
-			fuse.VolumeName("ContainerFS-"+uuid),
-			fuse.ReadOnly())
-		if err != nil {
-			return err
-		}
-		defer c.Close()
-
-		filesys := &FS{
-			cfs: cfs,
-		}
-		if err := fs.Serve(c, filesys); err != nil {
-			return err
-		}
-		// check if the mount process has an error to report
-		<-c.Ready
-		if err := c.MountError; err != nil {
-			return err
-		}
-
-		return nil
+	filesys := &FS{
+		cfs: cfs,
+	}
+	if err := fs.Serve(c, filesys); err != nil {
+		return err
+	}
+	// check if the mount process has an error to report
+	<-c.Ready
+	if err := c.MountError; err != nil {
+		return err
 	}
 
+	return nil
 }
 
 var _ = fs.FS(&FS{})
@@ -547,7 +510,7 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Size = uint64(inode.FileSize)
 	a.Inode = uint64(inode.InodeID)
 
-	a.BlockSize = 64 * 1026 * 1024 // this is for fuse attr quick update
+	a.BlockSize = 128 * 1024 // this is for fuse attr quick update
 	a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
 	a.Mode = 0666
 	a.Valid = time.Millisecond * 10
@@ -608,26 +571,23 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	/*
-		var err error
-		ret := f.cfile.Close(int(req.Flags))
-		if ret != 0 {
-			err = fuse.Errno(syscall.EIO)
-		}
-
-	*/
+	var err error
+	ret := f.cfile.Close(int(req.Flags))
+	if ret != 0 {
+		err = fuse.Errno(syscall.EIO)
+	}
 	f.handles--
 
 	if int(req.Flags)&cfs.O_WRONLY != 0 || int(req.Flags)&cfs.O_RDWR != 0 {
-		f.cfile.CloseConns()
 		f.writers--
 	}
 
 	if f.handles == 0 {
+		f.cfile.DestroyChannel()
 		f.cfile = nil
 	}
 
-	return nil
+	return err
 }
 
 var _ = fs.HandleReader(&File{})
@@ -663,8 +623,8 @@ var _ = fs.HandleWriter(&File{})
 // Write
 func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
 
-	//f.mu.Lock()
-	//defer f.mu.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	w := f.cfile.Write(req.Data, int32(len(req.Data)))
 	if w != int32(len(req.Data)) {
 		if w == -1 {
@@ -681,17 +641,11 @@ var _ = fs.HandleFlusher(&File{})
 
 // Flush
 func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
-	logger.Debug("Flush...")
-	f.cfile.Flush()
 	return nil
 }
 
-var _ fs.NodeFsyncer = (*File)(nil)
-
 // Fsync
 func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
-	logger.Debug("Fsync...")
-	f.cfile.Flush()
 	return nil
 }
 
