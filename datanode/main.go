@@ -22,25 +22,25 @@ import (
 	"time"
 )
 
-// DataNodeServer
+// DataNodeServer ...
 type DataNodeServer struct {
 	Mutex sync.Mutex
 }
 
 type addr struct {
 	Ipnr  net.IP
-	IpInt int32
-	IpStr string
+	IPInt int32
+	IPStr string
 	Port  int32
 	Path  string
 	Flag  string
 	Log   string
 
-	VolMgrIp   string
+	VolMgrIP   string
 	VolMgrPort string
 }
 
-// DataNodeServerAddr
+// DataNodeServerAddr ...
 var DataNodeServerAddr addr
 
 func startDataService() {
@@ -58,7 +58,7 @@ func startDataService() {
 }
 
 func registryToVolMgr() {
-	conn, err := grpc.Dial(DataNodeServerAddr.VolMgrIp+":"+DataNodeServerAddr.VolMgrPort, grpc.WithInsecure())
+	conn, err := grpc.Dial(DataNodeServerAddr.VolMgrIP+":"+DataNodeServerAddr.VolMgrPort, grpc.WithInsecure())
 	if err != nil {
 		logger.Debug("data node statup failed : Dial to volmgr failed !")
 		os.Exit(1)
@@ -67,7 +67,7 @@ func registryToVolMgr() {
 	c := vp.NewVolMgrClient(conn)
 
 	var datanodeRegistryReq vp.DatanodeRegistryReq
-	datanodeRegistryReq.Ip = DataNodeServerAddr.IpInt
+	datanodeRegistryReq.Ip = DataNodeServerAddr.IPInt
 	datanodeRegistryReq.Port = DataNodeServerAddr.Port
 	diskInfo := utils.DiskUsage(DataNodeServerAddr.Path)
 	capacity := int32(float64(diskInfo.All) / float64(1024*1024*1024) * 0.8)
@@ -98,7 +98,7 @@ func registryToVolMgr() {
 
 func heartbeatToVolMgr() {
 
-	conn, err := grpc.Dial(DataNodeServerAddr.VolMgrIp+":"+DataNodeServerAddr.VolMgrPort, grpc.WithInsecure())
+	conn, err := grpc.Dial(DataNodeServerAddr.VolMgrIP+":"+DataNodeServerAddr.VolMgrPort, grpc.WithInsecure())
 	if err != nil {
 		logger.Debug("HearBeat failed : Dial to volmgr failed !")
 	}
@@ -110,7 +110,7 @@ func heartbeatToVolMgr() {
 	used := int32(float64(diskInfo.Used) / float64(1024*1024*1024))
 
 	var datanodeHeartbeatReq vp.DatanodeHeartbeatReq
-	datanodeHeartbeatReq.Ip = DataNodeServerAddr.IpInt
+	datanodeHeartbeatReq.Ip = DataNodeServerAddr.IPInt
 	datanodeHeartbeatReq.Port = DataNodeServerAddr.Port
 	datanodeHeartbeatReq.Free = free
 	datanodeHeartbeatReq.Used = used
@@ -141,7 +141,7 @@ func (s *DataNodeServer) DatanodeHealthCheck(ctx context.Context, in *dp.Datanod
 	return &ack, nil
 }
 
-// WriteChunk
+// WriteChunk ...
 func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (*dp.WriteChunkAck, error) {
 	var f *os.File
 	var err error
@@ -234,7 +234,7 @@ func (s *DataNodeServer) ReadChunk(ctx context.Context, in *dp.ReadChunkReq) (*d
 }
 */
 
-// StreamReadChunk
+// StreamReadChunk ...
 func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.DataNode_StreamReadChunkServer) error {
 	chunkID := in.ChunkID
 	blockID := in.BlockID
@@ -309,17 +309,17 @@ func init() {
 		os.Exit(1)
 	}
 
-	DataNodeServerAddr.IpStr = c.String("host")
-	ipnr := net.ParseIP(DataNodeServerAddr.IpStr)
+	DataNodeServerAddr.IPStr = c.String("host")
+	ipnr := net.ParseIP(DataNodeServerAddr.IPStr)
 	DataNodeServerAddr.Ipnr = ipnr
 	ipint := utils.Inet_aton(ipnr)
-	DataNodeServerAddr.IpInt = ipint
+	DataNodeServerAddr.IPInt = ipint
 	port, _ := c.Int("port")
 	DataNodeServerAddr.Port = int32(port)
 	DataNodeServerAddr.Path = c.String("path")
 	DataNodeServerAddr.Log = c.String("log")
 	DataNodeServerAddr.Flag = DataNodeServerAddr.Path + "/.registryflag"
-	DataNodeServerAddr.VolMgrIp = c.String("volmgr::host")
+	DataNodeServerAddr.VolMgrIP = c.String("volmgr::host")
 	DataNodeServerAddr.VolMgrPort = c.String("volmgr::port")
 
 	logger.SetConsole(true)

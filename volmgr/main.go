@@ -29,10 +29,10 @@ type addr struct {
 	log  string
 }
 
-// VolMgrServerAddr
+// VolMgrServerAddr ...
 var VolMgrServerAddr addr
 
-// Wg
+// Wg ...
 var Wg sync.WaitGroup
 
 type mysqlc struct {
@@ -44,18 +44,19 @@ type mysqlc struct {
 
 var mysqlConf mysqlc
 
+// BlkSize : each block size
 const (
-	Blksize = 10 /*G*/
+	BlkSize = 10 /*G*/
 )
 
-// Mutexvar g_RpcConfig RpcConfigOpts
+// Mutex var g_RpcConfig RpcConfigOpts
 var Mutex sync.RWMutex
 var err string
 
-// VolMgrServer
+// VolMgrServer ...
 type VolMgrServer struct{}
 
-// VolMgrDB
+// VolMgrDB ...
 var VolMgrDB *sql.DB
 
 func checkErr(err error) {
@@ -64,37 +65,37 @@ func checkErr(err error) {
 	}
 }
 
-// DatanodeRegistry
+// DatanodeRegistry : datanode registry to disks table of cfs db
 func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegistryReq) (*vp.DatanodeRegistryAck, error) {
 	ack := vp.DatanodeRegistryAck{}
-	dn_ip := utils.Inet_ntoa(in.Ip)
-	ip := dn_ip.String()
-	dn_port := in.Port
-	dn_mount := in.MountPoint
-	dn_capacity := in.Capacity
+	dnIP := utils.Inet_ntoa(in.Ip)
+	ip := dnIP.String()
+	dnPort := in.Port
+	dnMount := in.MountPoint
+	dnCapacity := in.Capacity
 
 	disk, err := VolMgrDB.Prepare("INSERT INTO disks(ip,port,mount,total,statu) VALUES(?, ?, ?, ?, ?)")
 	if err != nil {
-		logger.Error("DataNode(%v:%v) Registry insert into disks table prepare err:%v", ip, dn_port, err)
+		logger.Error("DataNode(%v:%v) Registry insert into disks table prepare err:%v", ip, dnPort, err)
 		ack.Ret = -1
 		return &ack, err
 	}
 	defer disk.Close()
 
-	_, err = disk.Exec(ip, dn_port, dn_mount, dn_capacity, 0)
+	_, err = disk.Exec(ip, dnPort, dnMount, dnCapacity, 0)
 	if err != nil {
-		logger.Error("DataNode(%v:%v) Registry insert into disks table exec err:%v", ip, dn_port, err)
+		logger.Error("DataNode(%v:%v) Registry insert into disks table exec err:%v", ip, dnPort, err)
 		ack.Ret = -1
 		return &ack, err
 	}
 
-	blkcount := dn_capacity / Blksize
+	blkcount := dnCapacity / BlkSize
 
 	hostip := ip
-	hostport := strconv.Itoa(int(dn_port))
+	hostport := strconv.Itoa(int(dnPort))
 	blk, err := VolMgrDB.Prepare("INSERT INTO blk(hostip, hostport, allocated, disabled) VALUES(?, ?, ?, ?)")
 	if err != nil {
-		logger.Error("DataNode(%v:%v) Registry insert into blk table prepare err:%v", ip, dn_port, err)
+		logger.Error("DataNode(%v:%v) Registry insert into blk table prepare err:%v", ip, dnPort, err)
 		ack.Ret = -1
 		return &ack, err
 	}
@@ -119,14 +120,14 @@ func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegi
 	}
 
 	sort.Ints(blkids)
-	logger.Debug("The disk(%s:%s) mount:%s have blks:%v", hostip, hostport, dn_mount, blkids)
+	logger.Debug("The disk(%s:%s) mount:%s have blks:%v", hostip, hostport, dnMount, blkids)
 	ack.StartBlockID = int32(blkids[0])
 	ack.EndBlockID = int32(blkids[len(blkids)-1])
 	ack.Ret = 0 //success
 	return &ack, nil
 }
 
-// DatanodeHeartbeat
+// DatanodeHeartbeat : each datanode heartbeat to db
 func (s *VolMgrServer) DatanodeHeartbeat(ctx context.Context, in *vp.DatanodeHeartbeatReq) (*vp.DatanodeHeartbeatAck, error) {
 	ack := vp.DatanodeHeartbeatAck{}
 	port := in.Port
@@ -160,7 +161,7 @@ func (s *VolMgrServer) DatanodeHeartbeat(ctx context.Context, in *vp.DatanodeHea
 	return &ack, nil
 }
 
-// CreateVol
+// CreateVol : Creat a Volume for Users
 func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.CreateVolAck, error) {
 	ack := vp.CreateVolAck{}
 	volname := in.VolName
@@ -175,12 +176,12 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 
 	//the volume need block group total numbers
 	var blkgrpnum int32
-	if volsize < Blksize {
+	if volsize < BlkSize {
 		blkgrpnum = 1
-	} else if volsize%Blksize == 0 {
-		blkgrpnum = volsize / Blksize
+	} else if volsize%BlkSize == 0 {
+		blkgrpnum = volsize / BlkSize
 	} else {
-		blkgrpnum = volsize/Blksize + 1
+		blkgrpnum = volsize/BlkSize + 1
 	}
 
 	// insert the volume info to volumes tables
@@ -204,8 +205,8 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		defer rows.Close()
 
 		var blkid int
-		var blks string = ""
-		var count int = 0
+		var blks string
+		var count int
 		for rows.Next() {
 			err := rows.Scan(&blkid)
 			if err != nil {
@@ -226,7 +227,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 				return &ack, err
 			}
 			blks = blks + strconv.Itoa(blkid) + ","
-			count += 1
+			count++
 		}
 		logger.Debug("The volume(%s -- %s) one blkgroup have blks:%s", volname, voluuid, blks)
 		/*
@@ -269,6 +270,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	return &ack, nil
 }
 
+//DeleteVol : Delete a Volume for User
 func (s *VolMgrServer) DeleteVol(ctx context.Context, in *vp.DeleteVolReq) (*vp.DeleteVolAck, error) {
 	ack := vp.DeleteVolAck{}
 	volid := in.UUID
@@ -340,6 +342,7 @@ func (s *VolMgrServer) DeleteVol(ctx context.Context, in *vp.DeleteVolReq) (*vp.
 	return &ack, nil
 }
 
+//UpdateChunkInfo : Meta send need repair chunk, if the chunk have repair complete, ack to Meta
 func (s *VolMgrServer) UpdateChunkInfo(ctx context.Context, in *vp.UpdateChunkInfoReq) (*vp.UpdateChunkInfoAck, error) {
 	ack := vp.UpdateChunkInfoAck{}
 	ip := in.Ip
@@ -368,7 +371,7 @@ func (s *VolMgrServer) UpdateChunkInfo(ctx context.Context, in *vp.UpdateChunkIn
 	return &ack, nil
 }
 
-// GetVolInfo
+//GetVolInfo : Get a Volume Info for User
 func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*vp.GetVolInfoAck, error) {
 	ack := vp.GetVolInfoAck{}
 	var volInfo vp.VolInfo
@@ -457,7 +460,7 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 	return &ack, nil
 }
 
-// GetVolList
+//GetVolList : get all volume list
 func (s *VolMgrServer) GetVolList(ctx context.Context, in *vp.GetVolListReq) (*vp.GetVolListAck, error) {
 	ack := vp.GetVolListAck{}
 
@@ -490,7 +493,7 @@ func (s *VolMgrServer) GetVolList(ctx context.Context, in *vp.GetVolListReq) (*v
 }
 
 func checkandupdatediskstatu(ip string, port int, statu int) {
-	var dbstatu int = 0
+	var dbstatu int
 	disks, err := VolMgrDB.Query("SELECT statu FROM disks where ip=? and port=?", ip, port)
 	if err != nil {
 		logger.Error("Get from disks table for all disks error:%s", err)
@@ -601,7 +604,7 @@ func detectDataNodes() {
 	}
 }
 
-// StartVolMgrService
+// StartVolMgrService ...
 func StartVolMgrService() {
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", VolMgrServerAddr.port))

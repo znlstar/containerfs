@@ -29,14 +29,16 @@ type addr struct {
 	log  string
 }
 
-// RepairServerAddr
+// RepairServerAddr ...
 var RepairServerAddr addr
 
-// MetaNodeAddr
+// MetaNodeAddr ...
 var MetaNodeAddr string
+
+// MetaNodePeers ...
 var MetaNodePeers []string
 
-// Wg
+// Wg ...
 var Wg sync.WaitGroup
 
 type mysqlc struct {
@@ -48,17 +50,12 @@ type mysqlc struct {
 
 var mysqlConf mysqlc
 
-const (
-	Blksize = 10 /*G*/
-)
-
-var Mutex sync.RWMutex
 var err string
 
-// VolMgrServer
+// RepairServer ...
 type RepairServer struct{}
 
-// VolMgrDB
+// VolMgrDB ...
 var VolMgrDB *sql.DB
 
 func checkErr(err error) {
@@ -74,7 +71,7 @@ func getNeedRepairChunks() {
 	var blkport int
 	var chkid int
 	var position int
-	rpr, err := VolMgrDB.Query("SELECT volid,blkgrpid,blkid,blkport,chkid, position FROM repair WHERE blkip=? and status=2 LIMIT 10", RepairServerAddr.host)
+	rpr, err := VolMgrDB.Query("select volid,blkgrpid,blkid,blkport,chkid, position from repair where blkip=? and status=2 limit 10", RepairServerAddr.host)
 	if err != nil {
 		logger.Error("Get from blk table for need repair blkds in this node error:%s", err)
 	}
@@ -91,12 +88,12 @@ func getNeedRepairChunks() {
 }
 
 func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, position int) {
-	logger.Debug("=== Begin repair blkgrp:%v - blk:%v - chk:%v ====", blkgrpid, blkid, chkid)
+	logger.Debug("=== Begin repair blkgrp:%v - blk:%v - chk:%v", blkgrpid, blkid, chkid)
 
 	//if disk bad(I/O error)
 	var status int
 	var path string
-	disk, err := VolMgrDB.Query("SELECT mount,statu FROM disks WHERE ip=? and port=?", RepairServerAddr.host, blkport)
+	disk, err := VolMgrDB.Query("select mount,statu from disks where ip=? and port=?", RepairServerAddr.host, blkport)
 	if err != nil {
 		logger.Error("Get from disk table for this node bad chunk error:%s", err)
 		Wg.Add(-1)
@@ -143,7 +140,7 @@ func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, po
 				blk, err := VolMgrDB.Query("SELECT hostip,hostport,disabled FROM blk WHERE blkid=?", srcblkid)
 				if err != nil {
 					logger.Error("Get from blk table bakblk:%v for need repair chunk:%v error:%s", srcblkid, chkid, err)
-					bakcnt += 1
+					bakcnt++
 					continue
 				}
 				defer blk.Close()
@@ -154,7 +151,7 @@ func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, po
 					}
 				}
 				if err != nil || disabled != 0 {
-					bakcnt += 1
+					bakcnt++
 					continue
 				}
 				if bakcnt == 2 {
@@ -249,6 +246,7 @@ func beginRepairchunk(volid string, srcip string, srcport int, srcblkid int, pat
 	return 0
 }
 
+// GetSrcData Repair bad chunk get data from good backup chunk
 func (s *RepairServer) GetSrcData(in *rp.GetSrcDataReq, stream rp.Repair_GetSrcDataServer) error {
 	var ack rp.GetSrcDataAck
 	srcid := in.BlkId
@@ -301,6 +299,7 @@ func (s *RepairServer) GetSrcData(in *rp.GetSrcDataReq, stream rp.Repair_GetSrcD
 	return nil
 }
 
+// GetLeader Get Metadata Leader Node
 func GetLeader(volumeID string) (string, error) {
 
 	var leader string
@@ -334,7 +333,7 @@ func GetLeader(volumeID string) (string, error) {
 
 }
 
-// DialMeta
+// DialMeta ...
 func DialMeta(volumeID string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
@@ -354,7 +353,7 @@ func DialMeta(volumeID string) (*grpc.ClientConn, error) {
 	return conn, err
 }
 
-// StartRepairService
+// StartRepairService ...
 func StartRepairService() {
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", RepairServerAddr.port))
