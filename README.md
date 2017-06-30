@@ -14,3 +14,5 @@ a volume = a metadata table + multiple block groups
 # Guide
 
 [here](doc/guide.md)
+
+# User Case
