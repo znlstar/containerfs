@@ -51,7 +51,7 @@ func CreateKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64
 		return nil, nil, err
 	}
 
-	log.Debug("CreateKvStateMachine Sucess index : %v", index)
+	log.Debug("CreateKvStateMachine Success index : %v", index)
 
 	rc := &raft.RaftConfig{
 		ID:           raftGroupID,
@@ -65,7 +65,7 @@ func CreateKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64
 		log.Error("creat raft failed. %v", err)
 	}
 
-	log.Debug("CreateRaft Sucess index : %v", rc.Applied)
+	log.Debug("CreateRaft Success index : %v", rc.Applied)
 
 	return kvsm, raftStroage, nil
 
