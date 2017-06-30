@@ -12,8 +12,9 @@ import (
 	"jd.com/sharkstore/raft/proto"
 )
 
-var errNotExists = errors.New("Key not exists.")
+var errNotExists = errors.New("Key not exists")
 
+//KvStateMachine ...
 type KvStateMachine struct {
 	sync.RWMutex
 	id      uint64
@@ -30,6 +31,7 @@ func newKvStatemachine(id uint64, raft *raft.RaftServer) *KvStateMachine {
 	}
 }
 
+//Apply ...
 func (ms *KvStateMachine) Apply(data []byte, index uint64) (interface{}, error) {
 	ms.Lock()
 	defer func() {
@@ -51,6 +53,7 @@ func (ms *KvStateMachine) Apply(data []byte, index uint64) (interface{}, error) 
 	return nil, nil
 }
 
+//ApplyMemberChange ...
 func (ms *KvStateMachine) ApplyMemberChange(confChange *proto.ConfChange, index uint64) (interface{}, error) {
 	ms.Lock()
 	defer func() {
@@ -60,22 +63,26 @@ func (ms *KvStateMachine) ApplyMemberChange(confChange *proto.ConfChange, index 
 	return nil, nil
 }
 
+//Snapshot ...
 func (ms *KvStateMachine) Snapshot() (proto.Snapshot, error) {
 	ms.RLock()
 	defer ms.RUnlock()
 
-	if data, err := json.Marshal(ms.data); err != nil {
+	var data []byte
+	var err error
+	if data, err = json.Marshal(ms.data); err != nil {
 		return nil, err
-	} else {
-		data = append(make([]byte, 8), data...)
-		binary.BigEndian.PutUint64(data, ms.applied)
-		return &kvSnapshot{
-			applied: ms.applied,
-			data:    data,
-		}, nil
 	}
+	data = append(make([]byte, 8), data...)
+	binary.BigEndian.PutUint64(data, ms.applied)
+	return &kvSnapshot{
+		applied: ms.applied,
+		data:    data,
+	}, nil
+
 }
 
+//ApplySnapshot ...
 func (ms *KvStateMachine) ApplySnapshot(peers []proto.Peer, iter proto.SnapIterator) error {
 	ms.Lock()
 	defer ms.Unlock()
@@ -101,54 +108,64 @@ func (ms *KvStateMachine) ApplySnapshot(peers []proto.Peer, iter proto.SnapItera
 	return nil
 }
 
+//HandleFatalEvent ...
 func (ms *KvStateMachine) HandleFatalEvent(err *raft.FatalError) {
 	panic(err.Err)
 }
 
+//Get ...
 func (ms *KvStateMachine) Get(raftGroupID uint64, key string) (string, error) {
 	ms.RLock()
 	defer ms.RUnlock()
 
 	if v, ok := ms.data[key]; ok {
 		return v, nil
-	} else {
-		return "", errNotExists
 	}
+	return "", errNotExists
+
 }
 
+//GetAll ...
 func (ms *KvStateMachine) GetAll(raftGroupID uint64) (map[string]string, error) {
 	return ms.data, nil
 }
 
+//Put ...
 func (ms *KvStateMachine) Put(raftGroupID uint64, key, value string) error {
 
+	var data []byte
+	var err error
+
 	kv := map[string]string{key: value}
-	if data, err := json.Marshal(kv); err != nil {
+	if data, err = json.Marshal(kv); err != nil {
 		return err
-	} else {
-		resp := ms.raft.Submit(raftGroupID, data)
-		_, err = resp.Response()
-		if err != nil {
-			return errors.New(fmt.Sprintf("Put error[%v].\r\n", err))
-		}
-		return nil
 	}
+	resp := ms.raft.Submit(raftGroupID, data)
+	_, err = resp.Response()
+	if err != nil {
+		return fmt.Errorf("Put error[%v]", err)
+		//errors.New(fmt.Sprintf("Put error[%v].\r\n", err))
+	}
+	return nil
+
 }
 
+//AddNode ...
 func (ms *KvStateMachine) AddNode(peer proto.Peer) error {
 	resp := ms.raft.ChangeMember(1, proto.ConfAddNode, peer, nil)
 	_, err := resp.Response()
 	if err != nil {
-		return errors.New("AddNode error.")
+		return errors.New("AddNode error")
 	}
 	return nil
 }
 
+//RemoveNode ...
 func (ms *KvStateMachine) RemoveNode(peer proto.Peer) error {
 	resp := ms.raft.ChangeMember(1, proto.ConfRemoveNode, peer, nil)
 	_, err := resp.Response()
 	if err != nil {
-		return errors.New("RemoveNode error.")
+		return errors.New("RemoveNode error")
 	}
 	return nil
 }
@@ -159,6 +176,7 @@ func (ms *KvStateMachine) setApplied(index uint64) {
 	ms.applied = index
 }
 
+//HandleLeaderChange ...
 func (ms *KvStateMachine) HandleLeaderChange(leader uint64) {
 }
 
@@ -168,6 +186,7 @@ type kvSnapshot struct {
 	data    []byte
 }
 
+//Next ...
 func (s *kvSnapshot) Next() ([]byte, error) {
 	if s.offset >= len(s.data) {
 		return nil, io.EOF
@@ -176,10 +195,12 @@ func (s *kvSnapshot) Next() ([]byte, error) {
 	return s.data, nil
 }
 
+//ApplyIndex ...
 func (s *kvSnapshot) ApplyIndex() uint64 {
 	return s.applied
 }
 
+//Close ...
 func (s *kvSnapshot) Close() {
 	return
 }

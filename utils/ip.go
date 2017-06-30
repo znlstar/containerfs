@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -36,19 +35,3 @@ func Inet_aton(ipnr net.IP) int32 {
 
 	return sum
 }
-
-// testIp
-func testIp() {
-	ipnr := net.ParseIP("110.118.165.194")
-	ipint := Inet_aton(ipnr)
-	fmt.Println(ipint)
-
-	ipnr_new := Inet_ntoa(ipint)
-	fmt.Println(ipnr_new.String())
-}
-
-/*
-[root@localhost utils]# ./ip
-168313182
-10.8.65.94
-*/
