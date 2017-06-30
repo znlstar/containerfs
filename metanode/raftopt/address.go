@@ -4,14 +4,17 @@ import (
 	"fmt"
 )
 
+//Address ...
 type Address struct {
 	Heartbeat string
 	Replicate string
 	Grpc      string
 }
 
+//AddrDatabase ...
 var AddrDatabase = make(map[uint64]*Address)
 
+//AddInit ...
 func AddInit(ips []string) {
 	fmt.Println("IPS:")
 	for i := range ips {

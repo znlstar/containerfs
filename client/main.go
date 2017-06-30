@@ -184,7 +184,7 @@ func main() {
 			os.Exit(1)
 		}
 		cfs := fs.OpenFileSystem(os.Args[3])
-		ret, _ := cfs.OpenFile(os.Args[4], fs.O_WRONLY)
+		ret, _ := cfs.OpenFile(os.Args[4], os.O_WRONLY)
 		if ret != 0 {
 			fmt.Println("touch failed")
 		}
@@ -252,8 +252,8 @@ func get(cfs *fs.CFS, cfsFile string, dstFile string, offset int64, readsize int
 		os.Exit(1)
 	}
 
-	_, cfile := cfs.OpenFile(cfsFile, fs.O_RDONLY)
-	defer cfile.Close(int(fs.O_RDONLY))
+	_, cfile := cfs.OpenFile(cfsFile, os.O_RDONLY)
+	defer cfile.Close(int(os.O_RDONLY))
 
 	if readsize == 0 {
 		readsize = cfile.FileSize
@@ -305,12 +305,12 @@ func put(cfs *fs.CFS, localFile string, cfsFile string) int32 {
 		fmt.Println("local file not exist!")
 		os.Exit(1)
 	}
-	ret, cfile := cfs.OpenFile(cfsFile, fs.O_WRONLY)
+	ret, cfile := cfs.OpenFile(cfsFile, os.O_WRONLY)
 	if ret != 0 {
 		return ret
 	}
 	fs.ReadLocalAndWriteCFS(localFile, 1024*10, fs.ProcessLocalBuffer, cfile)
-	cfile.Close(int(fs.O_WRONLY))
+	cfile.Close(int(os.O_WRONLY))
 
 	return 0
 }

@@ -140,41 +140,40 @@ func mount(uuid, mountPoint string, isReadOnly int) error {
 		}
 
 		return nil
-	} else {
-		c, err := fuse.Mount(
-			mountPoint,
-			fuse.MaxReadahead(128*1024),
-			fuse.AsyncRead(),
-			fuse.WritebackCache(),
-			fuse.FSName("ContainerFS-"+uuid),
-			fuse.LocalVolume(),
-			fuse.VolumeName("ContainerFS-"+uuid),
-			fuse.ReadOnly())
-		if err != nil {
-			return err
-		}
-		defer c.Close()
-
-		filesys := &FS{
-			cfs: cfs,
-		}
-		if err := fs.Serve(c, filesys); err != nil {
-			return err
-		}
-		// check if the mount process has an error to report
-		<-c.Ready
-		if err := c.MountError; err != nil {
-			return err
-		}
-
-		return nil
 	}
+	c, err := fuse.Mount(
+		mountPoint,
+		fuse.MaxReadahead(128*1024),
+		fuse.AsyncRead(),
+		fuse.WritebackCache(),
+		fuse.FSName("ContainerFS-"+uuid),
+		fuse.LocalVolume(),
+		fuse.VolumeName("ContainerFS-"+uuid),
+		fuse.ReadOnly())
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	filesys := &FS{
+		cfs: cfs,
+	}
+	if err := fs.Serve(c, filesys); err != nil {
+		return err
+	}
+	// check if the mount process has an error to report
+	<-c.Ready
+	if err := c.MountError; err != nil {
+		return err
+	}
+
+	return nil
 
 }
 
 var _ = fs.FS(&FS{})
 
-// Root
+// Root ...
 func (fs *FS) Root() (fs.Node, error) {
 	n := newDir(fs, nil, "/")
 	return n, nil
@@ -191,7 +190,7 @@ func (fs *FS) Root() (fs.Node, error) {
    Frsize  uint32 // Fragment size, smallest addressable data size in the file system.
 */
 
-// Statfs
+// Statfs ...
 func (fs *FS) Statfs(ctx context.Context, req *fuse.StatfsRequest, resp *fuse.StatfsResponse) error {
 	err, ret := cfs.GetFSInfo(fs.cfs.VolID)
 	if err != 0 {
@@ -229,14 +228,14 @@ func (d *Dir) setName(name string) {
 	d.name = name
 }
 
-// Attr
+// Attr ...
 func (d *Dir) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Mode = os.ModeDir | 0755
 	a.Valid = time.Millisecond * 10
 	return nil
 }
 
-// ReadDirAll
+// ReadDirAll ...
 func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -275,14 +274,13 @@ func (d *Dir) reviveNode(inode *mp.InodeInfo, name string, fullpath string) (nod
 		}
 
 		return child, nil
-	} else {
-		child, _ := d.reviveDir(inode, fullpath)
-		return child, nil
 	}
+	child, _ := d.reviveDir(inode, fullpath)
+	return child, nil
 
 }
 
-// Lookup
+// Lookup ...
 func (d *Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
 	if a, ok := d.active[name]; ok {
 		return a.node, nil
@@ -316,7 +314,7 @@ func (d *Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
 
 var _ = fs.NodeMkdirer(&Dir{})
 
-// Mkdir
+// Mkdir ...
 func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
 	var fullPath string
 
@@ -352,7 +350,7 @@ func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 
 var _ = fs.NodeCreater(&Dir{})
 
-// Create
+// Create ...
 func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
 
 	logger.Debug("Create...,Flag:%v", req.Flags)
@@ -370,10 +368,9 @@ func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 		if ret == 17 {
 			return nil, nil, fuse.Errno(syscall.EEXIST)
 
-		} else {
-			return nil, nil, fuse.Errno(syscall.EIO)
-
 		}
+		return nil, nil, fuse.Errno(syscall.EIO)
+
 	}
 	_, inode := d.fs.cfs.Stat(fullPath)
 	child := &File{
@@ -392,7 +389,7 @@ func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 
 var _ = fs.NodeRemover(&Dir{})
 
-// Remove
+// Remove ...
 func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	var fullPath string
 
@@ -411,18 +408,18 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 		if ret != 0 {
 			if ret == 2 {
 				return fuse.Errno(syscall.EPERM)
-			} else {
-				return fuse.Errno(syscall.EIO)
 			}
+			return fuse.Errno(syscall.EIO)
+
 		}
 	} else {
 		ret := d.fs.cfs.DeleteFile(fullPath)
 		if ret != 0 {
 			if ret == 2 {
 				return fuse.Errno(syscall.EPERM)
-			} else {
-				return fuse.Errno(syscall.EIO)
 			}
+			return fuse.Errno(syscall.EIO)
+
 		}
 	}
 
@@ -443,7 +440,7 @@ func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 
 var _ = fs.NodeRenamer(&Dir{})
 
-// Rename
+// Rename ...
 func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Node) error {
 	if newDir != d {
 		return fuse.Errno(syscall.EPERM)
@@ -526,7 +523,7 @@ func (f *File) setName(name string) {
 	f.name = name
 }
 
-// Attr
+// Attr ...
 func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	var fullPath string
 	if f.parent.name == "/" {
@@ -557,7 +554,7 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 
 var _ = fs.NodeOpener(&File{})
 
-// Open
+// Open ...
 func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
 	var ret int32
 
@@ -573,7 +570,7 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 	defer f.mu.Unlock()
 
 	if f.writers > 0 {
-		if int(req.Flags)&cfs.O_WRONLY != 0 || int(req.Flags)&cfs.O_RDWR != 0 {
+		if int(req.Flags)&os.O_WRONLY != 0 || int(req.Flags)&os.O_RDWR != 0 {
 			return nil, fuse.Errno(syscall.EPERM)
 		}
 	}
@@ -590,7 +587,7 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 	tmp := f.handles + 1
 	f.handles = tmp
 
-	if int(req.Flags)&cfs.O_WRONLY != 0 || int(req.Flags)&cfs.O_RDWR != 0 {
+	if int(req.Flags)&os.O_WRONLY != 0 || int(req.Flags)&os.O_RDWR != 0 {
 		tmp := f.writers + 1
 		f.writers = tmp
 	}
@@ -601,7 +598,7 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 
 var _ = fs.HandleReleaser(&File{})
 
-// Release
+// Release ...
 func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	logger.Debug("Release...")
 
@@ -618,7 +615,7 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	*/
 	f.handles--
 
-	if int(req.Flags)&cfs.O_WRONLY != 0 || int(req.Flags)&cfs.O_RDWR != 0 {
+	if int(req.Flags)&os.O_WRONLY != 0 || int(req.Flags)&os.O_RDWR != 0 {
 		f.cfile.CloseConns()
 		f.writers--
 	}
@@ -632,7 +629,7 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 
 var _ = fs.HandleReader(&File{})
 
-// Read
+// Read ...
 func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
 
 	f.mu.Lock()
@@ -660,7 +657,7 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 
 var _ = fs.HandleWriter(&File{})
 
-// Write
+// Write ...
 func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
 
 	//f.mu.Lock()
@@ -669,9 +666,9 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 	if w != int32(len(req.Data)) {
 		if w == -1 {
 			return fuse.Errno(syscall.ENOSPC)
-		} else {
-			return fuse.Errno(syscall.EIO)
 		}
+		return fuse.Errno(syscall.EIO)
+
 	}
 	resp.Size = int(w)
 	return nil
@@ -679,7 +676,7 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 
 var _ = fs.HandleFlusher(&File{})
 
-// Flush
+// Flush ...
 func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 	logger.Debug("Flush...")
 	f.cfile.Flush()
@@ -688,7 +685,7 @@ func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 
 var _ fs.NodeFsyncer = (*File)(nil)
 
-// Fsync
+// Fsync ...
 func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 	logger.Debug("Fsync...")
 	f.cfile.Flush()
@@ -697,7 +694,7 @@ func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 
 var _ = fs.NodeSetattrer(&File{})
 
-// Setattr
+// Setattr ...
 func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
 	return nil
 }

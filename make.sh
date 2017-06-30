@@ -37,7 +37,7 @@ cd ..
 
 cp ./service/* ./output
 cd ./output
-tar zcvf cfs-server.tar.gz ./cfs-metanode* ./cfs-volmgr* ./cfs-datanode*  ./install.sh
+tar zcvf cfs-server.tar.gz ./cfs-repair* ./cfs-metanode* ./cfs-volmgr* ./cfs-datanode*  ./install.sh
 tar zcvf cfs-client.tar.gz ./cfs-client* ./cfs-fuseclient*
 
 echo "------------- build end -------------"

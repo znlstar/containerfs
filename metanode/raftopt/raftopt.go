@@ -15,6 +15,7 @@ import (
 	"time"
 )
 
+//StartRaftServer ...
 func StartRaftServer(rs **raft.RaftServer, r *Resolver, addr *Address, nodeid uint64) error {
 
 	var err error
@@ -33,6 +34,7 @@ func StartRaftServer(rs **raft.RaftServer, r *Resolver, addr *Address, nodeid ui
 	return nil
 }
 
+//CreateKvStateMachine ...
 func CreateKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir string, UUID string, raftGroupID uint64) (*KvStateMachine, *wal.Storage, error) {
 	wc := &wal.Config{}
 	raftStroage, err := wal.NewStorage(path.Join(dir, UUID, "wal"), wc)
@@ -69,35 +71,38 @@ func CreateKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64
 
 }
 
+//TakeKvSnapShoot ...
 func TakeKvSnapShoot(kvsm *KvStateMachine, rsg *wal.Storage, path string) {
 
-	if data, err := json.Marshal(kvsm.data); err != nil {
-		return
-	} else {
-		var appliedStr = strconv.FormatInt(int64(kvsm.applied), 10)
-		data = append(make([]byte, 8), data...)
-		binary.BigEndian.PutUint64(data, kvsm.applied)
-		f, err := os.OpenFile(path+"-"+appliedStr, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
-		if err != nil {
-			f.Close()
-			return
-		}
-		w := bufio.NewWriter(f)
-		w.Write(data)
-		w.Flush()
-		f.Close()
+	var data []byte
+	var err error
 
-		_, err = os.Stat(path)
-		if err == nil {
-			t := time.Now()
-			os.Rename(path, path+"-backup"+"-"+t.String())
-			os.Rename(path+"-"+appliedStr, path)
-		} else {
-			os.Rename(path+"-"+appliedStr, path)
-		}
+	if data, err = json.Marshal(kvsm.data); err != nil {
+		return
+	}
+	var appliedStr = strconv.FormatInt(int64(kvsm.applied), 10)
+	data = append(make([]byte, 8), data...)
+	binary.BigEndian.PutUint64(data, kvsm.applied)
+	f, err := os.OpenFile(path+"-"+appliedStr, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+	if err != nil {
+		f.Close()
+		return
+	}
+	w := bufio.NewWriter(f)
+	w.Write(data)
+	w.Flush()
+	f.Close()
+
+	_, err = os.Stat(path)
+	if err == nil {
+		t := time.Now()
+		os.Rename(path, path+"-backup"+"-"+t.String())
+		os.Rename(path+"-"+appliedStr, path)
+	} else {
+		os.Rename(path+"-"+appliedStr, path)
 	}
 
-	err := rsg.Truncate(kvsm.applied)
+	err = rsg.Truncate(kvsm.applied)
 	if err != nil {
 		log.Error("TakeKvSnapShoot Truncate failed index : %v , err :%v", kvsm.applied, err)
 	}
@@ -106,6 +111,7 @@ func TakeKvSnapShoot(kvsm *KvStateMachine, rsg *wal.Storage, path string) {
 	return
 }
 
+//LoadKvSnapShoot ...
 func LoadKvSnapShoot(kvsm *KvStateMachine, path string) (uint64, error) {
 	fi, err := os.Open(path)
 	if err != nil {
@@ -121,12 +127,17 @@ func LoadKvSnapShoot(kvsm *KvStateMachine, path string) (uint64, error) {
 	return kvsm.applied, nil
 }
 
+//KvGet ...
 func KvGet(kvsm *KvStateMachine, raftGroupID uint64, k string) (string, error) {
 	return kvsm.Get(raftGroupID, k)
 }
+
+//KvGetAll ...
 func KvGetAll(kvsm *KvStateMachine, raftGroupID uint64) (map[string]string, error) {
 	return kvsm.GetAll(raftGroupID)
 }
+
+//KvSet ...
 func KvSet(kvsm *KvStateMachine, raftGroupID uint64, k string, v string) error {
 	return kvsm.Put(raftGroupID, k, v)
 }

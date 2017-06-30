@@ -31,8 +31,10 @@ type addr struct {
 	log    string
 }
 
+// MetaNodeServerAddr ...
 var MetaNodeServerAddr addr
 
+// MetaNodeServer ...
 type MetaNodeServer struct {
 	NodeID     uint64
 	Addr       *raftopt.Address
@@ -40,6 +42,7 @@ type MetaNodeServer struct {
 	RaftServer *raft.RaftServer
 }
 
+// GetMetaLeader ...
 func (s *MetaNodeServer) GetMetaLeader(ctx context.Context, in *mp.GetMetaLeaderReq) (*mp.GetMetaLeaderAck, error) {
 	ack := mp.GetMetaLeaderAck{}
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
@@ -57,9 +60,7 @@ func (s *MetaNodeServer) GetMetaLeader(ctx context.Context, in *mp.GetMetaLeader
 	return &ack, nil
 }
 
-/*
-rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
-*/
+//CreateNameSpace ...
 func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameSpaceReq) (*mp.CreateNameSpaceAck, error) {
 	ack := mp.CreateNameSpaceAck{}
 	ack.Ret = ns.CreateNameSpace(s.RaftServer, MetaNodeServerAddr.peers, MetaNodeServerAddr.nodeID, MetaNodeServerAddr.waldir, in.VolID, in.RaftGroupID, false)
@@ -95,9 +96,7 @@ func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameS
 	return &ack, nil
 }
 
-/*
-rpc SnapShootNameSpace() returns {};
-*/
+// SnapShootNameSpace ...
 func (s *MetaNodeServer) SnapShootNameSpace(ctx context.Context, in *mp.SnapShootNameSpaceReq) (*mp.SnapShootNameSpaceAck, error) {
 	ack := mp.SnapShootNameSpaceAck{}
 	ack.Ret = ns.SnapShootNameSpace(s.RaftServer, in.VolID, MetaNodeServerAddr.waldir)
@@ -132,9 +131,7 @@ func (s *MetaNodeServer) SnapShootNameSpace(ctx context.Context, in *mp.SnapShoo
 	return &ack, nil
 }
 
-/*
-rpc DeleteNameSpace(DeleteNameSpaceReq) returns (DeleteNameSpaceAck){};
-*/
+// DeleteNameSpace ...
 func (s *MetaNodeServer) DeleteNameSpace(ctx context.Context, in *mp.DeleteNameSpaceReq) (*mp.DeleteNameSpaceAck, error) {
 	ack := mp.DeleteNameSpaceAck{}
 	ack.Ret = ns.DeleteNameSpace(s.RaftServer, in.VolID)
@@ -171,9 +168,7 @@ func (s *MetaNodeServer) DeleteNameSpace(ctx context.Context, in *mp.DeleteNameS
 	return &ack, nil
 }
 
-/*
-rpc GetFSInfo(GetFSInfoReq) returns (GetFSInfoAck){};
-*/
+//GetFSInfo ...
 func (s *MetaNodeServer) GetFSInfo(ctx context.Context, in *mp.GetFSInfoReq) (*mp.GetFSInfoAck, error) {
 	ack := mp.GetFSInfoAck{}
 
@@ -187,9 +182,7 @@ func (s *MetaNodeServer) GetFSInfo(ctx context.Context, in *mp.GetFSInfoReq) (*m
 	return &ack, nil
 }
 
-/*
-rpc CreateDir(CreateDirReq) returns (CreateDirAck){};
-*/
+//CreateDir ...
 func (s *MetaNodeServer) CreateDir(ctx context.Context, in *mp.CreateDirReq) (*mp.CreateDirAck, error) {
 	ack := mp.CreateDirAck{}
 	fullPathName := in.FullPathName
@@ -203,9 +196,7 @@ func (s *MetaNodeServer) CreateDir(ctx context.Context, in *mp.CreateDirReq) (*m
 	return &ack, nil
 }
 
-/*
-rpc StatDir(StatDirReq) returns (StatDirAck){};
-*/
+//Stat ...
 func (s *MetaNodeServer) Stat(ctx context.Context, in *mp.StatReq) (*mp.StatAck, error) {
 	ack := mp.StatAck{}
 	fullPathName := in.FullPathName
@@ -219,9 +210,7 @@ func (s *MetaNodeServer) Stat(ctx context.Context, in *mp.StatReq) (*mp.StatAck,
 	return &ack, nil
 }
 
-/*
-rpc ListDir(StatDirReq) returns (ListDirAck){};
-*/
+//List ...
 func (s *MetaNodeServer) List(ctx context.Context, in *mp.ListReq) (*mp.ListAck, error) {
 	ack := mp.ListAck{}
 	fullPathName := in.FullPathName
@@ -235,9 +224,7 @@ func (s *MetaNodeServer) List(ctx context.Context, in *mp.ListReq) (*mp.ListAck,
 	return &ack, nil
 }
 
-/*
-rpc DeleteDir(DeleteDirReq) returns (DeleteDirAck){};
-*/
+// DeleteDir ...
 func (s *MetaNodeServer) DeleteDir(ctx context.Context, in *mp.DeleteDirReq) (*mp.DeleteDirAck, error) {
 
 	ack := mp.DeleteDirAck{}
@@ -253,9 +240,7 @@ func (s *MetaNodeServer) DeleteDir(ctx context.Context, in *mp.DeleteDirReq) (*m
 
 }
 
-/*
-rpc Rename(RenameReq) returns (RenameAck){};
-*/
+// Rename ...
 func (s *MetaNodeServer) Rename(ctx context.Context, in *mp.RenameReq) (*mp.RenameAck, error) {
 	ack := mp.RenameAck{}
 	fullPathName1 := in.FullPathName1
@@ -271,9 +256,7 @@ func (s *MetaNodeServer) Rename(ctx context.Context, in *mp.RenameReq) (*mp.Rena
 
 }
 
-/*
-rpc CreateFile(CreateFileReq) returns (CreateFileAck){};
-*/
+//CreateFile ...
 func (s *MetaNodeServer) CreateFile(ctx context.Context, in *mp.CreateFileReq) (*mp.CreateFileAck, error) {
 	ack := mp.CreateFileAck{}
 	fullPathName := in.FullPathName
@@ -287,9 +270,7 @@ func (s *MetaNodeServer) CreateFile(ctx context.Context, in *mp.CreateFileReq) (
 	return &ack, nil
 }
 
-/*
-rpc DeleteFile(DeleteFileReq) returns (DeleteFileAck){};
-*/
+// DeleteFile ...
 func (s *MetaNodeServer) DeleteFile(ctx context.Context, in *mp.DeleteFileReq) (*mp.DeleteFileAck, error) {
 
 	ack := mp.DeleteFileAck{}
@@ -305,9 +286,7 @@ func (s *MetaNodeServer) DeleteFile(ctx context.Context, in *mp.DeleteFileReq) (
 
 }
 
-/*
-rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
-*/
+// AllocateChunk ...
 func (s *MetaNodeServer) AllocateChunk(ctx context.Context, in *mp.AllocateChunkReq) (*mp.AllocateChunkAck, error) {
 	ack := mp.AllocateChunkAck{}
 	fileName := in.FileName
@@ -341,9 +320,7 @@ func (s *MetaNodeServer) AllocateChunk(ctx context.Context, in *mp.AllocateChunk
 	return &ack, nil
 }
 
-/*
-rpc GetChunks(GetChunksReq) returns (GetChunksAck){};
-*/
+// GetFileChunks ...
 func (s *MetaNodeServer) GetFileChunks(ctx context.Context, in *mp.GetFileChunksReq) (*mp.GetFileChunksAck, error) {
 	ack := mp.GetFileChunksAck{}
 	fileName := in.FileName
@@ -379,9 +356,7 @@ func (s *MetaNodeServer) GetFileChunks(ctx context.Context, in *mp.GetFileChunks
 	return &ack, nil
 }
 
-/*
-rpc GetChunks(GetChunksReq) returns (GetChunksAck){};
-*/
+// SyncChunk ...
 func (s *MetaNodeServer) SyncChunk(ctx context.Context, in *mp.SyncChunkReq) (*mp.SyncChunkAck, error) {
 	ack := mp.SyncChunkAck{}
 	fileName := in.FileName
@@ -396,9 +371,7 @@ func (s *MetaNodeServer) SyncChunk(ctx context.Context, in *mp.SyncChunkReq) (*m
 	return &ack, nil
 }
 
-/*
-rpc UpdateChunkInfo(UpdateBlkGrpReq) returns (UpdateBlkGrpAck){};
-*/
+// UpdateChunkInfo ...
 func (s *MetaNodeServer) UpdateChunkInfo(ctx context.Context, in *mp.UpdateChunkInfoReq) (*mp.UpdateChunkInfoAck, error) {
 	ack := mp.UpdateChunkInfoAck{}
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
