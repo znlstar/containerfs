@@ -88,8 +88,7 @@ message DatanodeRegistryReq {
 
 message DatanodeRegistryAck {
     int32 Ret = 1;
-    int32 StartBlockID = 2;
-    int32 EndBlockID = 3;
+    repeated int32 BlkIDs = 2;
 }
 
 message DatanodeHeartbeatReq {
