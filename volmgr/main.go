@@ -443,7 +443,7 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 				tmpBlockInfo := vp.BlockInfo{}
 				tmpBlockInfo.BlockID = int32(blkid)
 				ipnr := net.ParseIP(hostip)
-				ipint := utils.Inet_aton(ipnr)
+				ipint := utils.InetAton(ipnr)
 				tmpBlockInfo.DataNodeIP = ipint
 				tmpBlockInfo.DataNodePort = int32(hostport)
 				pBlockInfos = append(pBlockInfos, &tmpBlockInfo)
