@@ -67,7 +67,7 @@ func checkErr(err error) {
 // DatanodeRegistry : datanode registry to disks table of cfs db
 func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegistryReq) (*vp.DatanodeRegistryAck, error) {
 	ack := vp.DatanodeRegistryAck{}
-	dnIP := utils.Inet_ntoa(in.Ip)
+	dnIP := utils.InetNtoa(in.Ip)
 	ip := dnIP.String()
 	dnPort := in.Port
 	dnMount := in.MountPoint
@@ -134,7 +134,7 @@ func (s *VolMgrServer) DatanodeHeartbeat(ctx context.Context, in *vp.DatanodeHea
 	used := in.Used
 	free := in.Free
 	statu := in.Status
-	ipnr := utils.Inet_ntoa(in.Ip)
+	ipnr := utils.InetNtoa(in.Ip)
 	ip := ipnr.String()
 
 	logger.Debug("The disks(%s:%d) heartbeat info(used:%d -- free:%d -- statu:%d)", ip, port, used, free, statu)

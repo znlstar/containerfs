@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-//Inet_ntoa  Convert uint to net.IP
-func Inet_ntoa(ipnr int32) net.IP {
+//InetNtoa  Convert uint to net.IP
+func InetNtoa(ipnr int32) net.IP {
 	var bytes [4]byte
 	bytes[0] = byte(ipnr & 0xFF)
 	bytes[1] = byte((ipnr >> 8) & 0xFF)
