@@ -84,8 +84,8 @@ func registryToVolMgr() {
 	if pDatanodeRegistryAck.Ret == 0 {
 		logger.Debug("registry success!")
 		os.Create(DataNodeServerAddr.Flag)
-		for i := pDatanodeRegistryAck.StartBlockID; i <= pDatanodeRegistryAck.EndBlockID; i++ {
-			os.MkdirAll(DataNodeServerAddr.Path+"/block-"+strconv.Itoa(int(i)), 0777)
+		for _, v := range pDatanodeRegistryAck.BlkIDs {
+			os.MkdirAll(DataNodeServerAddr.Path+"/block-"+strconv.Itoa(int(v)), 0777)
 		}
 	} else {
 		logger.Debug("data node statup failed : registry to volmgr failed !")

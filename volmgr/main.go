@@ -16,7 +16,6 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -101,14 +100,14 @@ func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegi
 	}
 	defer blk.Close()
 
-	VolMgrDB.Exec("lock table blk write")
+	//VolMgrDB.Exec("lock table blk write,disks write")
 
 	for i := int32(0); i < blkcount; i++ {
 		blk.Exec(hostip, hostport, 0, 0)
 	}
-	VolMgrDB.Exec("unlock table")
+	//VolMgrDB.Exec("unlock table")
 
-	blkids := make([]int, 0)
+	blkids := make([]int32, 0)
 	rows, err := VolMgrDB.Query("SELECT blkid FROM blk WHERE hostip = ? and hostport = ?", hostip, hostport)
 	checkErr(err)
 	defer rows.Close()
@@ -116,13 +115,14 @@ func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegi
 	for rows.Next() {
 		err := rows.Scan(&blkid)
 		checkErr(err)
-		blkids = append(blkids, blkid)
+		blkids = append(blkids, int32(blkid))
 	}
 
-	sort.Ints(blkids)
+	//sort.Ints(blkids)
 	logger.Debug("The disk(%s:%s) mount:%s have blks:%v", hostip, hostport, dnMount, blkids)
-	ack.StartBlockID = int32(blkids[0])
-	ack.EndBlockID = int32(blkids[len(blkids)-1])
+	//ack.StartBlockID = int32(blkids[0])
+	//ack.EndBlockID = int32(blkids[len(blkids)-1])
+	ack.BlkIDs = blkids
 	ack.Ret = 0 //success
 	return &ack, nil
 }
