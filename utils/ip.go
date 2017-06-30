@@ -17,8 +17,8 @@ func InetNtoa(ipnr int32) net.IP {
 	return net.IPv4(bytes[3], bytes[2], bytes[1], bytes[0])
 }
 
-//Inet_aton  Convert net.IP to int32
-func Inet_aton(ipnr net.IP) int32 {
+//InetAton  Convert net.IP to int32
+func InetAton(ipnr net.IP) int32 {
 	bits := strings.Split(ipnr.String(), ".")
 
 	b0, _ := strconv.Atoi(bits[0])

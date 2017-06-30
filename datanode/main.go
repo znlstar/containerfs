@@ -312,7 +312,7 @@ func init() {
 	DataNodeServerAddr.IPStr = c.String("host")
 	ipnr := net.ParseIP(DataNodeServerAddr.IPStr)
 	DataNodeServerAddr.Ipnr = ipnr
-	ipint := utils.Inet_aton(ipnr)
+	ipint := utils.InetAton(ipnr)
 	DataNodeServerAddr.IPInt = ipint
 	port, _ := c.Int("port")
 	DataNodeServerAddr.Port = int32(port)
