@@ -227,7 +227,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 				return &ack, err
 			}
 			blks = blks + strconv.Itoa(blkid) + ","
-			count ++
+			count++
 		}
 		logger.Debug("The volume(%s -- %s) one blkgroup have blks:%s", volname, voluuid, blks)
 		/*
@@ -671,7 +671,7 @@ func main() {
 
 	ticker := time.NewTicker(time.Second * 60)
 	go func() {
-		for _ = range ticker.C {
+		for range ticker.C {
 			detectDataNodes()
 		}
 	}()

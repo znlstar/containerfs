@@ -538,7 +538,7 @@ func main() {
 
 	ticker := time.NewTicker(time.Second * 10)
 	go func() {
-		for _ = range ticker.C {
+		for range ticker.C {
 			showLeaders(&metaServer)
 		}
 	}()

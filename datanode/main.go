@@ -360,7 +360,7 @@ func main() {
 
 	ticker := time.NewTicker(time.Second * 60)
 	go func() {
-		for _ = range ticker.C {
+		for range ticker.C {
 			heartbeatToVolMgr()
 		}
 	}()
