@@ -137,7 +137,7 @@ func CreateNameSpace(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir
 		return errno
 	}
 
-	logger.Error("createRaftGroup, sucess")
+	logger.Error("createRaftGroup, success")
 
 	gMutex.Lock()
 	AllNameSpace[UUID] = &nameSpace

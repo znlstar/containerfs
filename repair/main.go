@@ -140,7 +140,7 @@ func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, po
 				blk, err := VolMgrDB.Query("SELECT hostip,hostport,disabled FROM blk WHERE blkid=?", srcblkid)
 				if err != nil {
 					logger.Error("Get from blk table bakblk:%v for need repair chunk:%v error:%s", srcblkid, chkid, err)
-					bakcnt ++
+					bakcnt++
 					continue
 				}
 				defer blk.Close()
@@ -151,7 +151,7 @@ func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, po
 					}
 				}
 				if err != nil || disabled != 0 {
-					bakcnt ++
+					bakcnt++
 					continue
 				}
 				if bakcnt == 2 {
@@ -296,7 +296,6 @@ func (s *RepairServer) GetSrcData(in *rp.GetSrcDataReq, stream rp.Repair_GetSrcD
 			return err
 		}
 	}
-	return nil
 }
 
 // GetLeader Get Metadata Leader Node

@@ -8,6 +8,7 @@ import (
 	"time"
 )
 
+// GetLeader ...
 func GetLeader(volumeID string) (string, error) {
 
 	var leader string
@@ -41,7 +42,7 @@ func GetLeader(volumeID string) (string, error) {
 
 }
 
-// DialMeta
+// DialMeta ...
 func DialMeta(volumeID string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
@@ -61,7 +62,7 @@ func DialMeta(volumeID string) (*grpc.ClientConn, error) {
 	return conn, err
 }
 
-// DialData
+// DialData ...
 func DialData(host string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
@@ -77,7 +78,7 @@ func DialData(host string) (*grpc.ClientConn, error) {
 	return conn, err
 }
 
-// DialVolmgr
+// DialVolmgr  ...
 func DialVolmgr(host string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
