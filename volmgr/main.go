@@ -230,12 +230,12 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 			count++
 		}
 		logger.Debug("The volume(%s -- %s) one blkgroup have blks:%s", volname, voluuid, blks)
-		/*
-			if count < 1 || count > 3 {
-				logger.Debug("The volume(%s -- %s) one blkgroup no enough or over 3th blks:%s, so create volume failed!", volname, voluuid, count)
-				ack.Ret = 1
-				return &ack, err
-			}*/
+
+		if count < 1 || count > 3 {
+			logger.Debug("The volume(%s -- %s) one blkgroup no enough or over 3th blks:%s, so create volume failed!", volname, voluuid, count)
+			ack.Ret = 1
+			return &ack, err
+		}
 
 		blkgrp, err := VolMgrDB.Prepare("INSERT INTO blkgrp(blks, volume_uuid) VALUES(?, ?)")
 		if err != nil {
