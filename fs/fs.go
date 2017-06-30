@@ -649,7 +649,7 @@ func (cfs *CFS) DeleteFile(path string) int32 {
 	for _, v1 := range chunkInfos {
 		for _, v2 := range v1.BlockGroup.BlockInfos {
 
-			addr := utils.Inet_ntoa(v2.DataNodeIP).String() + ":" + strconv.Itoa(int(v2.DataNodePort))
+			addr := utils.InetNtoa(v2.DataNodeIP).String() + ":" + strconv.Itoa(int(v2.DataNodePort))
 			conn, err := DialData(addr)
 			if err != nil {
 				logger.Error("DeleteFile failed,Dial to datanode fail :%v\n", err)
@@ -878,7 +878,7 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 		//r := rand.New(rand.NewSource(time.Now().UnixNano()))
 		//idx = r.Intn(len(cfile.chunks[chunkidx].BlockGroup.BlockInfos))
 
-		conn, err = DialData(utils.Inet_ntoa(cfile.chunks[chunkidx].BlockGroup.BlockInfos[i].DataNodeIP).String() + ":" + strconv.Itoa(int(cfile.chunks[chunkidx].BlockGroup.BlockInfos[i].DataNodePort)))
+		conn, err = DialData(utils.InetNtoa(cfile.chunks[chunkidx].BlockGroup.BlockInfos[i].DataNodeIP).String() + ":" + strconv.Itoa(int(cfile.chunks[chunkidx].BlockGroup.BlockInfos[i].DataNodePort)))
 		if err != nil {
 			logger.Error("streamread failed,Dial to datanode fail :%v", err)
 			outflag++
@@ -1201,7 +1201,7 @@ func (cfile *CFile) send(v *wBuffer) int32 {
 			continue
 		}
 
-		ip := utils.Inet_ntoa(v.chunkInfo.BlockGroup.BlockInfos[i].DataNodeIP).String()
+		ip := utils.InetNtoa(v.chunkInfo.BlockGroup.BlockInfos[i].DataNodeIP).String()
 		port := int(v.chunkInfo.BlockGroup.BlockInfos[i].DataNodePort)
 		addr := ip + ":" + strconv.Itoa(port)
 
