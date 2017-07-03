@@ -10,7 +10,7 @@ ContainerFS is an open source file system for containers across multiple hosts, 
 
 *Unique Identifier*: ContainerFS
 
-*License*: Apache License v2.0
+*License*: Apache License v2.0 https://github.com/ipdcode/containerfs/blob/master/LICENSE[https://github.com/ipdcode/containerfs/blob/master/LICENSE]
 
 *Source control repositories*: https://github.com/ipdcode/containerfs[https://github.com/ipdcode/containerfs] (everything in the org)
 
@@ -18,7 +18,7 @@ ContainerFS is an open source file system for containers across multiple hosts, 
 
 *Infrastructure requirements (CI / CNCF Cluster)*:
 
-*Travis Travis[https://travis-ci.org/ipdcode/containerfs]
+* Travis https://travis-ci.org/ipdcode/containerfs[https://travis-ci.org/ipdcode/containerfs]
 
 
 *External Dependencies*
