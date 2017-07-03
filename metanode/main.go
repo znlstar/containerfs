@@ -138,11 +138,11 @@ func (s *MetaNodeServer) DeleteNameSpace(ctx context.Context, in *mp.DeleteNameS
 
 	// send to follower metadatas to delete
 	if in.Type == 0 {
-		for _, addr := range MetaNodeServerAddr.ips {
-			if addr == MetaNodeServerAddr.host {
+		for _, addr := range raftopt.AddrDatabase {
+			if addr.Grpc == s.Addr.Grpc {
 				continue
 			}
-			conn2, err2 := grpc.Dial(addr, grpc.WithInsecure())
+			conn2, err2 := grpc.Dial(addr.Grpc, grpc.WithInsecure())
 			if err2 != nil {
 				logger.Error("told peers to  delete NameSpace Failed ...")
 				continue

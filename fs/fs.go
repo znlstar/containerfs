@@ -57,7 +57,7 @@ func CreateVol(name string, capacity string) int32 {
 		SpaceQuota: int32(spaceQuota),
 		MetaDomain: MetaNodeAddr,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), 20*time.Second)
 	pCreateVolAck, err2 := vc.CreateVol(ctx, pCreateVolReq)
 	if err2 != nil {
 		return -1
