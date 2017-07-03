@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	fs "github.com/ipdcode/containerfs/fs"
+	"github.com/ipdcode/containerfs/logger"
 	"github.com/ipdcode/containerfs/utils"
 	"github.com/lxmgo/config"
 	"os"
@@ -20,8 +21,21 @@ func main() {
 
 	fs.VolMgrAddr = c.String("volmgr::host")
 	fs.MetaNodePeers = c.Strings("metanode::host")
-
 	fs.MetaNodeAddr = fs.MetaNodePeers[0]
+
+	logger.SetConsole(true)
+	logger.SetRollingFile(c.String("logger::log"), "fuse.log", 10, 100, logger.MB) //each 100M rolling
+	switch level := c.String("logger::loglevel"); level {
+	case "error":
+		logger.SetLevel(logger.ERROR)
+	case "debug":
+		logger.SetLevel(logger.DEBUG)
+	case "info":
+		logger.SetLevel(logger.INFO)
+	default:
+		logger.SetLevel(logger.ERROR)
+	}
+
 	switch os.Args[2] {
 
 	case "createvol":
