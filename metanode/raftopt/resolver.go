@@ -2,7 +2,7 @@ package raftopt
 
 import (
 	"errors"
-	"jd.com/sharkstore/raft"
+	"github.com/ipdcode/raft"
 	"sync"
 )
 
