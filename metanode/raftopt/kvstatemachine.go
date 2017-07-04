@@ -8,8 +8,8 @@ import (
 	"io"
 	"sync"
 
-	"jd.com/sharkstore/raft"
-	"jd.com/sharkstore/raft/proto"
+	"github.com/ipdcode/raft"
+	"github.com/ipdcode/raft/proto"
 )
 
 var errNotExists = errors.New("Key not exists")
