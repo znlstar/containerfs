@@ -624,7 +624,7 @@ func StartVolMgrService() {
 // MdcServer ...
 type MdcServer struct{}
 
-//GetVolList : get all volume list
+//FetchMeters ...
 func (s *MdcServer) FetchMeters(ctx context.Context, in *vp.MdcRequest) (*vp.Meters, error) {
 	ack := vp.Meters{}
 	meter := vp.Meter{}
@@ -640,7 +640,7 @@ func (s *MdcServer) FetchMeters(ctx context.Context, in *vp.MdcRequest) (*vp.Met
 	return &ack, nil
 }
 
-// StartMdcService ...
+// StarMdcService ...
 func StarMdcService() {
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", VolMgrServerAddr.port+10))

@@ -833,7 +833,7 @@ type CFile struct {
 	RMutex sync.Mutex
 	chunks []*mp.ChunkInfoWithBG // chunkinfo
 	//readBuf    []byte
-	ReaderMap      map[fuse.HandleID]*ReaderInfo
+	ReaderMap map[fuse.HandleID]*ReaderInfo
 }
 
 func generateRandomNumber(start int, end int, count int) []int {
@@ -964,10 +964,9 @@ func (cfile *CFile) Read(handleID fuse.HandleID, data *[]byte, offset int64, rea
 		if offset+readsize < cache.endOffset {
 			*data = append(*data, cfile.ReaderMap[handleID].readBuf[offset:offset+readsize]...)
 			return readsize
-		} else {
-			*data = append(*data, cfile.ReaderMap[handleID].readBuf[offset:cache.endOffset]...)
-			return cache.endOffset - offset
 		}
+		*data = append(*data, cfile.ReaderMap[handleID].readBuf[offset:cache.endOffset]...)
+		return cache.endOffset - offset
 	}
 
 	if cfile.chunks == nil || len(cfile.chunks) == 0 {
