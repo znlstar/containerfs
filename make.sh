@@ -7,7 +7,7 @@ else
   rm -rf ./output/*
 fi
 
-for dir in ./proto/mp ./proto/dp ./proto/vp ./proto/rp
+for dir in ./proto/mp ./proto/dp ./proto/vp ./proto/rp ./proto/kvp
 do
   pushd $dir
   make
