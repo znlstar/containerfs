@@ -112,8 +112,33 @@ message UpdateChunkInfoReq {
     int64   ChunkID = 6;
     int32   Position = 7;
     int32   Status = 8;
+    string  Path = 9;
     
 }
 message UpdateChunkInfoAck {
     int32 Ret = 1;
 }
+
+
+service MdcService {
+  rpc FetchMeters (MdcRequest) returns (Meters) {}
+}
+message Meters {
+    repeated Meter meters = 1;
+}
+
+message Meter {
+  string Name = 1;
+  string Unit = 2;
+  float  Volume = 3;
+  string Resource = 4;
+  string IP = 5;
+  string Timestamp = 6;
+  string Type = 7;
+  string Details = 8;
+}
+
+message MdcRequest {
+}
+
+

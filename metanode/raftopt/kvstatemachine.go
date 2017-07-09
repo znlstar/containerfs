@@ -8,8 +8,11 @@ import (
 	"io"
 	"sync"
 
+	pbproto "github.com/golang/protobuf/proto"
+	kvp "github.com/ipdcode/containerfs/proto/kvp"
 	"github.com/ipdcode/raft"
 	"github.com/ipdcode/raft/proto"
+	"reflect"
 )
 
 var errNotExists = errors.New("Key not exists")
@@ -20,14 +23,14 @@ type KvStateMachine struct {
 	id      uint64
 	applied uint64
 	raft    *raft.RaftServer
-	data    map[string]string
+	data    map[string][]byte
 }
 
 func newKvStatemachine(id uint64, raft *raft.RaftServer) *KvStateMachine {
 	return &KvStateMachine{
 		id:   id,
 		raft: raft,
-		data: make(map[string]string),
+		data: make(map[string][]byte),
 	}
 }
 
@@ -38,16 +41,15 @@ func (ms *KvStateMachine) Apply(data []byte, index uint64) (interface{}, error) 
 		ms.Unlock()
 	}()
 
-	var kv map[string]string
-	if err := json.Unmarshal(data, &kv); err != nil {
+	kv := &kvp.Kv{}
+	err := pbproto.Unmarshal(data, kv)
+	if err != nil {
 		return nil, err
 	}
-	for k, v := range kv {
-		if v == "!delete!" {
-			delete(ms.data, k)
-		} else {
-			ms.data[k] = v
-		}
+	if reflect.DeepEqual(kv.V, []byte("!delete!")) {
+		delete(ms.data, kv.K)
+	} else {
+		ms.data[kv.K] = kv.V
 	}
 	ms.applied = index
 	return nil, nil
@@ -114,30 +116,31 @@ func (ms *KvStateMachine) HandleFatalEvent(err *raft.FatalError) {
 }
 
 //Get ...
-func (ms *KvStateMachine) Get(raftGroupID uint64, key string) (string, error) {
+func (ms *KvStateMachine) Get(raftGroupID uint64, key string) ([]byte, error) {
 	ms.RLock()
 	defer ms.RUnlock()
 
 	if v, ok := ms.data[key]; ok {
 		return v, nil
 	}
-	return "", errNotExists
+	return []byte{}, errNotExists
 
 }
 
 //GetAll ...
-func (ms *KvStateMachine) GetAll(raftGroupID uint64) (map[string]string, error) {
+func (ms *KvStateMachine) GetAll(raftGroupID uint64) (map[string][]byte, error) {
 	return ms.data, nil
 }
 
 //Put ...
-func (ms *KvStateMachine) Put(raftGroupID uint64, key, value string) error {
+func (ms *KvStateMachine) Put(raftGroupID uint64, key string, value []byte) error {
 
 	var data []byte
 	var err error
 
-	kv := map[string]string{key: value}
-	if data, err = json.Marshal(kv); err != nil {
+	kv := &kvp.Kv{K: key, V: value}
+
+	if data, err = pbproto.Marshal(kv); err != nil {
 		return err
 	}
 	resp := ms.raft.Submit(raftGroupID, data)

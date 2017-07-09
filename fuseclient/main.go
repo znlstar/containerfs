@@ -577,9 +577,11 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 		}
 
 	*/
+
 	f.handles--
 
 	if int(req.Flags)&os.O_WRONLY != 0 || int(req.Flags)&os.O_RDWR != 0 {
+		f.cfile.Flush()
 		f.cfile.CloseConns()
 		f.writers--
 	}
@@ -642,8 +644,6 @@ var _ = fs.HandleFlusher(&File{})
 
 // Flush ...
 func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
-	logger.Debug("Flush...")
-	f.cfile.Flush()
 	return nil
 }
 

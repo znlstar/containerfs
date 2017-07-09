@@ -3,10 +3,7 @@ syntax="proto3";
 package rp;
 
 service Repair {
-    //rpc GetSrcData(GetSrcDataReq) returns (GetSrcDataAck){};
     rpc GetSrcData(GetSrcDataReq) returns (stream GetSrcDataAck){};
-    //rpc CompareFile(CompareReq) returns (CompareAck){};
-    //rpc CopyData(StreamCopyReq) returns (stream StreamCopyAck){};
 }
 
 message GetSrcDataReq {
@@ -18,25 +15,3 @@ message GetSrcDataReq {
 message GetSrcDataAck {
     bytes Databuf = 1;
 }
-
-/*
-message CompareReq {
-    string SrcIp = 1 ;
-    string SrcFile = 2 ;
-    string DstFile = 3 ;
-    int64 SrcSize = 4 ;
-}
-message CompareAck {
-    int32 Ret = 1 ;
-}
-
-message StreamCopyReq {
-    string SrcFile = 1;
-    string DstFile = 2;
-    int64 Ssize = 3;
-}
-message StreamCopyAck {
-    string DstFile = 1;
-    bytes Databuf = 2;
-}
-*/

@@ -353,15 +353,16 @@ func (s *VolMgrServer) UpdateChunkInfo(ctx context.Context, in *vp.UpdateChunkIn
 	chkid := in.ChunkID
 	status := in.Status
 	position := in.Position
+	path := in.Path
 
-	rp, err := VolMgrDB.Prepare("INSERT INTO repair(volid,blkgrpid,blkid,blkip,blkport,chkid,status,position) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
+	rp, err := VolMgrDB.Prepare("INSERT INTO repair(volid,blkgrpid,blkid,blkip,blkport,chkid,status,position,path) VALUES(?, ?, ?, ?, ?, ?, ?, ?,?)")
 	if err != nil {
 		logger.Error("insert need repair volid:%v - blk:%v - chunk:%v to repair table prepare error:%v!", volid, blkid, chkid, err)
 		ack.Ret = -1
 		return &ack, err
 	}
 	defer rp.Close()
-	_, err = rp.Exec(volid, blkgrpid, blkid, ip, port, chkid, status, position)
+	_, err = rp.Exec(volid, blkgrpid, blkid, ip, port, chkid, status, position, path)
 	if err != nil {
 		logger.Error("insert need repair volid:%v - blk:%v - chunk:%v to repair table exec error:%v!", volid, blkid, chkid, err)
 		ack.Ret = -1
@@ -620,6 +621,41 @@ func StartVolMgrService() {
 	}
 }
 
+// MdcServer ...
+type MdcServer struct{}
+
+//GetVolList : get all volume list
+func (s *MdcServer) FetchMeters(ctx context.Context, in *vp.MdcRequest) (*vp.Meters, error) {
+	ack := vp.Meters{}
+	meter := vp.Meter{}
+
+	meter.Name = "Service Status"
+	meter.Volume = 0
+	meter.Resource = "volmgr#" + VolMgrServerAddr.host
+	meter.IP = VolMgrServerAddr.host
+	meter.Timestamp = ""
+	meter.Type = "gague"
+
+	ack.Meters = append(ack.Meters, &meter)
+	return &ack, nil
+}
+
+// StartMdcService ...
+func StarMdcService() {
+
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", VolMgrServerAddr.port+10))
+	if err != nil {
+		panic(fmt.Sprintf("Failed to listen on:%v", VolMgrServerAddr.port))
+	}
+	s := grpc.NewServer()
+	vp.RegisterMdcServiceServer(s, &MdcServer{})
+	// Register reflection service on gRPC server.
+	reflection.Register(s)
+	if err := s.Serve(lis); err != nil {
+		panic("Failed to serve")
+	}
+}
+
 func init() {
 	c, err := config.NewConfig(os.Args[1])
 	if err != nil {
@@ -677,5 +713,9 @@ func main() {
 	}()
 	Wg.Wait()
 	defer VolMgrDB.Close()
-	StartVolMgrService()
+	go StartVolMgrService()
+	go StarMdcService()
+
+	loop := make(chan int)
+	<-loop
 }
