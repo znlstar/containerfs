@@ -7,7 +7,7 @@ else
   rm -rf ./output/*
 fi
 
-for dir in ./proto/mp ./proto/dp ./proto/vp ./proto/rp ./proto/kvp
+for dir in ./proto/mp ./proto/dp ./proto/vp ./proto/rp  ./proto/kvp
 do
   pushd $dir
   make
@@ -19,7 +19,8 @@ do
   pushd $dir
   go get
   go build -o cfs-$dir main.go
-  mv cfs-$dir cfs-$dir.ini ../output
+  cp cfs-$dir cfs-$dir.ini ../output
+  rm -rf cfs-$dir
   popd
 done
 
