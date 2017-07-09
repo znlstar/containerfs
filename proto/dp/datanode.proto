@@ -4,9 +4,6 @@ package dp;
 
 service DataNode {
     rpc WriteChunk(WriteChunkReq) returns (WriteChunkAck){};
-    //rpc ReadChunk(ReadChunkReq) returns (ReadChunkAck){};
-
-    //rpc StreamWriteChunk(stream StreamWriteChunkReq) returns (StreamWriteChunkAck){};
     rpc StreamReadChunk(StreamReadChunkReq) returns (stream StreamReadChunkAck){};
     rpc DeleteChunk(DeleteChunkReq) returns (DeleteChunkAck){};
     rpc DatanodeHealthCheck(DatanodeHealthCheckReq) returns (DatanodeHealthCheckAck){};
@@ -32,20 +29,6 @@ message StreamReadChunkAck{
     bytes Databuf = 1;
 }
 
-
-
-//message ReadChunkReq{
-//    int64 ChunkID = 1;
-//    int32 BlockID = 2;
-//    int64 Readlen = 3;
-//    int64 Offset = 4;
-//}
-
-//message ReadChunkAck{
-//    int32 Ret = 1;
-//    int64 Readsize = 2;
-//    bytes Databuf = 3;
-//}
 
 message DeleteChunkReq{
     int64 ChunkID = 1;
@@ -75,16 +58,3 @@ message BlockInfo{
     int32 DataNodeIP = 2;
     int32 DataNodePort = 3;
 }
-
-//message ChunkInfo{
-//    int64 ChunkID = 1;
-//    int32 ChunkSize = 2;
-//    int32 BlockGroupID = 3;
-//}
-
-
-//message ChunkInfoWithBG{
-//    int64 ChunkID = 1;
-//    int32 ChunkSize = 2;
-//    BlockGroup BlockGroup = 3;
-//}

@@ -128,16 +128,17 @@ func LoadKvSnapShoot(kvsm *KvStateMachine, path string) (uint64, error) {
 }
 
 //KvGet ...
-func KvGet(kvsm *KvStateMachine, raftGroupID uint64, k string) (string, error) {
+func KvGet(kvsm *KvStateMachine, raftGroupID uint64, k string) ([]byte, error) {
 	return kvsm.Get(raftGroupID, k)
 }
 
 //KvGetAll ...
-func KvGetAll(kvsm *KvStateMachine, raftGroupID uint64) (map[string]string, error) {
+func KvGetAll(kvsm *KvStateMachine, raftGroupID uint64) (map[string][]byte, error) {
 	return kvsm.GetAll(raftGroupID)
 }
 
 //KvSet ...
-func KvSet(kvsm *KvStateMachine, raftGroupID uint64, k string, v string) error {
+func KvSet(kvsm *KvStateMachine, raftGroupID uint64, k string, v []byte) error {
+	log.Error("KvSet...")
 	return kvsm.Put(raftGroupID, k, v)
 }

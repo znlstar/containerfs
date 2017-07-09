@@ -469,6 +469,7 @@ func (cfs *CFS) OpenFile(path string, flags int) (int32, *CFile) {
 					ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
 					ConnM:     conn,
 				}
+
 			} else {
 
 				tmpBuffer := wBuffer{
@@ -557,6 +558,7 @@ func (cfs *CFS) UpdateOpenFile(cfile *CFile, flags int) int32 {
 		cfile.ConnM = conn
 
 		if (flags & os.O_APPEND) != 0 {
+
 			chunkInfos := make([]*mp.ChunkInfoWithBG, 0)
 
 			var ret int32
@@ -791,9 +793,11 @@ func (cfs *CFS) GetFileChunks(path string) (int32, []*mp.ChunkInfoWithBG) {
 }
 
 type wBuffer struct {
-	freeSize  int32               // chunk size
-	chunkInfo *mp.ChunkInfoWithBG // chunk info
-	buffer    *bytes.Buffer       // chunk data
+	freeSize    int32               // chunk size
+	chunkInfo   *mp.ChunkInfoWithBG // chunk info
+	buffer      *bytes.Buffer       // chunk data
+	startOffset int64
+	endOffset   int64
 }
 
 // ReaderInfo ...
@@ -829,7 +833,7 @@ type CFile struct {
 	RMutex sync.Mutex
 	chunks []*mp.ChunkInfoWithBG // chunkinfo
 	//readBuf    []byte
-	ReaderMap map[fuse.HandleID]*ReaderInfo
+	ReaderMap      map[fuse.HandleID]*ReaderInfo
 }
 
 func generateRandomNumber(start int, end int, count int) []int {
@@ -951,6 +955,21 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 
 // Read ...
 func (cfile *CFile) Read(handleID fuse.HandleID, data *[]byte, offset int64, readsize int64) int64 {
+	// read data from write buffer
+
+	cache := cfile.wBuffer
+	n := cache.buffer.Len()
+	if n != 0 && offset >= cache.startOffset {
+		cfile.ReaderMap[handleID].readBuf = cache.buffer.Bytes()
+		if offset+readsize < cache.endOffset {
+			*data = append(*data, cfile.ReaderMap[handleID].readBuf[offset:offset+readsize]...)
+			return readsize
+		} else {
+			*data = append(*data, cfile.ReaderMap[handleID].readBuf[offset:cache.endOffset]...)
+			return cache.endOffset - offset
+		}
+	}
+
 	if cfile.chunks == nil || len(cfile.chunks) == 0 {
 		logger.Error("Read File but Chunks not exist")
 		return -1
@@ -1081,7 +1100,9 @@ func (cfile *CFile) Write(buf []byte, len int32) int32 {
 			if len != w {
 				cfile.wBuffer.buffer.Write(buf[w:len])
 				cfile.wBuffer.freeSize = cfile.wBuffer.freeSize - (len - w)
+				cfile.wBuffer.startOffset = cfile.FileSize
 				cfile.FileSize = cfile.FileSize + int64(len-w)
+				cfile.wBuffer.endOffset = cfile.FileSize
 				cfile.wBuffer.chunkInfo.ChunkSize = cfile.wBuffer.chunkInfo.ChunkSize + int32(len-w)
 				w = len
 			}
@@ -1089,7 +1110,9 @@ func (cfile *CFile) Write(buf []byte, len int32) int32 {
 		} else {
 			cfile.wBuffer.buffer.Write(buf[w : w+cfile.wBuffer.freeSize])
 			w = w + cfile.wBuffer.freeSize
+			cfile.wBuffer.startOffset = cfile.FileSize
 			cfile.FileSize = cfile.FileSize + int64(cfile.wBuffer.freeSize)
+			cfile.wBuffer.endOffset = cfile.FileSize
 			cfile.wBuffer.chunkInfo.ChunkSize = cfile.wBuffer.chunkInfo.ChunkSize + int32(cfile.wBuffer.freeSize)
 			cfile.wBuffer.freeSize = 0
 		}
@@ -1148,6 +1171,7 @@ func (cfile *CFile) SetChunkStatus(ip string, port int32, blkgrpid int32, blkid 
 	vpUpdateChunkInfoReq.ChunkID = chunkid
 	vpUpdateChunkInfoReq.Position = position
 	vpUpdateChunkInfoReq.Status = status
+	vpUpdateChunkInfoReq.Path = cfile.Path
 
 	conn2, err := DialVolmgr(VolMgrAddr)
 	if err != nil {

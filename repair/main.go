@@ -71,23 +71,24 @@ func getNeedRepairChunks() {
 	var blkport int
 	var chkid int
 	var position int
-	rpr, err := VolMgrDB.Query("select volid,blkgrpid,blkid,blkport,chkid, position from repair where blkip=? and status=2 limit 10", RepairServerAddr.host)
+	var path string
+	rpr, err := VolMgrDB.Query("select volid,blkgrpid,blkid,blkport,chkid, position ,path from repair where blkip=? and status=2 limit 10", RepairServerAddr.host)
 	if err != nil {
 		logger.Error("Get from blk table for need repair blkds in this node error:%s", err)
 	}
 	defer rpr.Close()
 	for rpr.Next() {
-		err = rpr.Scan(&volid, &blkgrpid, &blkid, &blkport, &chkid, &position)
+		err = rpr.Scan(&volid, &blkgrpid, &blkid, &blkport, &chkid, &position, &path)
 		if err != nil {
 			logger.Error("Scan db for get need repair chunks error:%v", err)
 			continue
 		}
 		Wg.Add(1)
-		go repairchk(volid, blkgrpid, blkid, blkport, chkid, position)
+		go repairchk(volid, blkgrpid, blkid, blkport, chkid, position, path)
 	}
 }
 
-func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, position int) {
+func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, position int, filepath string) {
 	logger.Debug("=== Begin repair blkgrp:%v - blk:%v - chk:%v", blkgrpid, blkid, chkid)
 
 	//if disk bad(I/O error)
@@ -159,7 +160,7 @@ func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, po
 					Wg.Add(-1)
 					return
 				}
-				ret := beginRepairchunk(volid, srcip, srcport, srcblkid, path, blkid, chkid, position)
+				ret := beginRepairchunk(volid, srcip, srcport, srcblkid, path, blkid, chkid, position, filepath)
 				if ret != 0 {
 					continue
 				} else {
@@ -183,7 +184,7 @@ func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, po
 	}
 }
 
-func beginRepairchunk(volid string, srcip string, srcport int, srcblkid int, path string, blkid int, chkid int, position int) (ret int) {
+func beginRepairchunk(volid string, srcip string, srcport int, srcblkid int, path string, blkid int, chkid int, position int, filepath string) (ret int) {
 	logger.Debug("Begin repair chunkfile path:%v-%v from srcip:%v-srcport:%v-srcblk:%v", path, chkid, srcip, srcport, srcblkid)
 	srcAddr := srcip + ":" + strconv.Itoa(RepairServerAddr.port)
 	conn, err := grpc.Dial(srcAddr, grpc.WithInsecure())
@@ -236,6 +237,7 @@ func beginRepairchunk(volid string, srcip string, srcport int, srcblkid int, pat
 		ChunkID:  int64(chkid),
 		Position: int32(position),
 		Status:   int32(0),
+		Path:     filepath,
 	}
 	_, err = mc.UpdateChunkInfo(context.Background(), pmUpdateChunkInfo)
 	if err != nil {

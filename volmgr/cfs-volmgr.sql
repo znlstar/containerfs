@@ -88,6 +88,7 @@ CREATE TABLE `repair` (
   `chkid` bigint(32) NOT NULL,
   `position` tinyint(8) NOT NULL,
   `status` tinyint(8) NOT NULL,
+  `path` varchar(256) NOT NULL,
   `createdTime` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
