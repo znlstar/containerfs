@@ -139,6 +139,5 @@ func KvGetAll(kvsm *KvStateMachine, raftGroupID uint64) (map[string][]byte, erro
 
 //KvSet ...
 func KvSet(kvsm *KvStateMachine, raftGroupID uint64, k string, v []byte) error {
-	log.Error("KvSet...")
 	return kvsm.Put(raftGroupID, k, v)
 }
