@@ -365,6 +365,7 @@ func (ns *nameSpace) List(path string) ([]*mp.InodeInfo, int32) {
 		return tmpInodeInfos, ret
 	}
 
+	ns.RLock()
 	for k, v := range allMap {
 		if strings.Contains(k, "InodeDB/") {
 			inodeInfo := mp.InodeInfo{}
@@ -389,6 +390,8 @@ func (ns *nameSpace) List(path string) ([]*mp.InodeInfo, int32) {
 
 		}
 	}
+	ns.RUnlock()
+
 	/*
 		var pTmpInodeInfo *mp.InodeInfo
 		for _, value := range pInodeInfo.ChildrenInodeIDs {
