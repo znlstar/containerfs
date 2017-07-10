@@ -17,7 +17,6 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"runtime"
-	"runtime/debug"
 	"strconv"
 	"time"
 )
@@ -482,13 +481,6 @@ func main() {
 	//for multi-cpu scheduling
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
-
-	defer func() {
-		if err := recover(); err != nil {
-			logger.Error("panic !!! :%v", err)
-			logger.Error("stacks:%v", string(debug.Stack()))
-		}
-	}()
 
 	raftopt.AddInit(MetaNodeServerAddr.ips)
 

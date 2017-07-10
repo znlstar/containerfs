@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc"
 	"math/rand"
 	"path"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,6 +45,13 @@ type nameSpace struct {
 var AllNameSpace map[string]*nameSpace
 var gMutex sync.RWMutex
 
+func catchPanic() {
+	if err := recover(); err != nil {
+		logger.Error("panic !!! :%v", err)
+		logger.Error("stacks:%v", string(debug.Stack()))
+	}
+}
+
 //CreateGNameSpace ...
 func CreateGNameSpace() {
 	gMutex.Lock()
@@ -60,6 +68,8 @@ func createRaftGroup(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir
 }
 
 func initNameSpace(rs *raft.RaftServer, nameSpace *nameSpace, UUID string) int32 {
+
+	defer catchPanic()
 
 	time.Sleep(time.Second * 2)
 
@@ -123,6 +133,9 @@ func initNameSpace(rs *raft.RaftServer, nameSpace *nameSpace, UUID string) int32
 
 //CreateNameSpace ...
 func CreateNameSpace(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir string, UUID string, raftGroupID uint64, IsLoad bool) int32 {
+
+	defer catchPanic()
+
 	var err error
 	var errno int32
 
@@ -151,6 +164,8 @@ func CreateNameSpace(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir
 //SnapShootNameSpace ...
 func SnapShootNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
 
+	defer catchPanic()
+
 	ret, nameSpace := GetNameSpace(UUID)
 	if ret != 0 {
 		return ret
@@ -161,6 +176,8 @@ func SnapShootNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
 
 //DeleteNameSpace ...
 func DeleteNameSpace(rs *raft.RaftServer, UUID string) int32 {
+
+	defer catchPanic()
 
 	ret, nameSpace := GetNameSpace(UUID)
 	if ret != 0 {
@@ -176,6 +193,9 @@ func DeleteNameSpace(rs *raft.RaftServer, UUID string) int32 {
 
 //GetNameSpace ...
 func GetNameSpace(UUID string) (int32, *nameSpace) {
+
+	defer catchPanic()
+
 	gMutex.RLock()
 	defer gMutex.RUnlock()
 	if v, ok := AllNameSpace[UUID]; ok {
@@ -187,8 +207,7 @@ func GetNameSpace(UUID string) (int32, *nameSpace) {
 //GetFSInfo ...
 func (ns *nameSpace) GetFSInfo(volID string) mp.GetFSInfoAck {
 
-	ns.RLock()
-	defer ns.RUnlock()
+	defer catchPanic()
 
 	ack := mp.GetFSInfoAck{}
 	var totalSpace uint64
@@ -213,6 +232,9 @@ func (ns *nameSpace) GetFSInfo(volID string) mp.GetFSInfoAck {
 
 // GetVolInfo ...
 func (ns *nameSpace) GetVolInfo(name string) (int32, []*vp.BlockGroup) {
+
+	defer catchPanic()
+
 	conn, err := grpc.Dial(VolMgrAddress, grpc.WithInsecure())
 	if err != nil {
 		logger.Debug("Dial failed: %v", err)
@@ -231,6 +253,9 @@ func (ns *nameSpace) GetVolInfo(name string) (int32, []*vp.BlockGroup) {
 
 //GetVolList ...
 func GetVolList() (int32, []*vp.VolIDs) {
+
+	defer catchPanic()
+
 	conn, err := grpc.Dial(VolMgrAddress, grpc.WithInsecure())
 	if err != nil {
 		logger.Debug("Dial failed: %v", err)
@@ -252,6 +277,9 @@ func GetVolList() (int32, []*vp.VolIDs) {
 
 //CreateDir ...
 func (ns *nameSpace) CreateDir(path string) int32 {
+
+	defer catchPanic()
+
 	var ret int32
 	ret = 0
 	keys := ns.GetAllKeyByFullPath(path)
@@ -309,6 +337,9 @@ func (ns *nameSpace) CreateDir(path string) int32 {
 
 //Stat ...
 func (ns *nameSpace) Stat(path string) (*mp.InodeInfo, int32) {
+
+	defer catchPanic()
+
 	var ret int32
 	ret = 0
 	var ok bool
@@ -333,6 +364,9 @@ func (ns *nameSpace) Stat(path string) (*mp.InodeInfo, int32) {
 
 //List ...
 func (ns *nameSpace) List(path string) ([]*mp.InodeInfo, int32) {
+
+	defer catchPanic()
+
 	var ret int32
 	ret = 0
 
@@ -365,7 +399,7 @@ func (ns *nameSpace) List(path string) ([]*mp.InodeInfo, int32) {
 		return tmpInodeInfos, ret
 	}
 
-	ns.RLock()
+	ns.RaftGroup.RLock()
 	for k, v := range allMap {
 		if strings.Contains(k, "InodeDB/") {
 			inodeInfo := mp.InodeInfo{}
@@ -390,7 +424,7 @@ func (ns *nameSpace) List(path string) ([]*mp.InodeInfo, int32) {
 
 		}
 	}
-	ns.RUnlock()
+	ns.RaftGroup.RUnlock()
 
 	/*
 		var pTmpInodeInfo *mp.InodeInfo
@@ -408,6 +442,9 @@ func (ns *nameSpace) List(path string) ([]*mp.InodeInfo, int32) {
 
 //DeleteDir ...
 func (ns *nameSpace) DeleteDir(path string) int32 {
+
+	defer catchPanic()
+
 	var ret int32
 	ret = 0
 
@@ -462,6 +499,9 @@ func (ns *nameSpace) DeleteDir(path string) int32 {
 
 //Rename ...
 func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
+
+	defer catchPanic()
+
 	var ret int32
 	ret = 0
 
@@ -529,6 +569,8 @@ func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
 
 //CreateFile ...
 func (ns *nameSpace) CreateFile(path string) int32 {
+
+	defer catchPanic()
 
 	if path == "/" {
 		return 1
@@ -598,6 +640,9 @@ func (ns *nameSpace) CreateFile(path string) int32 {
 
 //DeleteFile ...
 func (ns *nameSpace) DeleteFile(path string) int32 {
+
+	defer catchPanic()
+
 	var ret int32
 	ret = 0
 	if path == "/" {
@@ -648,6 +693,9 @@ func (ns *nameSpace) DeleteFile(path string) int32 {
 
 //AllocateChunk ...
 func (ns *nameSpace) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
+
+	defer catchPanic()
+
 	var ret int32
 
 	fmt.Println("AllocateChunk...")
@@ -685,6 +733,9 @@ func (ns *nameSpace) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
 
 //GetFileChunks ...
 func (ns *nameSpace) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
+
+	defer catchPanic()
+
 	var ret int32
 	var ok bool
 	keys := ns.GetAllKeyByFullPath(path)
@@ -701,6 +752,9 @@ func (ns *nameSpace) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
 
 //SyncChunk ...
 func (ns *nameSpace) SyncChunk(path string, chunkinfo *mp.ChunkInfo) int32 {
+
+	defer catchPanic()
+
 	var ret int32
 	var ok bool
 	keys := ns.GetAllKeyByFullPath(path)
@@ -740,6 +794,9 @@ func (ns *nameSpace) SyncChunk(path string, chunkinfo *mp.ChunkInfo) int32 {
 
 //BlockGroupVp2Mp ...
 func (ns *nameSpace) BlockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
+
+	defer catchPanic()
+
 	var mpBlockGroup = mp.BlockGroup{}
 
 	mpBlockInfos := make([]*mp.BlockInfo, len(in.BlockInfos))
@@ -845,6 +902,8 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 //ChooseBlockGroup ...
 func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 
+	defer catchPanic()
+
 	ns.RLock()
 	defer ns.RUnlock()
 
@@ -901,6 +960,8 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
 //ReleaseBlockGroup ...
 func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 
+	defer catchPanic()
+
 	ok, blockGroup := ns.BlockGroupDBGet(blockGroupID)
 	if !ok {
 		return
@@ -935,11 +996,16 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
 //UpdateChunkInfo ...
 func (ns *nameSpace) UpdateChunkInfo(in *mp.UpdateChunkInfoReq) int32 {
 
+	defer catchPanic()
+
 	return 0
 }
 
 //GetAllKeyByFullPath ...
 func (ns *nameSpace) GetAllKeyByFullPath(in string) (keys []string) {
+
+	defer catchPanic()
+
 	tmp := strings.Split(in, "/")
 	keys = make([]string, 1)
 	for i, v := range tmp {
@@ -970,7 +1036,7 @@ func (ns *nameSpace) InitInodeID() error {
 	if err != nil {
 		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "InodeID/", []byte(strconv.Itoa(0)))
 		if err != nil {
-			logger.Error("AllocateInodeID put vol:%v,key:%v,err:%v\n", ns.VolID, "InodeID/", err)
+			//logger.Error("AllocateInodeID put vol:%v,key:%v,err:%v\n", ns.VolID, "InodeID/", err)
 			return err
 		}
 	}
@@ -985,7 +1051,7 @@ func (ns *nameSpace) InitChunkID() error {
 	if err != nil {
 		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "ChunkID/", []byte(strconv.Itoa(0)))
 		if err != nil {
-			logger.Error("AllocateChunkID put vol:%v,key:%v,err:%v\n", ns.VolID, "ChunkID/", err)
+			//logger.Error("AllocateChunkID put vol:%v,key:%v,err:%v\n", ns.VolID, "ChunkID/", err)
 			return err
 		}
 	}
@@ -1000,7 +1066,7 @@ func (ns *nameSpace) VolumeDBSet(v *kvp.Slice) error {
 	if err != nil {
 		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "VolumeDB/", val)
 		if err != nil {
-			logger.Error("VolumeDBSet vol:%v,key:%v,v:%v,err:%v\n", ns.VolID, "VolumeDB/", val, err)
+			//logger.Error("VolumeDBSet vol:%v,key:%v,v:%v,err:%v\n", ns.VolID, "VolumeDB/", val, err)
 			return err
 		}
 	}
@@ -1013,7 +1079,7 @@ func (ns *nameSpace) VolumeDBGet() (bool, *kvp.Slice) {
 	if err != nil {
 		value, err = raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "VolumeDB/")
 		if err != nil {
-			logger.Error("BlockGroupDBGet vol:%v,key:%v,err:%v\n", ns.VolID, "VolumeDB/", err)
+			//logger.Error("BlockGroupDBGet vol:%v,key:%v,err:%v\n", ns.VolID, "VolumeDB/", err)
 			return false, nil
 		}
 	}
@@ -1036,7 +1102,7 @@ func (ns *nameSpace) AllocateInodeID() (int64, error) {
 	if err != nil {
 		value, err = raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "InodeID/")
 		if err != nil {
-			logger.Error("AllocateInodeID get vol:%v,key:%v,err:%v\n", ns.VolID, "InodeID/", err)
+			//logger.Error("AllocateInodeID get vol:%v,key:%v,err:%v\n", ns.VolID, "InodeID/", err)
 			return 0, err
 		}
 	}
@@ -1048,7 +1114,7 @@ func (ns *nameSpace) AllocateInodeID() (int64, error) {
 	if err != nil {
 		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "InodeID/", []byte(strconv.FormatInt(id, 10)))
 		if err != nil {
-			logger.Error("AllocateInodeID put vol:%v,key:%v,v:%v,err:%v\n", ns.VolID, "InodeID/", strconv.FormatInt(id, 10), err)
+			//logger.Error("AllocateInodeID put vol:%v,key:%v,v:%v,err:%v\n", ns.VolID, "InodeID/", strconv.FormatInt(id, 10), err)
 			return 0, err
 		}
 	}
@@ -1065,7 +1131,7 @@ func (ns *nameSpace) AllocateChunkID() (int64, error) {
 	if err != nil {
 		value, err = raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "ChunkID/")
 		if err != nil {
-			logger.Error("AllocateChunkID get vol:%v,key:%v,err:%v\n", ns.VolID, "ChunkID/", err)
+			//logger.Error("AllocateChunkID get vol:%v,key:%v,err:%v\n", ns.VolID, "ChunkID/", err)
 			return -1, err
 		}
 	}
@@ -1077,7 +1143,7 @@ func (ns *nameSpace) AllocateChunkID() (int64, error) {
 	if err != nil {
 		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "ChunkID/", []byte(strconv.FormatInt(id, 10)))
 		if err != nil {
-			logger.Error("AllocateChunkID put vol:%v,key:%v,v:%v,err:%v\n", ns.VolID, "ChunkID/", strconv.FormatInt(id, 10), err)
+			//logger.Error("AllocateChunkID put vol:%v,key:%v,v:%v,err:%v\n", ns.VolID, "ChunkID/", strconv.FormatInt(id, 10), err)
 			return -1, err
 		}
 	}
@@ -1091,7 +1157,7 @@ func (ns *nameSpace) InodeDBGet(k string) (bool, *mp.InodeInfo) {
 	if err != nil {
 		value, err = raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "InodeDB/"+k)
 		if err != nil {
-			logger.Error("InodeDBGet vol:%v,key:%v,err:%v\n", ns.VolID, "InodeDB/"+k, err)
+			//logger.Error("InodeDBGet vol:%v,key:%v,err:%v\n", ns.VolID, "InodeDB/"+k, err)
 			return false, nil
 		}
 	}
@@ -1111,7 +1177,7 @@ func (ns *nameSpace) InodeDBSet(k string, v *mp.InodeInfo) error {
 	if err != nil {
 		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "InodeDB/"+k, val)
 		if err != nil {
-			logger.Error("InodeDBSet vol:%v,key:%v,err:%v\n", ns.VolID, "InodeDB/"+k, err)
+			//logger.Error("InodeDBSet vol:%v,key:%v,err:%v\n", ns.VolID, "InodeDB/"+k, err)
 			return err
 		}
 	}
@@ -1125,7 +1191,7 @@ func (ns *nameSpace) InodeDBDelete(k string) error {
 	if err != nil {
 		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "InodeDB/"+k, []byte("!delete!"))
 		if err != nil {
-			logger.Error("InodeDBSet vol:%v,key:%v,err:%v\n", ns.VolID, "InodeDB/"+k, err)
+			//logger.Error("InodeDBSet vol:%v,key:%v,err:%v\n", ns.VolID, "InodeDB/"+k, err)
 			return err
 		}
 	}
@@ -1138,7 +1204,7 @@ func (ns *nameSpace) BlockGroupDBGet(k int32) (bool, *vp.BlockGroup) {
 	if err != nil {
 		value, err = raftopt.KvGet(ns.RaftGroup, ns.RaftGroupID, "BGDB/"+strconv.Itoa(int(k)))
 		if err != nil {
-			logger.Error("BlockGroupDBGet vol:%v,key:%v,err:%v\n", ns.VolID, "BGDB/"+strconv.Itoa(int(k)), err)
+			//logger.Error("BlockGroupDBGet vol:%v,key:%v,err:%v\n", ns.VolID, "BGDB/"+strconv.Itoa(int(k)), err)
 			return false, nil
 		}
 	}
@@ -1159,7 +1225,7 @@ func (ns *nameSpace) BlockGroupDBSet(k int32, v *vp.BlockGroup) error {
 	if err != nil {
 		err := raftopt.KvSet(ns.RaftGroup, ns.RaftGroupID, "BGDB/"+strconv.Itoa(int(k)), val)
 		if err != nil {
-			logger.Error("BlockGroupDBSet vol:%v,key:%v,err=%v\n", ns.VolID, "BGDB/"+strconv.Itoa(int(k)), err)
+			//logger.Error("BlockGroupDBSet vol:%v,key:%v,err=%v\n", ns.VolID, "BGDB/"+strconv.Itoa(int(k)), err)
 			return err
 		}
 	}
