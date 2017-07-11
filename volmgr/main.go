@@ -196,7 +196,8 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 
 	//allocate block group for the volume
 	for i := int32(0); i < blkgrpnum; i++ {
-		rows, err := VolMgrDB.Query("SELECT blkid FROM blk WHERE allocated = 0 and disabled=0 group by hostip ORDER BY rand() LIMIT 3 FOR UPDATE")
+		//rows, err := VolMgrDB.Query("SELECT blkid FROM blk WHERE allocated = 0 and disabled=0 group by hostip ORDER BY rand() LIMIT 3 FOR UPDATE")
+		rows, err := VolMgrDB.Query("select blkid from (select * from blk WHERE allocated = 0 and disabled=0 order by rand())t  group by hostip order BY rand() limit 3 for update")
 		if err != nil {
 			logger.Error("Create volume(%s -- %s) select blk for the %dth blkgroup error:%s", volname, voluuid, i, err)
 			ack.Ret = 1
