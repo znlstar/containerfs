@@ -2,40 +2,52 @@
 
 # concepts
 
-cluster, volume, namespace, directory, file, inode, extent, blockgroup
+cluster, volume, namespace, directory, file, inode, block
 
-datanode, metanode
+extent (a list of continous blocks), shard (data repl unit)
+
+datanode, volmanager, metadata service
 
 # cluster metadata 
 
 VolumeTable
 
-BlockGroupTable
+ShardTable
 
 DataNodeTable
 
-MetaNodeTable
-
 # volume metadata
 
-namespace = inode table (itable) + directory table (dtable)
+keyspace = inode table (itable) + directory table (dtable)
 
-itable: ino --> marshalled attributes(ctime, mtime, .., extentMap)
+itable: ino --> <ctime, mtime, .., extentArray>
 
-extent = <startBlockNo, endBlockNo>
-extentMap = extent --> blockgroupID
+extentArray = marshalled[<startOffset, endOffset, shardID>]
 
 dtable: <parentIno, name> --> childIno
 
-both itable and dtable are sorted key-value maps implemented as leveldb/rocksdb
+# metadata storage
 
-each namespace is replicated by a raft group
+currently we adopts vitess
 
-# blockgroup
+# shard
 
-a blockgroup contains extents/segments, i.e. continous blocks, where each extent is stored as a seperate file.
+shards host extents, where each extent is stored as a seperate file named as <volumeID, ino, startOffset>
 
-three replicas form a chained replication: head -> middle -> tail
+# shard replication
 
+master <-> slave -> backup (optional, and another IDC maybe)
+
+# failure recorvery
+
+crash-stop model?
+
+# operations
+
+1. mkfs
+
+2. resizefs
+
+3. statfs
 
 
