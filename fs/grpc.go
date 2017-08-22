@@ -26,15 +26,16 @@ func GetLeader(volumeID string) (string, error) {
 		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
 		pmGetMetaLeaderAck, err := mc.GetMetaLeader(ctx, pmGetMetaLeaderReq)
 		if err != nil {
+			time.Sleep(time.Millisecond * 300)
 			continue
 		}
 		if pmGetMetaLeaderAck.Ret != 0 {
+			time.Sleep(time.Millisecond * 300)
 			continue
 		}
 		leader = pmGetMetaLeaderAck.Leader
 		flag = true
 		break
-		time.Sleep(time.Millisecond * 300)
 	}
 	if !flag {
 		return "", errors.New("Get leader failed")
