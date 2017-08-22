@@ -95,6 +95,21 @@ func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameS
 	return &ack, nil
 }
 
+//ExpandNameSpace ...
+func (s *MetaNodeServer) ExpandNameSpace(ctx context.Context, in *mp.ExpandNameSpaceReq) (*mp.ExpandNameSpaceAck, error) {
+
+	ack := mp.ExpandNameSpaceAck{}
+
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ack.Ret = nameSpace.ExpandNameSpace(in.BlockGroups)
+
+	return &ack, nil
+}
+
 // SnapShootNameSpace ...
 func (s *MetaNodeServer) SnapShootNameSpace(ctx context.Context, in *mp.SnapShootNameSpaceReq) (*mp.SnapShootNameSpaceAck, error) {
 	ack := mp.SnapShootNameSpaceAck{}
@@ -181,155 +196,120 @@ func (s *MetaNodeServer) GetFSInfo(ctx context.Context, in *mp.GetFSInfoReq) (*m
 	return &ack, nil
 }
 
-//CreateDir ...
-func (s *MetaNodeServer) CreateDir(ctx context.Context, in *mp.CreateDirReq) (*mp.CreateDirAck, error) {
-	ack := mp.CreateDirAck{}
-	fullPathName := in.FullPathName
-	volID := in.VolID
-	ret, nameSpace := ns.GetNameSpace(volID)
+//CreateDirDirect ...
+func (s *MetaNodeServer) CreateDirDirect(ctx context.Context, in *mp.CreateDirDirectReq) (*mp.CreateDirDirectAck, error) {
+	ack := mp.CreateDirDirectAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
 		ack.Ret = ret
 		return &ack, nil
 	}
-	ack.Ret = nameSpace.CreateDir(fullPathName)
+	ack.Ret, ack.Inode = nameSpace.CreateDirDirect(in.PInode, in.Name)
 	return &ack, nil
 }
 
-//Stat ...
-func (s *MetaNodeServer) Stat(ctx context.Context, in *mp.StatReq) (*mp.StatAck, error) {
-	ack := mp.StatAck{}
-	fullPathName := in.FullPathName
-	volID := in.VolID
-	ret, nameSpace := ns.GetNameSpace(volID)
+//GetInodeInfoDirect ...
+func (s *MetaNodeServer) GetInodeInfoDirect(ctx context.Context, in *mp.GetInodeInfoDirectReq) (*mp.GetInodeInfoDirectAck, error) {
+	ack := mp.GetInodeInfoDirectAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
 		ack.Ret = ret
 		return &ack, nil
 	}
-	ack.InodeInfo, ack.Ret = nameSpace.Stat(fullPathName)
+	ack.Ret, ack.InodeInfo, ack.Inode = nameSpace.GetInodeInfoDirect(in.PInode, in.Name)
 	return &ack, nil
 }
 
-//List ...
-func (s *MetaNodeServer) List(ctx context.Context, in *mp.ListReq) (*mp.ListAck, error) {
-	ack := mp.ListAck{}
-	fullPathName := in.FullPathName
-	volID := in.VolID
-	ret, nameSpace := ns.GetNameSpace(volID)
+//StatDirect ...
+func (s *MetaNodeServer) StatDirect(ctx context.Context, in *mp.StatDirectReq) (*mp.StatDirectAck, error) {
+	ack := mp.StatDirectAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
 		ack.Ret = ret
 		return &ack, nil
 	}
-	ack.InodeInfos, ack.Ret = nameSpace.List(fullPathName)
+	ack.InodeType, ack.Inode, ack.Ret = nameSpace.StatDirect(in.PInode, in.Name)
 	return &ack, nil
 }
 
-// DeleteDir ...
-func (s *MetaNodeServer) DeleteDir(ctx context.Context, in *mp.DeleteDirReq) (*mp.DeleteDirAck, error) {
+//ListDirect ...
+func (s *MetaNodeServer) ListDirect(ctx context.Context, in *mp.ListDirectReq) (*mp.ListDirectAck, error) {
+	ack := mp.ListDirectAck{}
 
-	ack := mp.DeleteDirAck{}
-	fullPathName := in.FullPathName
-	volID := in.VolID
-	ret, nameSpace := ns.GetNameSpace(volID)
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
 		ack.Ret = ret
 		return &ack, nil
 	}
-	ack.Ret = nameSpace.DeleteDir(fullPathName)
+	ack.Dirents, ack.Ret = nameSpace.ListDirect(in.PInode)
 	return &ack, nil
-
 }
 
-// Rename ...
-func (s *MetaNodeServer) Rename(ctx context.Context, in *mp.RenameReq) (*mp.RenameAck, error) {
-	ack := mp.RenameAck{}
-	fullPathName1 := in.FullPathName1
-	fullPathName2 := in.FullPathName2
-	volID := in.VolID
-	ret, nameSpace := ns.GetNameSpace(volID)
+// DeleteDirDirect ...
+func (s *MetaNodeServer) DeleteDirDirect(ctx context.Context, in *mp.DeleteDirDirectReq) (*mp.DeleteDirDirectAck, error) {
+
+	ack := mp.DeleteDirDirectAck{}
+
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
 		ack.Ret = ret
 		return &ack, nil
 	}
-	ack.Ret = nameSpace.Rename(fullPathName1, fullPathName2)
+	ack.Ret = nameSpace.DeleteDirDirect(in.PInode, in.Name)
 	return &ack, nil
 
 }
 
-//CreateFile ...
-func (s *MetaNodeServer) CreateFile(ctx context.Context, in *mp.CreateFileReq) (*mp.CreateFileAck, error) {
-	ack := mp.CreateFileAck{}
-	fullPathName := in.FullPathName
-	volID := in.VolID
-	ret, nameSpace := ns.GetNameSpace(volID)
+// RenameDirect ...
+func (s *MetaNodeServer) RenameDirect(ctx context.Context, in *mp.RenameDirectReq) (*mp.RenameDirectAck, error) {
+	ack := mp.RenameDirectAck{}
+
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
 		ack.Ret = ret
 		return &ack, nil
 	}
-	ack.Ret = nameSpace.CreateFile(fullPathName)
+	ack.Ret = nameSpace.RenameDirect(in.OldPInode, in.OldName, in.NewPInode, in.NewName)
 	return &ack, nil
 }
 
-// DeleteFile ...
-func (s *MetaNodeServer) DeleteFile(ctx context.Context, in *mp.DeleteFileReq) (*mp.DeleteFileAck, error) {
-
-	ack := mp.DeleteFileAck{}
-	fullPathName := in.FullPathName
-	volID := in.VolID
-	ret, nameSpace := ns.GetNameSpace(volID)
+//CreateFileDirect ...
+func (s *MetaNodeServer) CreateFileDirect(ctx context.Context, in *mp.CreateFileDirectReq) (*mp.CreateFileDirectAck, error) {
+	ack := mp.CreateFileDirectAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
 		ack.Ret = ret
 		return &ack, nil
 	}
-	ack.Ret = nameSpace.DeleteFile(fullPathName)
+	ack.Ret, ack.Inode = nameSpace.CreateFileDirect(in.PInode, in.Name)
+	return &ack, nil
+}
+
+// DeleteFileDirect ...
+func (s *MetaNodeServer) DeleteFileDirect(ctx context.Context, in *mp.DeleteFileDirectReq) (*mp.DeleteFileDirectAck, error) {
+
+	ack := mp.DeleteFileDirectAck{}
+
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ack.Ret = nameSpace.DeleteFileDirect(in.PInode, in.Name)
 	return &ack, nil
 
 }
 
-// AllocateChunk ...
-func (s *MetaNodeServer) AllocateChunk(ctx context.Context, in *mp.AllocateChunkReq) (*mp.AllocateChunkAck, error) {
-	ack := mp.AllocateChunkAck{}
-	fileName := in.FileName
-	volID := in.VolID
+// GetFileChunksDirect ...
+func (s *MetaNodeServer) GetFileChunksDirect(ctx context.Context, in *mp.GetFileChunksDirectReq) (*mp.GetFileChunksDirectAck, error) {
+	ack := mp.GetFileChunksDirectAck{}
 
-	ack.SequenceID = in.SequenceID
-
-	ret, nameSpace := ns.GetNameSpace(volID)
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
 		ack.Ret = ret
 		return &ack, nil
 	}
-	ret, chunkInfo := nameSpace.AllocateChunk(fileName)
-	if ret != 0 {
-		ack.Ret = ret
-		return &ack, nil
-	}
-
-	ok1, blockGroup := nameSpace.BlockGroupDBGet(chunkInfo.BlockGroupID)
-	if !ok1 {
-		ack.Ret = 1
-		return &ack, nil
-	}
-
-	var tmpChunkInfo mp.ChunkInfoWithBG
-	tmpChunkInfo.ChunkID = chunkInfo.ChunkID
-	tmpChunkInfo.ChunkSize = chunkInfo.ChunkSize
-	tmpChunkInfo.BlockGroup = nameSpace.BlockGroupVp2Mp(blockGroup)
-
-	ack.ChunkInfo = &tmpChunkInfo
-	return &ack, nil
-}
-
-// GetFileChunks ...
-func (s *MetaNodeServer) GetFileChunks(ctx context.Context, in *mp.GetFileChunksReq) (*mp.GetFileChunksAck, error) {
-	ack := mp.GetFileChunksAck{}
-	fileName := in.FileName
-	volID := in.VolID
-	ret, nameSpace := ns.GetNameSpace(volID)
-	if ret != 0 {
-		ack.Ret = ret
-		return &ack, nil
-	}
-	ok, chunkInfos := nameSpace.GetFileChunks(fileName)
+	ok, chunkInfos, inode := nameSpace.GetFileChunksDirect(in.PInode, in.Name)
 	if ok != 0 {
 		ack.Ret = ok
 		return &ack, nil
@@ -345,28 +325,59 @@ func (s *MetaNodeServer) GetFileChunks(ctx context.Context, in *mp.GetFileChunks
 		if !ok1 {
 			continue
 		}
-		chunkInfoWithBG.BlockGroup = nameSpace.BlockGroupVp2Mp(blockGroup)
-
+		chunkInfoWithBG.BlockGroup = blockGroup
 		ack.ChunkInfos = append(ack.ChunkInfos, &chunkInfoWithBG)
 
 	}
-	ack.Ret = 0
 
+	ack.Ret = 0
+	ack.Inode = inode
+
+	return &ack, nil
+}
+
+// AllocateChunk ...
+func (s *MetaNodeServer) AllocateChunk(ctx context.Context, in *mp.AllocateChunkReq) (*mp.AllocateChunkAck, error) {
+	ack := mp.AllocateChunkAck{}
+
+	ack.SequenceID = in.SequenceID
+
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ret, chunkInfo := nameSpace.AllocateChunk(in.ParentInodeID, in.Name)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+
+	ok1, blockGroup := nameSpace.BlockGroupDBGet(chunkInfo.BlockGroupID)
+	if !ok1 {
+		ack.Ret = 1
+		return &ack, nil
+	}
+
+	var tmpChunkInfo mp.ChunkInfoWithBG
+	tmpChunkInfo.ChunkID = chunkInfo.ChunkID
+	tmpChunkInfo.ChunkSize = chunkInfo.ChunkSize
+	tmpChunkInfo.BlockGroup = blockGroup
+
+	ack.ChunkInfo = &tmpChunkInfo
 	return &ack, nil
 }
 
 // SyncChunk ...
 func (s *MetaNodeServer) SyncChunk(ctx context.Context, in *mp.SyncChunkReq) (*mp.SyncChunkAck, error) {
 	ack := mp.SyncChunkAck{}
-	fileName := in.FileName
-	volID := in.VolID
 	chunkinfo := in.ChunkInfo
-	ret, nameSpace := ns.GetNameSpace(volID)
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
 		ack.Ret = ret
 		return &ack, nil
 	}
-	ack.Ret = nameSpace.SyncChunk(fileName, chunkinfo)
+	ack.Ret = nameSpace.SyncChunk(in.ParentInodeID, in.Name, chunkinfo)
 	return &ack, nil
 }
 
@@ -531,7 +542,7 @@ func main() {
 	ticker := time.NewTicker(time.Second * 10)
 	go func() {
 		for range ticker.C {
-			showLeaders(&metaServer)
+			//showLeaders(&metaServer)
 		}
 	}()
 

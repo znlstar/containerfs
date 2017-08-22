@@ -24,11 +24,11 @@ do
   popd
 done
 
-cd ./fuseclient_flag
-  go get
-  go build -o cfs-fuseclient_flag main.go
-  mv cfs-fuseclient_flag ../output
-cd ..
+#cd ./fuseclient_flag
+#  go get
+#  go build -o cfs-fuseclient_flag main.go
+#  mv cfs-fuseclient_flag ../output
+#cd ..
 
 cd ./client_flag
   go get

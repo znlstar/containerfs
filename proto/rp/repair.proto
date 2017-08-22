@@ -7,10 +7,10 @@ service Repair {
 }
 
 message GetSrcDataReq {
-    int32  BlkId = 1 ;
+    uint32  BlkId = 1 ;
     string SrcIp = 2;
     int32  SrcPort = 3;
-    int32  ChkId = 4;
+    uint64  ChkId = 4;
 }
 message GetSrcDataAck {
     bytes Databuf = 1;
