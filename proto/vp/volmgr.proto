@@ -4,6 +4,8 @@ package vp;
 
 service VolMgr {
     rpc CreateVol(CreateVolReq) returns (CreateVolAck){};
+    rpc ExpendVol(ExpendVolReq) returns (ExpendVolAck){};
+
     rpc GetVolInfo(GetVolInfoReq) returns (GetVolInfoAck){};
     rpc DeleteVol(DeleteVolReq) returns (DeleteVolAck){};
     rpc GetVolList(GetVolListReq) returns (GetVolListAck){};
@@ -26,6 +28,16 @@ message CreateVolAck {
     string UUID = 2;
     uint64 RaftGroupID = 3;
 }
+
+message ExpendVolReq {
+    string VolID = 1 ;
+    int32  ExpendQuota = 2 ;
+}
+message ExpendVolAck {
+    int32 Ret = 1;
+    repeated BlockGroup BlockGroups = 2;
+}
+
 
 message GetVolInfoReq {
     string UUID = 1 ;
@@ -65,15 +77,15 @@ message VolInfo {
     repeated BlockGroup BlockGroups = 6;
 }
 message BlockGroup{
-    int32 BlockGroupID = 1;
-    int32 FreeCnt = 2;
+    uint32 BlockGroupID = 1;
+    int64 FreeSize = 2;
     int32 Status = 3;
     repeated BlockInfo BlockInfos = 4;
 }
 
 
 message BlockInfo{
-    int32 BlockID = 1;
+    uint32 BlockID = 1;
     int32 DataNodeIP = 2;
     int32 DataNodePort = 3;
     int32 Status = 4;
@@ -88,7 +100,6 @@ message DatanodeRegistryReq {
 
 message DatanodeRegistryAck {
     int32 Ret = 1;
-    repeated int32 BlkIDs = 2;
 }
 
 message DatanodeHeartbeatReq {
@@ -107,12 +118,12 @@ message UpdateChunkInfoReq {
     string   Ip = 1;
     int32   Port = 2;
     string  VolID = 3;
-    int32   BlockGroupID = 4;
-    int32   BlockID = 5;
-    int64   ChunkID = 6;
-    int32   Position = 7;
-    int32   Status = 8;
-    string  Path = 9;
+    uint32   BlockGroupID = 4;
+    uint32   BlockID = 5;
+    uint64   ChunkID = 6;
+    uint64   Inode = 7;
+    int32   Position = 8;
+    int32   Status = 9;
     
 }
 message UpdateChunkInfoAck {

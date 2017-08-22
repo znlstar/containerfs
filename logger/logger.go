@@ -20,11 +20,11 @@ type LEVEL int32
 var logLevel LEVEL = 1
 var maxFileSize int64
 var maxFileCount int32
-var dailyRolling bool = true
-var consoleAppender bool = true
+var dailyRolling bool
+var consoleAppender bool
 
 // RollingFile file
-var RollingFile bool = false
+var RollingFile bool
 var logObj *_FILE
 
 // DATEFORMAT format
@@ -53,7 +53,7 @@ const (
 	OFF
 )
 
-// file
+// _FILE
 type _FILE struct {
 	dir      string
 	filename string

@@ -72,24 +72,69 @@ func CreateKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64
 }
 
 //TakeKvSnapShoot ...
-func TakeKvSnapShoot(kvsm *KvStateMachine, rsg *wal.Storage, path string) {
+func TakeKvSnapShoot(ms *KvStateMachine, rsg *wal.Storage, path string) error {
 
-	var data []byte
-	var err error
+	var bigdata []byte
 
-	if data, err = json.Marshal(kvsm.data); err != nil {
-		return
+	ms.DentryLocker.RLock()
+	dentrydata, err := json.Marshal(ms.dentryData)
+	if err != nil {
+		ms.DentryLocker.RUnlock()
+		return err
 	}
-	var appliedStr = strconv.FormatInt(int64(kvsm.applied), 10)
-	data = append(make([]byte, 8), data...)
-	binary.BigEndian.PutUint64(data, kvsm.applied)
+	ms.DentryLocker.RUnlock()
+
+	ms.inodeLocker.RLock()
+	inodedata, err := json.Marshal(ms.inodeData)
+	if err != nil {
+		ms.inodeLocker.RUnlock()
+		return err
+	}
+	ms.inodeLocker.RUnlock()
+
+	ms.BlockGroupLocker.RLock()
+	bgdata, err := json.Marshal(ms.blockGroupData)
+	if err != nil {
+		ms.BlockGroupLocker.RUnlock()
+		return err
+	}
+	ms.BlockGroupLocker.RUnlock()
+
+	a := make([]byte, 8)
+	binary.BigEndian.PutUint64(a, uint64(len(dentrydata)))
+	bigdata = append(make([]byte, 8), a...)
+	bigdata = append(bigdata, dentrydata...)
+
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, uint64(len(inodedata)))
+	bigdata = append(bigdata, b...)
+	bigdata = append(bigdata, inodedata...)
+
+	c := make([]byte, 8)
+	binary.BigEndian.PutUint64(c, uint64(len(bgdata)))
+	bigdata = append(bigdata, c...)
+	bigdata = append(bigdata, bgdata...)
+
+	binary.BigEndian.PutUint64(bigdata, ms.applied)
+
+	d := make([]byte, 8)
+	binary.BigEndian.PutUint64(d, ms.chunkID)
+	bigdata = append(bigdata, d...)
+
+	e := make([]byte, 8)
+	binary.BigEndian.PutUint64(e, ms.inodeID)
+	bigdata = append(bigdata, e...)
+
+	var appliedStr = strconv.FormatInt(int64(ms.applied), 10)
+
 	f, err := os.OpenFile(path+"-"+appliedStr, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 	if err != nil {
 		f.Close()
-		return
+		return err
 	}
 	w := bufio.NewWriter(f)
-	w.Write(data)
+
+	w.Write(bigdata)
 	w.Flush()
 	f.Close()
 
@@ -102,42 +147,54 @@ func TakeKvSnapShoot(kvsm *KvStateMachine, rsg *wal.Storage, path string) {
 		os.Rename(path+"-"+appliedStr, path)
 	}
 
-	err = rsg.Truncate(kvsm.applied)
+	err = rsg.Truncate(ms.applied)
 	if err != nil {
-		log.Error("TakeKvSnapShoot Truncate failed index : %v , err :%v", kvsm.applied, err)
+		log.Error("TakeKvSnapShoot Truncate failed index : %v , err :%v", ms.applied, err)
+		return err
 	}
-	log.Error("TakeKvSnapShoot Truncate Success index : %v ", kvsm.applied)
+	log.Error("TakeKvSnapShoot Truncate Success index : %v ", ms.applied)
 
-	return
+	return nil
 }
 
 //LoadKvSnapShoot ...
-func LoadKvSnapShoot(kvsm *KvStateMachine, path string) (uint64, error) {
+func LoadKvSnapShoot(ms *KvStateMachine, path string) (uint64, error) {
+
 	fi, err := os.Open(path)
 	if err != nil {
 		return 0, nil
 	}
 	defer fi.Close()
-	data, err := ioutil.ReadAll(fi)
+	bigdata, err := ioutil.ReadAll(fi)
 
-	kvsm.applied = binary.BigEndian.Uint64(data)
-	if err = json.Unmarshal(data[8:], &kvsm.data); err != nil {
+	ms.applied = binary.BigEndian.Uint64(bigdata)
+
+	ms.DentryLocker.Lock()
+	dentryLen := binary.BigEndian.Uint64(bigdata[8:16])
+	if err = json.Unmarshal(bigdata[16:16+dentryLen], &ms.dentryData); err != nil {
+		ms.DentryLocker.Unlock()
 		return 0, err
 	}
-	return kvsm.applied, nil
-}
+	ms.DentryLocker.Unlock()
 
-//KvGet ...
-func KvGet(kvsm *KvStateMachine, raftGroupID uint64, k string) ([]byte, error) {
-	return kvsm.Get(raftGroupID, k)
-}
+	ms.inodeLocker.Lock()
+	inodeLen := binary.BigEndian.Uint64(bigdata[16+dentryLen : 16+dentryLen+8])
+	if err = json.Unmarshal(bigdata[16+dentryLen+8:16+dentryLen+8+inodeLen], &ms.inodeData); err != nil {
+		ms.inodeLocker.Unlock()
+		return 0, err
+	}
+	ms.inodeLocker.Unlock()
 
-//KvGetAll ...
-func KvGetAll(kvsm *KvStateMachine, raftGroupID uint64) (map[string][]byte, error) {
-	return kvsm.GetAll(raftGroupID)
-}
+	ms.BlockGroupLocker.Lock()
+	bgLen := binary.BigEndian.Uint64(bigdata[16+dentryLen+8+inodeLen : 16+dentryLen+8+inodeLen+8])
+	if err = json.Unmarshal(bigdata[16+dentryLen+8+inodeLen+8:16+dentryLen+8+inodeLen+8+bgLen], &ms.blockGroupData); err != nil {
+		ms.BlockGroupLocker.Unlock()
+		return 0, err
+	}
+	ms.BlockGroupLocker.Unlock()
 
-//KvSet ...
-func KvSet(kvsm *KvStateMachine, raftGroupID uint64, k string, v []byte) error {
-	return kvsm.Put(raftGroupID, k, v)
+	ms.chunkID = binary.BigEndian.Uint64(bigdata[16+dentryLen+8+inodeLen+8+bgLen : 16+dentryLen+8+inodeLen+8+bgLen+8])
+	ms.inodeID = binary.BigEndian.Uint64(bigdata[16+dentryLen+8+inodeLen+8+bgLen+8:])
+
+	return ms.applied, nil
 }

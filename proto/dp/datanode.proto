@@ -10,8 +10,8 @@ service DataNode {
 }
 
 message WriteChunkReq{
-    int64 ChunkID = 1;
-    int32 BlockID = 2;
+    uint64 ChunkID = 1;
+    uint32 BlockID = 2;
     bytes Databuf = 3;
 }
 message WriteChunkAck{
@@ -19,8 +19,8 @@ message WriteChunkAck{
 }
 
 message StreamReadChunkReq{
-    int64 ChunkID = 1;
-    int32 BlockID = 2;
+    uint64 ChunkID = 1;
+    uint32 BlockID = 2;
     int64 Offset = 3;
     int64 Readsize = 4;
 }
@@ -31,8 +31,8 @@ message StreamReadChunkAck{
 
 
 message DeleteChunkReq{
-    int64 ChunkID = 1;
-    int32 BlockID = 2;
+    uint64 ChunkID = 1;
+    uint32 BlockID = 2;
 }
 message DeleteChunkAck{
     int32 Ret = 1;
@@ -46,7 +46,7 @@ message DatanodeHealthCheckAck{
 }
 
 message BlockGroup{
-    int32 BlockGroupID = 1;
+    uint32 BlockGroupID = 1;
     int32 FreeCnt = 2;
     int32 Status = 3;
     repeated BlockInfo BlockInfos = 4;
@@ -54,7 +54,7 @@ message BlockGroup{
 
 
 message BlockInfo{
-    int32 BlockID = 1;
+    uint32 BlockID = 1;
     int32 DataNodeIP = 2;
     int32 DataNodePort = 3;
 }

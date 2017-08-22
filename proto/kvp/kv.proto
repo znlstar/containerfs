@@ -4,10 +4,7 @@ package kvp;
 
 
 message kv{
-    string k = 1;
-    bytes  v = 2;
-}
-
-message slice{
-	repeated int32 IDS = 1;
+	uint32 opt =1;
+    string k = 2;
+    bytes  v = 3;
 }

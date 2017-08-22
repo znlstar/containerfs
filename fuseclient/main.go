@@ -6,7 +6,7 @@ import (
 	"fmt"
 	cfs "github.com/ipdcode/containerfs/fs"
 	"github.com/ipdcode/containerfs/logger"
-	mp "github.com/ipdcode/containerfs/proto/mp"
+	//mp "github.com/ipdcode/containerfs/proto/mp"
 	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 	"log"
@@ -26,34 +26,588 @@ type FS struct {
 	cfs *cfs.CFS
 }
 
-type node interface {
-	fs.Node
-	setName(name string)
+type dir struct {
+	inode  uint64
+	parent *dir
+	fs     *FS
+
+	// mu protects the fields below.
+	//
+	// If multiple dir.mu instances need to be locked at the same
+	// time, the locks must be taken in topologically sorted
+	// order, parent first.
+	//
+	// As there can be only one db.Update at a time, those calls
+	// must be considered as lock operations too. To avoid lock
+	// ordering related deadlocks, never hold mu while calling
+	// db.Update.
+	mu sync.Mutex
+
+	name string
+
+	// each in-memory child, so we can return the same node on
+	// multiple Lookups and know what to do on .save()
+	//
+	// each child also stores its own name; if the value in the child
+	// is an empty string, that means the child has been unlinked
+	active map[string]*refcount
+}
+
+var _ = fs.FS(&FS{})
+
+// Root ...
+func (fs *FS) Root() (fs.Node, error) {
+	n := newDir(fs, 0, nil, "")
+	return n, nil
+}
+
+/*
+   Blocks  uint64 // Total data blocks in file system.
+   Bfree   uint64 // Free blocks in file system.
+   Bavail  uint64 // Free blocks in file system if you're not root.
+   Files   uint64 // Total files in file system.
+   Ffree   uint64 // Free files in file system.
+   Bsize   uint32 // Block size
+   Namelen uint32 // Maximum file name length?
+   Frsize  uint32 // Fragment size, smallest addressable data size in the file system.
+*/
+
+// Statfs ...
+func (fs *FS) Statfs(ctx context.Context, req *fuse.StatfsRequest, resp *fuse.StatfsResponse) error {
+	err, ret := cfs.GetFSInfo(fs.cfs.VolID)
+	if err != 0 {
+		return fuse.Errno(syscall.EIO)
+	}
+	resp.Bsize = 4 * 1024
+	resp.Frsize = resp.Bsize
+	resp.Blocks = ret.TotalSpace / uint64(resp.Bsize)
+	resp.Bfree = ret.FreeSpace / uint64(resp.Bsize)
+	resp.Bavail = ret.FreeSpace / uint64(resp.Bsize)
+	return nil
 }
 
 type refcount struct {
-	node node
-	refs uint32
+	node   node
+	kernel bool
+	refs   uint32
 }
 
-// Dir struct
-type Dir struct {
-	mu     sync.Mutex
-	fs     *FS
-	name   string // root to this dir
-	inode  *mp.InodeInfo
-	active map[string]*refcount // for fuse rename update f.name immediately , otherwise f.name will be old name after rename in about 30s
+func newDir(filesys *FS, inode uint64, parent *dir, name string) *dir {
+	d := &dir{
+		inode:  inode,
+		name:   name,
+		parent: parent,
+		fs:     filesys,
+		active: make(map[string]*refcount),
+	}
+	return d
+}
+
+var _ node = (*dir)(nil)
+var _ fs.Node = (*dir)(nil)
+var _ fs.NodeCreater = (*dir)(nil)
+var _ fs.NodeForgetter = (*dir)(nil)
+var _ fs.NodeMkdirer = (*dir)(nil)
+var _ fs.NodeRemover = (*dir)(nil)
+var _ fs.NodeRenamer = (*dir)(nil)
+var _ fs.NodeStringLookuper = (*dir)(nil)
+var _ fs.HandleReadDirAller = (*dir)(nil)
+
+func (d *dir) setName(name string) {
+
+	d.mu.Lock()
+	d.name = name
+	d.mu.Unlock()
+
+}
+
+func (d *dir) setParentInode(pdir *dir) {
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.parent = pdir
+}
+
+// Attr ...
+func (d *dir) Attr(ctx context.Context, a *fuse.Attr) error {
+
+	a.Mode = os.ModeDir | 0755
+	//a.Valid = time.Second
+	a.Inode = d.inode
+	return nil
+}
+
+func (d *dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if a, ok := d.active[name]; ok {
+		return a.node, nil
+	}
+
+	ret, inodeType, inode := d.fs.cfs.StatDirect(d.inode, name)
+
+	if ret == 2 {
+		return nil, fuse.ENOENT
+	}
+	if ret != 0 {
+		return nil, fuse.ENOENT
+	}
+	n, _ := d.reviveNode(inodeType, inode, name)
+
+	a := &refcount{node: n}
+	d.active[name] = a
+
+	a.kernel = true
+
+	return a.node, nil
+}
+
+func (d *dir) reviveDir(inode uint64, name string) (*dir, error) {
+	child := newDir(d.fs, inode, d, name)
+	return child, nil
+}
+
+func (d *dir) reviveNode(inodeType bool, inode uint64, name string) (node, error) {
+	if inodeType {
+		child := &File{
+			inode:  inode,
+			name:   name,
+			parent: d,
+		}
+		return child, nil
+	}
+	child, _ := d.reviveDir(inode, name)
+	return child, nil
+
+}
+
+// ReadDirAll ...
+func (d *dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	var res []fuse.Dirent
+	ret, dirents := d.fs.cfs.ListDirect(d.inode)
+
+	if ret == 2 {
+		return nil, fuse.Errno(syscall.ENOENT)
+	}
+	if ret != 0 {
+		return nil, fuse.Errno(syscall.EIO)
+	}
+	for _, v := range dirents {
+		de := fuse.Dirent{
+			Name: v.Name,
+		}
+		if v.InodeType {
+			de.Type = fuse.DT_File
+		} else {
+			de.Type = fuse.DT_Dir
+		}
+		res = append(res, de)
+	}
+
+	return res, nil
+}
+
+// Create ...
+func (d *dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
+
+	logger.Debug("Create path %v name %v Flags %v", d.name, req.Name, req.Flags)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	ret, cfile := d.fs.cfs.CreateFileDirect(d.inode, req.Name, int(req.Flags))
+	if ret != 0 {
+		if ret == 17 {
+			return nil, nil, fuse.Errno(syscall.EEXIST)
+
+		}
+		return nil, nil, fuse.Errno(syscall.EIO)
+
+	}
+
+	child := &File{
+		inode:   cfile.Inode,
+		name:    req.Name,
+		parent:  d,
+		handles: 1,
+		writers: 1,
+		cfile:   cfile,
+	}
+
+	d.active[req.Name] = &refcount{node: child}
+
+	return child, child, nil
+}
+
+func (d *dir) forgetChild(name string, child node) {
+	if name == "" {
+		return
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	a, ok := d.active[name]
+	if !ok {
+		return
+	}
+
+	a.kernel = false
+	if a.refs == 0 {
+		delete(d.active, name)
+	}
+}
+
+func (d *dir) Forget() {
+
+	if d.parent == nil {
+		return
+	}
+
+	d.mu.Lock()
+	name := d.name
+	d.mu.Unlock()
+
+	d.parent.forgetChild(name, d)
+}
+
+// Mkdir ...
+func (d *dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
+
+	ret, inode := d.fs.cfs.CreateDirDirect(d.inode, req.Name)
+	if ret == -1 {
+		return nil, fuse.Errno(syscall.EIO)
+	}
+	if ret == 1 {
+		return nil, fuse.Errno(syscall.EPERM)
+	}
+	if ret == 2 {
+		return nil, fuse.Errno(syscall.ENOENT)
+	}
+	if ret == 17 {
+		return nil, fuse.Errno(syscall.EEXIST)
+	}
+
+	child := newDir(d.fs, inode, d, req.Name)
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.active[req.Name] = &refcount{node: child, kernel: true}
+
+	return child, nil
+}
+
+// Remove ...
+func (d *dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
+
+	if req.Dir {
+		ret := d.fs.cfs.DeleteDirDirect(d.inode, req.Name)
+		if ret != 0 {
+			if ret == 2 {
+				return fuse.Errno(syscall.EPERM)
+			}
+			return fuse.Errno(syscall.EIO)
+
+		}
+	} else {
+		ret := d.fs.cfs.DeleteFileDirect(d.inode, req.Name)
+		if ret != 0 {
+			if ret == 2 {
+				return fuse.Errno(syscall.EPERM)
+			}
+			return fuse.Errno(syscall.EIO)
+		}
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if a, ok := d.active[req.Name]; ok {
+		delete(d.active, req.Name)
+		a.node.setName("")
+	}
+
+	return nil
+}
+
+// Rename ...
+func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Node) error {
+
+	ret, _, _ := d.fs.cfs.StatDirect(newDir.(*dir).inode, req.NewName)
+	if ret == 0 {
+		logger.Error("Rename Failed , newName in newDir is already exsit")
+		return fuse.Errno(syscall.EPERM)
+	}
+
+	if newDir != d {
+
+		d.mu.Lock()
+		defer d.mu.Unlock()
+
+		logger.Debug("Rename d.inode %v, req.OldName %v, newDir.(*dir).inode %v , req.NewName %v", d.inode, req.OldName, newDir.(*dir).inode, req.NewName)
+
+		ret := d.fs.cfs.RenameDirect(d.inode, req.OldName, newDir.(*dir).inode, req.NewName)
+		if ret != 0 {
+			if ret == 2 {
+				return fuse.Errno(syscall.ENOENT)
+			} else if ret == 1 || ret == 17 {
+				return fuse.Errno(syscall.EPERM)
+			} else {
+				return fuse.Errno(syscall.EIO)
+			}
+		}
+
+		if aOld, ok := d.active[req.OldName]; ok {
+			delete(d.active, req.OldName)
+			aOld.node.setName(req.NewName)
+			aOld.node.setParentInode(newDir.(*dir))
+			//d.active[req.NewName] = aOld
+
+		}
+
+	} else {
+
+		d.mu.Lock()
+		defer d.mu.Unlock()
+
+		logger.Debug("Rename d.inode %v, req.OldName %v, newDir.(*dir).inode %v , req.NewName %v", d.inode, req.OldName, newDir.(*dir).inode, req.NewName)
+
+		ret := d.fs.cfs.RenameDirect(d.inode, req.OldName, d.inode, req.NewName)
+		if ret != 0 {
+			if ret == 2 {
+				return fuse.Errno(syscall.ENOENT)
+			} else if ret == 1 || ret == 17 {
+				return fuse.Errno(syscall.EPERM)
+			} else {
+				return fuse.Errno(syscall.EIO)
+			}
+		}
+
+		if a, ok := d.active[req.NewName]; ok {
+			a.node.setName("")
+		}
+
+		if aOld, ok := d.active[req.OldName]; ok {
+			aOld.node.setName(req.NewName)
+			delete(d.active, req.OldName)
+			d.active[req.NewName] = aOld
+		}
+	}
+
+	return nil
+}
+
+type node interface {
+	fs.Node
+	setName(name string)
+	setParentInode(pdir *dir)
 }
 
 // File struct
 type File struct {
-	mu      sync.Mutex
-	parent  *Dir
+	mu    sync.Mutex
+	inode uint64
+
+	parent  *dir
 	name    string
 	writers uint
 	handles uint32
 	cfile   *cfs.CFile
-	inode   *mp.InodeInfo
+}
+
+var _ node = (*File)(nil)
+var _ = fs.Node(&File{})
+var _ = fs.Handle(&File{})
+
+func (f *File) setName(name string) {
+
+	f.mu.Lock()
+	f.name = name
+	f.mu.Unlock()
+
+}
+
+func (f *File) setParentInode(pdir *dir) {
+
+	f.mu.Lock()
+	f.parent = pdir
+	f.mu.Unlock()
+}
+
+// Attr ...
+func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ret, inode, inodeInfo := f.parent.fs.cfs.GetInodeInfoDirect(f.parent.inode, f.name)
+	if ret != 0 {
+		return nil
+	}
+
+	a.Ctime = time.Unix(inodeInfo.ModifiTime, 0)
+	a.Mtime = time.Unix(inodeInfo.ModifiTime, 0)
+	a.Atime = time.Unix(inodeInfo.AccessTime, 0)
+	a.Size = uint64(inodeInfo.FileSize)
+	a.Inode = uint64(inode)
+
+	a.BlockSize = 4 * 1024 // this is for fuse attr quick update
+	a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
+	a.Mode = 0666
+	//a.Valid = 0
+
+	return nil
+}
+
+var _ = fs.NodeOpener(&File{})
+
+// Open ...
+func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
+	var ret int32
+
+	logger.Debug("Open path %v name %v Flags %v", f.parent.name, f.name, req.Flags)
+
+	if int(req.Flags)&os.O_TRUNC != 0 {
+		return nil, fuse.Errno(syscall.EPERM)
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.writers > 0 {
+		if int(req.Flags)&os.O_WRONLY != 0 || int(req.Flags)&os.O_RDWR != 0 {
+			return nil, fuse.Errno(syscall.EPERM)
+		}
+	}
+
+	if f.cfile == nil && f.handles == 0 {
+		ret, f.cfile = f.parent.fs.cfs.OpenFileDirect(f.parent.inode, f.name, int(req.Flags))
+		if ret != 0 {
+			return nil, fuse.Errno(syscall.EIO)
+		}
+	} else {
+		f.parent.fs.cfs.UpdateOpenFileDirect(f.parent.inode, f.name, f.cfile, int(req.Flags))
+	}
+
+	tmp := f.handles + 1
+	f.handles = tmp
+
+	if int(req.Flags)&os.O_WRONLY != 0 || int(req.Flags)&os.O_RDWR != 0 {
+		tmp := f.writers + 1
+		f.writers = tmp
+	}
+
+	resp.Flags = fuse.OpenDirectIO
+	return f, nil
+}
+
+var _ = fs.HandleReleaser(&File{})
+
+// Release ...
+func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
+	logger.Debug("Release...")
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.handles--
+
+	if int(req.Flags)&os.O_WRONLY != 0 || int(req.Flags)&os.O_RDWR != 0 {
+		//f.cfile.Flush()
+		f.cfile.CloseConns()
+		f.writers--
+	}
+
+	if f.handles == 0 {
+		f.cfile = nil
+	}
+
+	logger.Debug("Release end...")
+
+	return nil
+}
+
+var _ = fs.HandleReader(&File{})
+
+// Read ...
+func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.cfile.ReaderMap[req.Handle]; !ok {
+		rdinfo := cfs.ReaderInfo{}
+		rdinfo.LastOffset = int64(0)
+		f.cfile.ReaderMap[req.Handle] = &rdinfo
+	}
+	if req.Offset == f.cfile.FileSize {
+
+		logger.Debug("Request Read file offset equal filesize")
+		return nil
+	}
+
+	length := f.cfile.Read(req.Handle, &resp.Data, req.Offset, int64(req.Size))
+	if length != int64(req.Size) {
+		logger.Debug("== Read reqsize:%v, but return datasize:%v ==\n", req.Size, length)
+	}
+	if length < 0 {
+		logger.Error("Request Read file I/O Error(return data from cfs less than zero)")
+		return fuse.Errno(syscall.EIO)
+	}
+	return nil
+}
+
+var _ = fs.HandleWriter(&File{})
+
+// Write ...
+func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	w := f.cfile.Write(req.Data, int32(len(req.Data)))
+	if w != int32(len(req.Data)) {
+		if w == -1 {
+			return fuse.Errno(syscall.ENOSPC)
+		}
+		return fuse.Errno(syscall.EIO)
+
+	}
+	resp.Size = int(w)
+	return nil
+}
+
+var _ = fs.HandleFlusher(&File{})
+
+// Flush ...
+func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
+	logger.Debug("Flush...")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.cfile.Flush()
+	return nil
+}
+
+var _ fs.NodeFsyncer = (*File)(nil)
+
+// Fsync ...
+func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
+	logger.Debug("Fsync...")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.cfile.Flush()
+	return nil
+}
+
+var _ = fs.NodeSetattrer(&File{})
+
+// Setattr ...
+func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
+	return nil
 }
 
 func main() {
@@ -66,8 +620,23 @@ func main() {
 	uuid = c.String("uuid")
 	mountPoint = c.String("mountpoint")
 	cfs.VolMgrAddr = c.String("volmgr")
-	//cfs.EtcdEndPoints = c.Strings("etcd")
+	bufferType, err := c.Int("buffertype")
+	if err != nil {
+		fmt.Println("wrong buffertype")
+		os.Exit(1)
+	}
 	cfs.MetaNodePeers = c.Strings("metanode")
+
+	switch bufferType {
+	case 0:
+		cfs.BufferSize = 512 * 1024
+	case 1:
+		cfs.BufferSize = 256 * 1024
+	case 2:
+		cfs.BufferSize = 128 * 1024
+	default:
+		cfs.BufferSize = 512 * 1024
+	}
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(c.String("log"), "fuse.log", 10, 100, logger.MB) //each 100M rolling
@@ -132,533 +701,5 @@ func mount(uuid, mountPoint string) error {
 		return err
 	}
 
-	return nil
-}
-
-var _ = fs.FS(&FS{})
-
-// Root ...
-func (fs *FS) Root() (fs.Node, error) {
-	n := newDir(fs, nil, "/")
-	return n, nil
-}
-
-/*
-   Blocks  uint64 // Total data blocks in file system.
-   Bfree   uint64 // Free blocks in file system.
-   Bavail  uint64 // Free blocks in file system if you're not root.
-   Files   uint64 // Total files in file system.
-   Ffree   uint64 // Free files in file system.
-   Bsize   uint32 // Block size
-   Namelen uint32 // Maximum file name length?
-   Frsize  uint32 // Fragment size, smallest addressable data size in the file system.
-*/
-
-// Statfs ...
-func (fs *FS) Statfs(ctx context.Context, req *fuse.StatfsRequest, resp *fuse.StatfsResponse) error {
-	err, ret := cfs.GetFSInfo(fs.cfs.VolID)
-	if err != 0 {
-		return fuse.Errno(syscall.EIO)
-	}
-	resp.Bsize = 64 * 1024 * 1024
-	resp.Frsize = resp.Bsize
-	resp.Blocks = ret.TotalSpace / (64 * 1024 * 1024)
-	resp.Bfree = ret.FreeSpace / (64 * 1024 * 1024)
-	resp.Bavail = ret.FreeSpace / (64 * 1024 * 1024)
-	return nil
-}
-
-var _ node = (*Dir)(nil)
-var _ = fs.Node(&Dir{})
-
-func newDir(filesys *FS, inode *mp.InodeInfo, name string) *Dir {
-	d := &Dir{
-		inode:  inode,
-		name:   name,
-		fs:     filesys,
-		active: make(map[string]*refcount),
-	}
-	return d
-}
-
-func (d *Dir) reviveDir(inode *mp.InodeInfo, name string) (*Dir, error) {
-	child := newDir(d.fs, inode, name)
-	return child, nil
-}
-
-func (d *Dir) setName(name string) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	d.name = name
-}
-
-// Attr ...
-func (d *Dir) Attr(ctx context.Context, a *fuse.Attr) error {
-	a.Mode = os.ModeDir | 0755
-	a.Valid = time.Millisecond * 10
-	return nil
-}
-
-// ReadDirAll ...
-func (d *Dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	var res []fuse.Dirent
-	// todo : only need list name,not all inodeinfo
-	ret, inodes := d.fs.cfs.List(d.name)
-	if ret == 2 {
-		return nil, fuse.Errno(syscall.ENOENT)
-	}
-	if ret != 0 {
-		return nil, fuse.Errno(syscall.EIO)
-	}
-	for _, v := range inodes {
-		de := fuse.Dirent{
-			Name: v.Name,
-		}
-		if v.InodeType {
-			de.Type = fuse.DT_File
-		} else {
-			de.Type = fuse.DT_Dir
-		}
-		res = append(res, de)
-	}
-	return res, nil
-}
-
-var _ = fs.NodeStringLookuper(&Dir{})
-
-func (d *Dir) reviveNode(inode *mp.InodeInfo, name string, fullpath string) (node, error) {
-	if inode.InodeType {
-		child := &File{
-			name:   name,
-			parent: d,
-			inode:  inode,
-		}
-
-		return child, nil
-	}
-	child, _ := d.reviveDir(inode, fullpath)
-	return child, nil
-
-}
-
-// Lookup ...
-func (d *Dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
-	if a, ok := d.active[name]; ok {
-		return a.node, nil
-	}
-	var fullPath string
-	if d.name == "/" {
-		fullPath = d.name + name
-	} else {
-		fullPath = d.name + "/" + name
-	}
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	ret, inode := d.fs.cfs.Stat(fullPath)
-	if ret == 2 {
-		return nil, fuse.ENOENT
-	}
-	if ret != 0 {
-		return nil, fuse.ENOENT
-	}
-	n, _ := d.reviveNode(inode, name, fullPath)
-	a := &refcount{node: n}
-	if inode.InodeType {
-		d.active[name] = a
-	} else {
-		d.active[fullPath] = a
-	}
-	return n, nil
-}
-
-var _ = fs.NodeMkdirer(&Dir{})
-
-// Mkdir ...
-func (d *Dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error) {
-	var fullPath string
-
-	if d.name == "/" {
-		fullPath = d.name + req.Name
-	} else {
-		fullPath = d.name + "/" + req.Name
-	}
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	ret := d.fs.cfs.CreateDir(fullPath)
-	if ret == -1 {
-		return nil, fuse.Errno(syscall.EIO)
-	}
-	if ret == 1 {
-		return nil, fuse.Errno(syscall.EPERM)
-	}
-	if ret == 2 {
-		return nil, fuse.Errno(syscall.ENOENT)
-	}
-	if ret == 17 {
-		return nil, fuse.Errno(syscall.EEXIST)
-	}
-
-	_, inode := d.fs.cfs.Stat(fullPath)
-	child := newDir(d.fs, inode, fullPath)
-	d.active[fullPath] = &refcount{node: child}
-
-	return child, nil
-}
-
-var _ = fs.NodeCreater(&Dir{})
-
-// Create ...
-func (d *Dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
-
-	logger.Debug("Create...,Flag:%v", req.Flags)
-
-	var fullPath string
-	if d.name == "/" {
-		fullPath = d.name + req.Name
-	} else {
-		fullPath = d.name + "/" + req.Name
-	}
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	ret, cfile := d.fs.cfs.CreateFile(fullPath, int(req.Flags))
-	if ret != 0 {
-		if ret == 17 {
-			return nil, nil, fuse.Errno(syscall.EEXIST)
-
-		}
-		return nil, nil, fuse.Errno(syscall.EIO)
-
-	}
-	_, inode := d.fs.cfs.Stat(fullPath)
-	child := &File{
-		inode:   inode,
-		name:    req.Name,
-		parent:  d,
-		cfile:   cfile,
-		handles: 1,
-		writers: 1,
-	}
-
-	d.active[req.Name] = &refcount{node: child}
-
-	return child, child, nil
-}
-
-var _ = fs.NodeRemover(&Dir{})
-
-// Remove ...
-func (d *Dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
-	var fullPath string
-
-	if d.name == "/" {
-		fullPath = d.name + req.Name
-	} else {
-		fullPath = d.name + "/" + req.Name
-	}
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	if req.Dir {
-
-		ret := d.fs.cfs.DeleteDir(fullPath)
-		if ret != 0 {
-			if ret == 2 {
-				return fuse.Errno(syscall.EPERM)
-			}
-			return fuse.Errno(syscall.EIO)
-
-		}
-	} else {
-		ret := d.fs.cfs.DeleteFile(fullPath)
-		if ret != 0 {
-			if ret == 2 {
-				return fuse.Errno(syscall.EPERM)
-			}
-			return fuse.Errno(syscall.EIO)
-
-		}
-	}
-
-	if req.Dir {
-		if a, ok := d.active[fullPath]; ok {
-			delete(d.active, fullPath)
-			a.node.setName("")
-		}
-	} else {
-		if a, ok := d.active[req.Name]; ok {
-			delete(d.active, req.Name)
-			a.node.setName("")
-		}
-	}
-
-	return nil
-}
-
-var _ = fs.NodeRenamer(&Dir{})
-
-// Rename ...
-func (d *Dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Node) error {
-	if newDir != d {
-		return fuse.Errno(syscall.EPERM)
-	}
-
-	newDirInstant := newDir.(*Dir)
-
-	var fullPath1 string
-	var fullPath2 string
-
-	if d.name == "/" {
-		fullPath1 = d.name + req.OldName
-	} else {
-		fullPath1 = d.name + "/" + req.OldName
-	}
-
-	_, inode := d.fs.cfs.Stat(fullPath1)
-	if !inode.InodeType {
-		return fuse.Errno(syscall.EPERM)
-	}
-
-	if newDirInstant.name == "/" {
-		fullPath2 = newDirInstant.name + req.NewName
-	} else {
-		fullPath2 = newDirInstant.name + "/" + req.NewName
-	}
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	ret := d.fs.cfs.Rename(fullPath1, fullPath2)
-	if ret != 0 {
-		if ret == 2 {
-			return fuse.Errno(syscall.ENOENT)
-		} else if ret == 1 || ret == 17 {
-			return fuse.Errno(syscall.EPERM)
-		} else {
-			return fuse.Errno(syscall.EIO)
-		}
-	}
-
-	_, inodeNew := d.fs.cfs.Stat(fullPath2)
-
-	if inodeNew.InodeType {
-		// tell overwritten node it's unlinked
-		if a, ok := d.active[req.NewName]; ok {
-			a.node.setName("")
-		}
-
-		// if the source inode is active, record its new name
-		if aOld, ok := d.active[req.OldName]; ok {
-			aOld.node.setName(req.NewName)
-			delete(d.active, req.OldName)
-			d.active[req.NewName] = aOld
-		}
-	} else {
-		// tell overwritten node it's unlinked
-		if a, ok := d.active[fullPath2]; ok {
-			a.node.setName("")
-		}
-
-		// if the source inode is active, record its new name
-		if aOld, ok := d.active[fullPath1]; ok {
-			aOld.node.setName(fullPath2)
-			delete(d.active, fullPath1)
-			d.active[fullPath2] = aOld
-		}
-	}
-
-	return nil
-}
-
-var _ node = (*File)(nil)
-var _ = fs.Node(&File{})
-var _ = fs.Handle(&File{})
-
-func (f *File) setName(name string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.name = name
-}
-
-// Attr ...
-func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
-	var fullPath string
-	if f.parent.name == "/" {
-		fullPath = f.parent.name + f.name
-	} else {
-		fullPath = f.parent.name + "/" + f.name
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	ret, inode := f.parent.fs.cfs.Stat(fullPath)
-	if ret != 0 {
-		return nil
-	}
-
-	a.Ctime = time.Unix(inode.ModifiTime, 0)
-	a.Mtime = time.Unix(inode.ModifiTime, 0)
-	a.Atime = time.Unix(inode.AccessTime, 0)
-	a.Size = uint64(inode.FileSize)
-	a.Inode = uint64(inode.InodeID)
-
-	a.BlockSize = 64 * 1026 * 1024 // this is for fuse attr quick update
-	a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
-	a.Mode = 0666
-	a.Valid = time.Millisecond * 10
-
-	return nil
-}
-
-var _ = fs.NodeOpener(&File{})
-
-// Open ...
-func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
-	var ret int32
-
-	var fullPath string
-
-	logger.Debug("OpenFlag:%v", req.Flags)
-	if f.parent.name == "/" {
-		fullPath = f.parent.name + f.name
-	} else {
-		fullPath = f.parent.name + "/" + f.name
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	if f.writers > 0 {
-		if int(req.Flags)&os.O_WRONLY != 0 || int(req.Flags)&os.O_RDWR != 0 {
-			return nil, fuse.Errno(syscall.EPERM)
-		}
-	}
-
-	if f.cfile == nil && f.handles == 0 {
-		ret, f.cfile = f.parent.fs.cfs.OpenFile(fullPath, int(req.Flags))
-		if ret != 0 {
-			return nil, fuse.Errno(syscall.EIO)
-		}
-	} else {
-		f.parent.fs.cfs.UpdateOpenFile(f.cfile, int(req.Flags))
-	}
-
-	tmp := f.handles + 1
-	f.handles = tmp
-
-	if int(req.Flags)&os.O_WRONLY != 0 || int(req.Flags)&os.O_RDWR != 0 {
-		tmp := f.writers + 1
-		f.writers = tmp
-	}
-
-	resp.Flags = fuse.OpenDirectIO
-	return f, nil
-}
-
-var _ = fs.HandleReleaser(&File{})
-
-// Release ...
-func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
-	logger.Debug("Release...")
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	/*
-		var err error
-		ret := f.cfile.Close(int(req.Flags))
-		if ret != 0 {
-			err = fuse.Errno(syscall.EIO)
-		}
-
-	*/
-
-	f.handles--
-
-	if int(req.Flags)&os.O_WRONLY != 0 || int(req.Flags)&os.O_RDWR != 0 {
-		f.cfile.Flush()
-		f.cfile.CloseConns()
-		f.writers--
-	}
-
-	if f.handles == 0 {
-		f.cfile = nil
-	}
-
-	return nil
-}
-
-var _ = fs.HandleReader(&File{})
-
-// Read ...
-func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {
-
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if _, ok := f.cfile.ReaderMap[req.Handle]; !ok {
-		rdinfo := cfs.ReaderInfo{}
-		rdinfo.LastOffset = int64(0)
-		f.cfile.ReaderMap[req.Handle] = &rdinfo
-	}
-	if req.Offset == f.cfile.FileSize {
-		logger.Debug("Request Read file offset equal filesize")
-		return nil
-	}
-
-	length := f.cfile.Read(req.Handle, &resp.Data, req.Offset, int64(req.Size))
-	if length != int64(req.Size) {
-		logger.Error("== Read reqsize:%v, but return datasize:%v ==\n", req.Size, length)
-	}
-	if length < 0 {
-		logger.Error("Request Read file I/O Error(return data from cfs less than zero)")
-		return fuse.Errno(syscall.EIO)
-	}
-	return nil
-}
-
-var _ = fs.HandleWriter(&File{})
-
-// Write ...
-func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
-
-	//f.mu.Lock()
-	//defer f.mu.Unlock()
-	w := f.cfile.Write(req.Data, int32(len(req.Data)))
-	if w != int32(len(req.Data)) {
-		if w == -1 {
-			return fuse.Errno(syscall.ENOSPC)
-		}
-		return fuse.Errno(syscall.EIO)
-
-	}
-	resp.Size = int(w)
-	return nil
-}
-
-var _ = fs.HandleFlusher(&File{})
-
-// Flush ...
-func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
-	return nil
-}
-
-var _ fs.NodeFsyncer = (*File)(nil)
-
-// Fsync ...
-func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
-	logger.Debug("Fsync...")
-	f.cfile.Flush()
-	return nil
-}
-
-var _ = fs.NodeSetattrer(&File{})
-
-// Setattr ...
-func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
 	return nil
 }
