@@ -127,6 +127,7 @@ func BlockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 
 }
 
+// ExpendVol ...
 func ExpendVol(UUID string, expendQuota string) int32 {
 
 	conn, err := DialVolmgr(VolMgrAddr)

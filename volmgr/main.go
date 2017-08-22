@@ -226,7 +226,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	return &ack, nil
 }
 
-// ExtVol : extent a Volume size
+// ExpendVol : extent a Volume size
 func (s *VolMgrServer) ExpendVol(ctx context.Context, in *vp.ExpendVolReq) (*vp.ExpendVolAck, error) {
 	ack := vp.ExpendVolAck{}
 	voluuid := in.VolID
