@@ -36,10 +36,10 @@
 5、在某台机器，使用命令行工具，创建一个 volume： 
 
 	/home/cfs/cfs-CLI -metanode 192.168.100.17:9903,192.168.100.18:9913,192.168.100.19:9923 -volmgr 192.168.100.216:10001 createvol test 10 
-101d18db4043fa26808fce9dc93a6d9f 
+	101d18db4043fa26808fce9dc93a6d9f 
 
 6、在某客户机，安装 fuse (yum install fuse -y) ,然后挂载步骤5创建的volume：
- 
+
 	/home/cfs/cfs-fuseclient -uuid 101d18db4043fa26808fce9dc93a6d9f -buffertype 1 -metanode 192.168.100.17:9903,192.168.100.18:9913,192.168.100.19:9923 -mountpoint /mnt/mytest -readonly 0 -volmgr 192.168.100.216:10001 
 
 	[root@node-219 ~]# df -h
