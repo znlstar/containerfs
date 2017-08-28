@@ -28,6 +28,9 @@ service MetaNode {
     rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
     rpc SyncChunk(SyncChunkReq) returns (SyncChunkAck){};
     rpc UpdateChunkInfo(UpdateChunkInfoReq) returns (UpdateChunkInfoAck){};
+
+    //rpc UpdateBlockGroup(UpdateBlockGroupReq) returns (UpdateBlockGroupAck){};
+
 }
 
 message NULL{
@@ -217,6 +220,15 @@ message UpdateChunkInfoReq {
 }
 
 message UpdateChunkInfoAck {
+    int32 Ret = 1;
+}
+
+message UpdateBlockGroupReq {
+    string  VolID = 1;
+    BlockGroup   BlockGroup = 2;
+}
+
+message UpdateBlockGroupAck {
     int32 Ret = 1;
 }
 

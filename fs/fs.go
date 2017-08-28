@@ -596,6 +596,7 @@ func (cfs *CFS) OpenFileDirect(pinode uint64, name string, flags int) (int32, *C
 		chunkInfos := make([]*mp.ChunkInfoWithBG, 0)
 		var inode uint64
 		if ret, chunkInfos, inode = cfs.GetFileChunksDirect(pinode, name); ret != 0 {
+			logger.Error("OpenFile failed , GetFileChunksDirect failed !")
 			return ret, nil
 		}
 
@@ -703,46 +704,44 @@ func (cfs *CFS) createFileDirect(pinode uint64, name string) (int32, uint64) {
 func (cfs *CFS) DeleteFileDirect(pinode uint64, name string) int32 {
 
 	ret, chunkInfos, _ := cfs.GetFileChunksDirect(pinode, name)
-	if ret != 0 {
-		return ret
-	}
-	for _, v1 := range chunkInfos {
-		for _, v2 := range v1.BlockGroup.BlockInfos {
+	if ret == 0 && chunkInfos != nil {
+		for _, v1 := range chunkInfos {
+			for _, v2 := range v1.BlockGroup.BlockInfos {
 
-			addr := utils.InetNtoa(v2.DataNodeIP).String() + ":" + strconv.Itoa(int(v2.DataNodePort))
-			conn, err := DialData(addr)
-			if err != nil {
-				logger.Error("DeleteFile failed,Dial to datanode fail :%v\n", err)
-				return -1
-			}
-
-			dc := dp.NewDataNodeClient(conn)
-
-			dpDeleteChunkReq := &dp.DeleteChunkReq{
-				ChunkID: v1.ChunkID,
-				BlockID: v2.BlockID,
-			}
-			ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-			_, err = dc.DeleteChunk(ctx, dpDeleteChunkReq)
-			if err != nil {
-				time.Sleep(time.Second)
-				conn, err = DialData(addr)
+				addr := utils.InetNtoa(v2.DataNodeIP).String() + ":" + strconv.Itoa(int(v2.DataNodePort))
+				conn, err := DialData(addr)
 				if err != nil {
-					logger.Error("DeleteChunk failed,Dial to metanode fail :%v\n", err)
-				} else {
-					dc = dp.NewDataNodeClient(conn)
-					ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-					_, err = dc.DeleteChunk(ctx, dpDeleteChunkReq)
+					logger.Error("DeleteFile failed,Dial to datanode fail :%v\n", err)
+					return -1
+				}
+
+				dc := dp.NewDataNodeClient(conn)
+
+				dpDeleteChunkReq := &dp.DeleteChunkReq{
+					ChunkID: v1.ChunkID,
+					BlockID: v2.BlockID,
+				}
+				ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+				_, err = dc.DeleteChunk(ctx, dpDeleteChunkReq)
+				if err != nil {
+					time.Sleep(time.Second)
+					conn, err = DialData(addr)
 					if err != nil {
-						logger.Error("DeleteChunk failed,grpc func failed :%v\n", err)
+						logger.Error("DeleteChunk failed,Dial to metanode fail :%v\n", err)
+					} else {
+						dc = dp.NewDataNodeClient(conn)
+						ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+						_, err = dc.DeleteChunk(ctx, dpDeleteChunkReq)
+						if err != nil {
+							logger.Error("DeleteChunk failed,grpc func failed :%v\n", err)
+						}
 					}
 				}
-			}
 
-			conn.Close()
+				conn.Close()
+			}
 		}
 	}
-
 	conn, err := DialMeta(cfs.VolID)
 	if err != nil {
 		logger.Error("DeleteFile failed,Dial to metanode fail :%v\n", err)
@@ -1187,7 +1186,7 @@ func (cfile *CFile) push() int32 {
 
 	if cfile.Status != 0 {
 		logger.Error("cfile status error , push func return err ")
-		return 0
+		return -1
 	}
 
 	if cfile.wBuffer.chunkInfo == nil {
@@ -1330,7 +1329,6 @@ func (cfile *CFile) send(v *wBuffer) int32 {
 		return cfile.Status
 	}
 
-	mc := mp.NewMetaNodeClient(cfile.ConnM)
 	pSyncChunkReq := &mp.SyncChunkReq{
 		ParentInodeID: cfile.ParentInodeID,
 		Name:          cfile.Name,
@@ -1348,27 +1346,70 @@ func (cfile *CFile) send(v *wBuffer) int32 {
 
 	pSyncChunkReq.ChunkInfo = &tmpChunkInfo
 
+	/*
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		pSyncChunkAck, err := mc.SyncChunk(ctx, pSyncChunkReq)
+		if err != nil || pSyncChunkAck.Ret != 0 {
+			logger.Error("send SyncChunk Failed :%v\n", pSyncChunkReq.ChunkInfo)
+			cfile.ConnM.Close()
+			var err error
+			time.Sleep(2 * time.Second)
+			cfile.ConnM, err = DialMeta(cfile.cfs.VolID)
+			if err != nil {
+				logger.Error("Dial failed:%v\n", err)
+				cfile.Status = 1
+				return cfile.Status
+			}
+			mc := mp.NewMetaNodeClient(cfile.ConnM)
+			ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+			pSyncChunkAck, err = mc.SyncChunk(ctx, pSyncChunkReq)
+			if err != nil || pSyncChunkAck.Ret != 0 {
+				logger.Error("send SyncChunk Failed again:%v,err:%v,ret:%v,file:%v", pSyncChunkReq.ChunkInfo, err, pSyncChunkAck.Ret, cfile.Name)
+				cfile.Status = 1
+				return cfile.Status
+			}
+		}
+	*/
+	wflag := false
+	mc := mp.NewMetaNodeClient(cfile.ConnM)
 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
 	pSyncChunkAck, err := mc.SyncChunk(ctx, pSyncChunkReq)
-	if err != nil || pSyncChunkAck.Ret != 0 {
-		logger.Error("send SyncChunk Failed :%v\n", pSyncChunkReq.ChunkInfo)
+	if err == nil && pSyncChunkAck.Ret == 0 {
+		wflag = true
+	} else {
+		logger.Error("SyncChunk failed start to try ,name %v,inode %v,pinode %v", cfile.Name, cfile.Inode, cfile.ParentInodeID)
+
+		for i := 0; i < 15; i++ {
+			if cfile.ConnM != nil {
+				cfile.ConnM.Close()
+			}
+			time.Sleep(time.Second)
+			logger.Error("SyncChunk try %v times", i+1)
+			var err error
+			cfile.ConnM, err = DialMeta(cfile.cfs.VolID)
+			if err != nil {
+				logger.Error("SyncChunk DialMeta failed try %v times ,err %v", i+1, err)
+				continue
+			}
+			mc := mp.NewMetaNodeClient(cfile.ConnM)
+			ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+			pSyncChunkAck, err := mc.SyncChunk(ctx, pSyncChunkReq)
+			if err == nil && pSyncChunkAck.Ret == 0 {
+				wflag = true
+				break
+			} else {
+				logger.Error("SyncChunk grpc func  try %v times ,err %v", i+1, err)
+				if pSyncChunkAck != nil {
+					logger.Error("SyncChunk grpc func  try %v times ,ret %v", i+1, pSyncChunkAck.Ret)
+				}
+			}
+		}
+
+	}
+	if !wflag {
+		cfile.Status = 1
 		cfile.ConnM.Close()
-		var err error
-		time.Sleep(2 * time.Second)
-		cfile.ConnM, err = DialMeta(cfile.cfs.VolID)
-		if err != nil {
-			logger.Error("Dial failed:%v\n", err)
-			cfile.Status = 1
-			return cfile.Status
-		}
-		mc := mp.NewMetaNodeClient(cfile.ConnM)
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-		pSyncChunkAck, err = mc.SyncChunk(ctx, pSyncChunkReq)
-		if err != nil || pSyncChunkAck.Ret != 0 {
-			logger.Error("send SyncChunk Failed again:%v\n", pSyncChunkReq.ChunkInfo)
-			cfile.Status = 1
-			return cfile.Status
-		}
+		return cfile.Status
 	}
 
 	chunkNum := len(cfile.chunks)

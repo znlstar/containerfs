@@ -457,8 +457,10 @@ func (ns *nameSpace) DeleteFileDirect(pinode uint64, name string) int32 {
 		return 1
 	}
 
-	for _, v := range pInodeInfo.Chunks {
-		ns.ReleaseBlockGroup(v.BlockGroupID, v.ChunkSize)
+	if pInodeInfo.Chunks != nil {
+		for _, v := range pInodeInfo.Chunks {
+			ns.ReleaseBlockGroup(v.BlockGroupID, v.ChunkSize)
+		}
 	}
 
 	ns.InodeDBDelete(dirent.Inode)
@@ -748,7 +750,7 @@ func (ns *nameSpace) InodeDBGet(inode uint64) (bool, *mp.InodeInfo) {
 	if err != nil {
 		value, err = ns.RaftGroup.InodeGet(ns.RaftGroupID, inodestr)
 		if err != nil {
-			logger.Error("InodeDBGet vol:%v,key:%v,err:%v\n", ns.VolID, inodestr, err)
+			//logger.Error("InodeDBGet vol:%v,key:%v,err:%v\n", ns.VolID, inodestr, err)
 			return false, nil
 		}
 	}
@@ -803,7 +805,7 @@ func (ns *nameSpace) DentryDBGet(dentryKey string) (bool, *mp.Dirent) {
 	if err != nil {
 		value, err = ns.RaftGroup.DentryGet(ns.RaftGroupID, dentryKey)
 		if err != nil {
-			logger.Error("DentryDBGet vol:%v,key:%v,err:%v\n", ns.VolID, dentryKey, err)
+			//logger.Error("DentryDBGet vol:%v,key:%v,err:%v\n", ns.VolID, dentryKey, err)
 			return false, nil
 		}
 	}

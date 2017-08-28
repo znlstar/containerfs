@@ -31,7 +31,7 @@ CREATE TABLE `blk` (
   `createdTime` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `volid` varchar(32) DEFAULT NULL,
   PRIMARY KEY (`blkid`)
-) ENGINE=InnoDB AUTO_INCREMENT=2369 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 
@@ -93,7 +93,7 @@ CREATE TABLE `repair` (
   `status` tinyint(8) NOT NULL,
   `createdTime` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=22 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 
