@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"github.com/ipdcode/containerfs/logger"
 	ns "github.com/ipdcode/containerfs/metanode/namespace"
@@ -8,7 +9,6 @@ import (
 	mp "github.com/ipdcode/containerfs/proto/mp"
 	"github.com/ipdcode/raft"
 	"github.com/ipdcode/raft/proto"
-	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -18,6 +18,7 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -424,28 +425,29 @@ func loadMetaData(rs *raft.RaftServer) int32 {
 
 func init() {
 
-	c, err := config.NewConfig(os.Args[1])
-	if err != nil {
-		fmt.Println("NewConfig err")
-		os.Exit(1)
-	}
+	flag.StringVar(&ns.VolMgrAddress, "volmgr", "127.0.0.1:10001", "ContainerFS VolMgr Host")
+	flag.StringVar(&MetaNodeServerAddr.host, "metanode", "127.0.0.1", "ContainerFS Metanode Host")
+	nodeid := flag.Int64("nodeid", 1, "ContainerFS Metanode ID")
+	peers := flag.String("nodepeer", "1,2,3", "ContainerFS metanode peers")
+	ips := flag.String("nodeips", "127.0.0.1,127.0.0.1,127.0.0.1", "ContainerFS metanode ips")
+	flag.StringVar(&MetaNodeServerAddr.waldir, "wal", "/export/containerfs/metanode/data", "ContainerFS Meta waldir")
+	flag.StringVar(&MetaNodeServerAddr.log, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Meta log")
+	loglevel := flag.String("loglevel", "error", "ContainerFS metanode log level")
 
-	ns.VolMgrAddress = c.String("volmgr::host")
-	MetaNodeServerAddr.host = c.String("metanode::host")
-	tmpNodeID, err := c.Int("metanode::nodeid")
-	MetaNodeServerAddr.nodeID = uint64(tmpNodeID)
-	MetaNodeServerAddr.peers, err = parsePeers(c.Strings("metanode::peers"))
-	if err != nil {
-		logger.Error("parse peers failed!. peers=%v", c.String("metanode::peers"))
-	}
+	flag.Parse()
 
-	MetaNodeServerAddr.ips = c.Strings("metanode::ips")
-	MetaNodeServerAddr.waldir = c.String("metanode::waldir")
-	MetaNodeServerAddr.log = c.String("metanode::log")
+	MetaNodeServerAddr.nodeID = uint64(*nodeid)
+	MetaNodeServerAddr.ips = strings.Split(*ips, ",")
+	peerarray := strings.Split(*peers, ",")
+	var err error
+	MetaNodeServerAddr.peers, err = parsePeers(peerarray)
+	if err != nil {
+		logger.Error("parse peers failed!. peers=%v", peers)
+	}
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(MetaNodeServerAddr.log, "metanode.log", 10, 100, logger.MB) //each 100M rolling
-	switch level := c.String("metanode::loglevel"); level {
+	switch *loglevel {
 	case "error":
 		logger.SetLevel(logger.ERROR)
 	case "debug":

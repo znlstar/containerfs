@@ -255,6 +255,7 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 	totalsize := readsize
 	//buf := make([]byte, 64*1024*1024)
 	buf := make([]byte, readsize)
+
 	bfRd := bufio.NewReader(f)
 	for {
 		n, err := bfRd.Read(buf)
@@ -309,7 +310,7 @@ func init() {
 
 	flag.StringVar(&DataNodeServerAddr.IPStr, "host", "127.0.0.1", "ContainerFS DataNode Host")
 	flag.IntVar(&port, "port", 8000, "ContainerFS DataNode Port")
-	flag.StringVar(&DataNodeServerAddr.Path, "datapath", "/home/containerfs/datanode1/", "ContainerFS DataNode Data Path")
+	flag.StringVar(&DataNodeServerAddr.Path, "datapath", "", "ContainerFS DataNode Data Path")
 	flag.StringVar(&DataNodeServerAddr.VolMgrHost, "volmgr", "127.0.0.1:7000", "ContainerFS VolMgr Host")
 	flag.StringVar(&DataNodeServerAddr.Log, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Log Path")
 	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS Log Level")

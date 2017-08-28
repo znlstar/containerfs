@@ -2,13 +2,13 @@ package main
 
 import (
 	"database/sql"
+	"flag"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/ipdcode/containerfs/logger"
 	dp "github.com/ipdcode/containerfs/proto/dp"
 	vp "github.com/ipdcode/containerfs/proto/vp"
 	"github.com/ipdcode/containerfs/utils"
-	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -768,25 +768,23 @@ func StarMdcService() {
 }
 
 func init() {
-	c, err := config.NewConfig(os.Args[1])
-	if err != nil {
-		fmt.Println("NewConfig err")
-		os.Exit(1)
-	}
-	port, _ := c.Int("port")
-	VolMgrServerAddr.port = port
-	VolMgrServerAddr.log = c.String("log")
-	VolMgrServerAddr.host = c.String("host")
-	os.MkdirAll(VolMgrServerAddr.log, 0777)
 
-	mysqlConf.dbhost = c.String("mysql::host")
-	mysqlConf.dbusername = c.String("mysql::user")
-	mysqlConf.dbpassword = c.String("mysql::passwd")
-	mysqlConf.dbname = c.String("mysql::db")
+	flag.StringVar(&VolMgrServerAddr.host, "host", "127.0.0.1", "ContainerFS VolMgr Host")
+	flag.IntVar(&VolMgrServerAddr.port, "port", 8000, "ContainerFS VolMgr Port")
+	flag.StringVar(&VolMgrServerAddr.log, "log", "/export/Logs/containerfs/logs/", "ContainerFS VolMgr logpath")
+	loglevel := flag.String("loglevel", "error", "ContainerFS VolMgr log level")
+	flag.StringVar(&mysqlConf.dbhost, "sqlhost", "127.0.0.1:3306", "ContainerFS DBHOST")
+	flag.StringVar(&mysqlConf.dbusername, "sqluser", "root", "ContainerFS DBUSER")
+	flag.StringVar(&mysqlConf.dbpassword, "sqlpasswd", "root", "ContainerFS DBPASSWD")
+	flag.StringVar(&mysqlConf.dbname, "sqldb", "containerfs", "ContainerFS DB")
+
+	flag.Parse()
+
+	os.MkdirAll(VolMgrServerAddr.log, 0777)
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(VolMgrServerAddr.log, "volmgr.log", 10, 100, logger.MB) //each 100M rolling
-	switch level := c.String("loglevel"); level {
+	switch *loglevel {
 	case "error":
 		logger.SetLevel(logger.ERROR)
 	case "debug":
@@ -796,7 +794,7 @@ func init() {
 	default:
 		logger.SetLevel(logger.ERROR)
 	}
-
+	var err error
 	VolMgrDB, err = sql.Open("mysql", mysqlConf.dbusername+":"+mysqlConf.dbpassword+"@tcp("+mysqlConf.dbhost+")/"+mysqlConf.dbname+"?charset=utf8")
 	checkErr(err)
 	err = VolMgrDB.Ping()

@@ -4,13 +4,13 @@ import (
 	"bufio"
 	"database/sql"
 	"errors"
+	"flag"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/ipdcode/containerfs/logger"
 	mp "github.com/ipdcode/containerfs/proto/mp"
 	rp "github.com/ipdcode/containerfs/proto/rp"
 	"github.com/ipdcode/containerfs/utils"
-	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -378,28 +378,24 @@ func StartRepairService() {
 }
 
 func init() {
-	c, err := config.NewConfig(os.Args[1])
-	if err != nil {
-		fmt.Println("NewConfig err")
-		os.Exit(1)
-	}
-	port, _ := c.Int("port")
-	RepairServerAddr.port = port
-	RepairServerAddr.log = c.String("log")
-	RepairServerAddr.host = c.String("host")
-	//EtcdAddrs = c.Strings("etcd::hosts")
-	os.MkdirAll(RepairServerAddr.log, 0777)
 
-	mysqlConf.dbhost = c.String("mysql::host")
-	mysqlConf.dbusername = c.String("mysql::user")
-	mysqlConf.dbpassword = c.String("mysql::passwd")
-	mysqlConf.dbname = c.String("mysql::db")
+	flag.StringVar(&RepairServerAddr.host, "host", "127.0.0.1", "ContainerFS Repair Host")
+	flag.IntVar(&RepairServerAddr.port, "port", 8000, "ContainerFS Repair Port")
+	flag.StringVar(&RepairServerAddr.log, "log", "/export/Logs/containerfs/logs/", "ContainerFS Repair logpath")
+	loglevel := flag.String("loglevel", "error", "ContainerFS Repair log level")
+	flag.StringVar(&mysqlConf.dbhost, "sqlhost", "127.0.0.1:3306", "ContainerFS DBHOST")
+	flag.StringVar(&mysqlConf.dbusername, "sqluser", "root", "ContainerFS DBUSER")
+	flag.StringVar(&mysqlConf.dbpassword, "sqlpasswd", "root", "ContainerFS DBPASSWD")
+	flag.StringVar(&mysqlConf.dbname, "sqldb", "containerfs", "ContainerFS DB")
+	addr := flag.String("metanode", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS metanode hosts")
 
-	MetaNodePeers = c.Strings("metanode::host")
+	flag.Parse()
+
+	MetaNodePeers = strings.Split(*addr, ",")
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(RepairServerAddr.log, "repair.log", 10, 100, logger.MB) //each 100M rolling
-	switch level := c.String("loglevel"); level {
+	switch *loglevel {
 	case "error":
 		logger.SetLevel(logger.ERROR)
 	case "debug":
@@ -410,6 +406,7 @@ func init() {
 		logger.SetLevel(logger.ERROR)
 	}
 
+	var err error
 	VolMgrDB, err = sql.Open("mysql", mysqlConf.dbusername+":"+mysqlConf.dbpassword+"@tcp("+mysqlConf.dbhost+")/"+mysqlConf.dbname+"?charset=utf8")
 	checkErr(err)
 	err = VolMgrDB.Ping()

@@ -1,29 +1,34 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	fs "github.com/ipdcode/containerfs/fs"
 	"github.com/ipdcode/containerfs/logger"
-	"github.com/lxmgo/config"
 	"os"
+	"strings"
 )
 
 func main() {
 
-	c, err := config.NewConfig(os.Args[1])
-	if err != nil {
-		fmt.Println("NewConfig err")
-		os.Exit(1)
-	}
+	var loglevel string
+	var logpath string
+	var peers string
 
-	fs.VolMgrAddr = c.String("volmgr::host")
-	fs.MetaNodePeers = c.Strings("metanode::host")
+	flag.StringVar(&fs.VolMgrAddr, "volmgr", "127.0.0.1:10001", "ContainerFS VolMgr Host")
+	flag.StringVar(&peers, "metanode", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS MetaNode Host")
+	flag.StringVar(&logpath, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Log Path")
+	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS Log Level")
+
+	flag.Parse()
+
+	fs.MetaNodePeers = strings.Split(peers, ",")
 	fs.MetaNodeAddr = fs.MetaNodePeers[0]
 	fs.BufferSize = 1024 * 1024
 
 	logger.SetConsole(true)
-	logger.SetRollingFile(c.String("logger::log"), "fuse.log", 10, 100, logger.MB) //each 100M rolling
-	switch level := c.String("logger::loglevel"); level {
+	logger.SetRollingFile(logpath, "CLI.log", 10, 100, logger.MB) //each 100M rolling
+	switch loglevel {
 	case "error":
 		logger.SetLevel(logger.ERROR)
 	case "debug":
@@ -37,53 +42,53 @@ func main() {
 	switch os.Args[2] {
 
 	case "createvol":
-		argNum := len(os.Args)
-		if argNum != 5 {
+		argNum := flag.NArg()
+		if argNum != 2 {
 			fmt.Println("createvol [volname] [space GB]")
 			os.Exit(1)
 		}
-		ret := fs.CreateVol(os.Args[3], os.Args[4])
+		ret := fs.CreateVol(flag.Arg(0), flag.Arg(1))
 		if ret != 0 {
 			fmt.Println("failed")
 		}
 
 	case "expendvol":
-		argNum := len(os.Args)
-		if argNum != 5 {
+		argNum := flag.NArg()
+		if argNum != 2 {
 			fmt.Println("expendvol [volUUID] [space GB]")
 			os.Exit(1)
 		}
-		ret := fs.ExpendVol(os.Args[3], os.Args[4])
+		ret := fs.ExpendVol(flag.Arg(0), flag.Arg(1))
 		if ret != 0 {
 			fmt.Println("failed")
 		}
 	case "deletevol":
-		argNum := len(os.Args)
-		if argNum != 4 {
+		argNum := flag.NArg()
+		if argNum != 1 {
 			fmt.Println("deletevol [voluuid]")
 			os.Exit(1)
 		}
-		ret := fs.DeleteVol(os.Args[3])
+		ret := fs.DeleteVol(flag.Arg(0))
 		if ret != 0 {
 			fmt.Println("failed")
 		}
 	case "snapshootvol":
-		argNum := len(os.Args)
-		if argNum != 4 {
+		argNum := flag.NArg()
+		if argNum != 1 {
 			fmt.Println("snapshootvol [voluuid]")
 			os.Exit(1)
 		}
-		ret := fs.SnapShootVol(os.Args[3])
+		ret := fs.SnapShootVol(flag.Arg(0))
 		if ret != 0 {
 			fmt.Println("failed")
 		}
 	case "getvolinfo":
-		argNum := len(os.Args)
-		if argNum != 4 {
+		argNum := flag.NArg()
+		if argNum != 1 {
 			fmt.Println("getvolinfo [volUUID]")
 			os.Exit(1)
 		}
-		ret, vi := fs.GetVolInfo(os.Args[3])
+		ret, vi := fs.GetVolInfo(flag.Arg(0))
 		if ret == 0 {
 			fmt.Println(vi)
 		} else {
