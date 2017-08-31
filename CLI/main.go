@@ -6,6 +6,7 @@ import (
 	fs "github.com/ipdcode/containerfs/fs"
 	"github.com/ipdcode/containerfs/logger"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -39,60 +40,85 @@ func main() {
 		logger.SetLevel(logger.ERROR)
 	}
 
-	switch os.Args[2] {
+	switch flag.Arg(0) {
 
 	case "createvol":
 		argNum := flag.NArg()
-		if argNum != 2 {
+		if argNum != 3 {
 			fmt.Println("createvol [volname] [space GB]")
 			os.Exit(1)
 		}
-		ret := fs.CreateVol(flag.Arg(0), flag.Arg(1))
+		ret := fs.CreateVol(flag.Arg(1), flag.Arg(2))
 		if ret != 0 {
 			fmt.Println("failed")
 		}
 
 	case "expendvol":
 		argNum := flag.NArg()
-		if argNum != 2 {
+		if argNum != 3 {
 			fmt.Println("expendvol [volUUID] [space GB]")
 			os.Exit(1)
 		}
-		ret := fs.ExpendVol(flag.Arg(0), flag.Arg(1))
+		ret := fs.ExpendVol(flag.Arg(1), flag.Arg(2))
 		if ret != 0 {
 			fmt.Println("failed")
 		}
 	case "deletevol":
 		argNum := flag.NArg()
-		if argNum != 1 {
+		if argNum != 2 {
 			fmt.Println("deletevol [voluuid]")
 			os.Exit(1)
 		}
-		ret := fs.DeleteVol(flag.Arg(0))
+		ret := fs.DeleteVol(flag.Arg(1))
 		if ret != 0 {
 			fmt.Println("failed")
 		}
 	case "snapshootvol":
 		argNum := flag.NArg()
-		if argNum != 1 {
+		if argNum != 2 {
 			fmt.Println("snapshootvol [voluuid]")
 			os.Exit(1)
 		}
-		ret := fs.SnapShootVol(flag.Arg(0))
+		ret := fs.SnapShootVol(flag.Arg(1))
 		if ret != 0 {
 			fmt.Println("failed")
 		}
 	case "getvolinfo":
 		argNum := flag.NArg()
-		if argNum != 1 {
+		if argNum != 2 {
 			fmt.Println("getvolinfo [volUUID]")
 			os.Exit(1)
 		}
-		ret, vi := fs.GetVolInfo(flag.Arg(0))
+		ret, vi := fs.GetVolInfo(flag.Arg(1))
 		if ret == 0 {
 			fmt.Println(vi)
 		} else {
 			fmt.Printf("get volume info failed , ret :%d", ret)
+		}
+	case "getinodeinfo":
+		argNum := flag.NArg()
+		if argNum != 4 {
+			fmt.Println("getinodeinfo [volUUID] parentinodeid name")
+			os.Exit(1)
+		}
+		cfs := fs.OpenFileSystem(flag.Arg(1))
+		pinode, err := strconv.ParseUint(flag.Arg(2), 10, 64)
+		if err == nil {
+			ret, inode, inodeinfo := cfs.GetInodeInfoDirect(pinode, flag.Arg(3))
+			if ret != 0 {
+				fmt.Println("no such inode")
+			} else {
+				fmt.Printf("inode:%v\ninodeinfo:%v\n", inode, inodeinfo)
+				ret, chunkinfo, _ := cfs.GetFileChunksDirect(pinode, flag.Arg(3))
+				if ret != 0 {
+					fmt.Printf("no chunkinfo")
+				} else {
+					fmt.Printf("chunkinfo:%v\n", chunkinfo)
+
+				}
+			}
+		} else {
+			fmt.Println("err parent inode", err)
 		}
 
 	default:

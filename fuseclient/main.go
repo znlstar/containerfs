@@ -612,12 +612,8 @@ var _ = fs.HandleWriter(&File{})
 // Write ...
 func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.WriteResponse) error {
 
-	logger.Debug("Write start : name %v inode %v pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
-
 	f.mu.Lock()
 	defer f.mu.Unlock()
-
-	logger.Debug("Write get locker : name %v inode %v pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
 
 	w := f.cfile.Write(req.Data, int32(len(req.Data)))
 	if w != int32(len(req.Data)) {
@@ -632,8 +628,6 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 
 	}
 	resp.Size = int(w)
-
-	logger.Debug("Write end : name %v inode %v pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
 
 	return nil
 }

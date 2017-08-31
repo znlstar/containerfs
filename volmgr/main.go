@@ -161,7 +161,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 
 	//allocate block group for the volume
 	for i := int32(0); i < blkgrpnum; i++ {
-		rows, err := VolMgrDB.Query("select ip,port from (select * from disks WHERE free > 10 order by rand())t  group by ip order BY rand() limit 3 for update")
+		rows, err := VolMgrDB.Query("select ip,port from (select * from disks WHERE free > 10 and statu = 0 order by rand())t  group by ip order BY rand() limit 3 for update")
 		if err != nil {
 			logger.Error("Create volume(%s -- %s) select blk for the %dth blkgroup error:%s", volname, voluuid, i, err)
 			ack.Ret = 1
@@ -245,7 +245,7 @@ func (s *VolMgrServer) ExpendVol(ctx context.Context, in *vp.ExpendVolReq) (*vp.
 	pBlockGroups := []*vp.BlockGroup{}
 	//allocate block group for the volume
 	for i := int32(0); i < blkgrpnum; i++ {
-		rows, err := VolMgrDB.Query("select ip,port from (select * from disks WHERE free > 10 order by rand())t  group by ip order BY rand() limit 3 for update")
+		rows, err := VolMgrDB.Query("select ip,port from (select * from disks WHERE free > 10 and statu = 0 order by rand())t  group by ip order BY rand() limit 3 for update")
 		if err != nil {
 			logger.Error("Expend volume:%v select blk for the %dth blkgroup error:%s", voluuid, i, err)
 			ack.Ret = 1
