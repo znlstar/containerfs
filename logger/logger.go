@@ -14,20 +14,26 @@ const (
 	_VER string = "1.0.2"
 )
 
+// LEVEL ...
 type LEVEL int32
 
 var logLevel LEVEL = 1
 var maxFileSize int64
 var maxFileCount int32
-var dailyRolling bool = true
-var consoleAppender bool = true
-var RollingFile bool = false
+var dailyRolling bool
+var consoleAppender bool
+
+// RollingFile file
+var RollingFile bool
 var logObj *_FILE
 
+// DATEFORMAT format
 const DATEFORMAT = "2006-01-02"
 
+// UNIT int64
 type UNIT int64
 
+// const var
 const (
 	_       = iota
 	KB UNIT = 1 << (iota * 10)
@@ -36,6 +42,7 @@ const (
 	TB
 )
 
+// const var
 const (
 	ALL LEVEL = iota
 	DEBUG
@@ -46,6 +53,7 @@ const (
 	OFF
 )
 
+// _FILE
 type _FILE struct {
 	dir      string
 	filename string
@@ -57,14 +65,17 @@ type _FILE struct {
 	lg       *log.Logger
 }
 
+// SetConsole ...
 func SetConsole(isConsole bool) {
 	consoleAppender = isConsole
 }
 
+// SetLevel set level
 func SetLevel(_level LEVEL) {
 	logLevel = _level
 }
 
+// SetRollingFile set roll file
 func SetRollingFile(fileDir, fileName string, maxNumber int32, maxSize int64, _unit UNIT) {
 	maxFileCount = maxNumber
 	maxFileSize = maxSize * int64(_unit)
@@ -90,6 +101,7 @@ func SetRollingFile(fileDir, fileName string, maxNumber int32, maxSize int64, _u
 	go fileMonitor()
 }
 
+// SetRollingDaily set roll daily
 func SetRollingDaily(fileDir, fileName string) {
 	RollingFile = false
 	dailyRolling = true
@@ -142,6 +154,7 @@ func catchError() {
 	}
 }
 
+// Debug debug
 func Debug(format string, args ...interface{}) {
 	if dailyRolling {
 		fileCheck()
@@ -160,6 +173,7 @@ func Debug(format string, args ...interface{}) {
 	}
 }
 
+// Info info
 func Info(format string, args ...interface{}) {
 	if dailyRolling {
 		fileCheck()
@@ -176,6 +190,8 @@ func Info(format string, args ...interface{}) {
 		}
 	}
 }
+
+// Warn ...
 func Warn(format string, args ...interface{}) {
 	if dailyRolling {
 		fileCheck()
@@ -193,6 +209,8 @@ func Warn(format string, args ...interface{}) {
 		}
 	}
 }
+
+// Error ...
 func Error(format string, args ...interface{}) {
 	if dailyRolling {
 		fileCheck()
@@ -209,6 +227,8 @@ func Error(format string, args ...interface{}) {
 		}
 	}
 }
+
+// Fatal ...
 func Fatal(format string, args ...interface{}) {
 	if dailyRolling {
 		fileCheck()
@@ -283,7 +303,6 @@ func (f *_FILE) coverNextOne() {
 func fileSize(file string) int64 {
 	f, e := os.Stat(file)
 	if e != nil {
-		fmt.Println(e.Error())
 		return 0
 	}
 	return f.Size()

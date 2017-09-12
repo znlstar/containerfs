@@ -4,57 +4,49 @@ package dp;
 
 service DataNode {
     rpc WriteChunk(WriteChunkReq) returns (WriteChunkAck){};
-    rpc WriteChunkStream(stream WriteChunkReq) returns (WriteChunkAck){};
-    rpc ReadChunk(ReadChunkReq) returns (ReadChunkAck){};
     rpc StreamReadChunk(StreamReadChunkReq) returns (stream StreamReadChunkAck){};
     rpc DeleteChunk(DeleteChunkReq) returns (DeleteChunkAck){};
+    rpc DatanodeHealthCheck(DatanodeHealthCheckReq) returns (DatanodeHealthCheckAck){};
 }
 
 message WriteChunkReq{
-    int64 ChunkID = 1;
-    int32 BlockID = 2;
-    string Databuf = 3;
+    uint64 ChunkID = 1;
+    uint32 BlockID = 2;
+    bytes Databuf = 3;
 }
 message WriteChunkAck{
     int32 Ret = 1;
 }
 
-message ReadChunkReq{
-    int64 ChunkID = 1;
-    int32 BlockID = 2;
-    int64 Readlen = 3;
-    int64 Offset = 4;
-}
-message ReadChunkAck{
-    int32 Ret = 1;
-    int64 Readsize = 2;
-    string Databuf = 3;
-}
-
 message StreamReadChunkReq{
-    int64 ChunkID = 1;
-    int32 BlockID = 2;
+    uint64 ChunkID = 1;
+    uint32 BlockID = 2;
     int64 Offset = 3;
     int64 Readsize = 4;
 }
 
 message StreamReadChunkAck{
-    //int32 Ret = 1;
-    //int64 Readsize = 2;
-    string Databuf = 1;
+    bytes Databuf = 1;
 }
 
+
 message DeleteChunkReq{
-    int64 ChunkID = 1;
-    int32 BlockID = 2;
+    uint64 ChunkID = 1;
+    uint32 BlockID = 2;
 }
 message DeleteChunkAck{
     int32 Ret = 1;
 }
 
+message DatanodeHealthCheckReq{
+}
+
+message DatanodeHealthCheckAck{
+    int32 Ret = 1;
+}
 
 message BlockGroup{
-    int32 BlockGroupID = 1;
+    uint32 BlockGroupID = 1;
     int32 FreeCnt = 2;
     int32 Status = 3;
     repeated BlockInfo BlockInfos = 4;
@@ -62,13 +54,7 @@ message BlockGroup{
 
 
 message BlockInfo{
-    int32 BlockID = 1;
+    uint32 BlockID = 1;
     int32 DataNodeIP = 2;
     int32 DataNodePort = 3;
-}
-
-message ChunkInfo{
-    int64 ChunkID = 1;
-    int32 ChunkSize = 2;
-    BlockGroup BlockGroup = 3;
 }

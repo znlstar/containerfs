@@ -1,14 +1,19 @@
 package namespace
 
 import (
-	"bytes"
 	"fmt"
-	mp "ipd.org/containerfs/proto/mp"
-	vp "ipd.org/containerfs/proto/vp"
-
+	pbproto "github.com/golang/protobuf/proto"
+	"github.com/ipdcode/containerfs/logger"
+	"github.com/ipdcode/containerfs/metanode/raftopt"
+	mp "github.com/ipdcode/containerfs/proto/mp"
+	vp "github.com/ipdcode/containerfs/proto/vp"
+	"github.com/ipdcode/raft"
+	"github.com/ipdcode/raft/proto"
+	"github.com/ipdcode/raft/storage/wal"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"ipd.org/containerfs/utils"
+	"path"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,521 +21,597 @@ import (
 )
 
 const (
-	volMgrAddress   = "10.8.65.94:10001"
-	mataNodeAddress = "10.8.65.94:10002"
+	//BlockGroupSize 10GB
+	BlockGroupSize = 10 * 1024 * 1024 * 1024
+	//ChunkSize 64MB
+	ChunkSize = 64 * 1024 * 1024
 )
 
+//VolMgrAddress ...
+var VolMgrAddress string
+
 type nameSpace struct {
-	InodeDB      map[string]*mp.InodeInfo
-	Mutex        sync.RWMutex
-	BlockBroupDB map[int32]*vp.BlockGroup
-	BGMutex      sync.Mutex
-	ChunkDB      map[int64]*mp.ChunkInfo
-	CMutex       sync.RWMutex
-	BaseInodeID  *utils.AutoInc
-	BaseChunkID  *utils.AutoInc
+	sync.RWMutex
+	VolID       string
+	RaftGroupID uint64
+	RaftGroup   *raftopt.KvStateMachine
+	RaftStorage *wal.Storage
 }
 
+//AllNameSpace ...
 var AllNameSpace map[string]*nameSpace
 var gMutex sync.RWMutex
 
+func catchPanic() {
+	if err := recover(); err != nil {
+		logger.Error("panic !!! :%v", err)
+		logger.Error("stacks:%v", string(debug.Stack()))
+	}
+}
+
+//CreateGNameSpace ...
 func CreateGNameSpace() {
 	gMutex.Lock()
 	AllNameSpace = make(map[string]*nameSpace)
 	gMutex.Unlock()
 }
-func CreateNameSpace(UUID string, inodenum int64, chunknum int64) int32 {
-	nameSpace := nameSpace{}
-	nameSpace.InodeDB = make(map[string]*mp.InodeInfo)
-	nameSpace.BlockBroupDB = make(map[int32]*vp.BlockGroup)
-	nameSpace.ChunkDB = make(map[int64]*mp.ChunkInfo)
-	nameSpace.BaseInodeID = utils.New(inodenum, 1)
-	nameSpace.BaseChunkID = utils.New(chunknum, 1)
 
-	//fmt.Println("CreateNameSpace in namespace ...")
+func createRaftGroup(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir string, UUID string, raftGroupID uint64) (*raftopt.KvStateMachine, *wal.Storage, error) {
+	sm, sg, err := raftopt.CreateKvStateMachine(rs, peers, nodeID, dir, UUID, raftGroupID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return sm, sg, nil
+}
+
+func initNameSpace(rs *raft.RaftServer, nameSpace *nameSpace, UUID string) int32 {
+
+	defer catchPanic()
+
+	time.Sleep(time.Second * 2)
+
+	if !rs.IsLeader(nameSpace.RaftGroupID) {
+		return 0
+	}
+
 	ret, tmpBlockGroups := nameSpace.GetVolInfo(UUID)
 	if ret != 0 {
 		return ret
 	}
-	for _, v := range tmpBlockGroups {
-		nameSpace.BGMutex.Lock()
-		v.FreeCnt = 320
-		nameSpace.BlockBroupDB[v.BlockGroupID] = v
-		nameSpace.BGMutex.Unlock()
+
+	if len(tmpBlockGroups) <= 0 {
+		return 0
 	}
-	fmt.Println(nameSpace.BlockBroupDB)
-	gMutex.Lock()
-	AllNameSpace[UUID] = &nameSpace
-	gMutex.Unlock()
+
+	var blockgroupIDs []uint32
+	for _, v := range tmpBlockGroups {
+		v.FreeSize = BlockGroupSize
+
+		err := nameSpace.BlockGroupDBSet(v.BlockGroupID, nameSpace.BlockGroupVp2Mp(v))
+		if err != nil {
+			continue
+		}
+		blockgroupIDs = append(blockgroupIDs, v.BlockGroupID)
+	}
 
 	tmpInodeInfo := mp.InodeInfo{
-		InodeID: 0, Name: "/",
 		AccessTime: time.Now().Unix(),
 		ModifiTime: time.Now().Unix(),
-		InodeType:  false}
-	nameSpace.Set("0", &tmpInodeInfo)
+	}
+
+	err := nameSpace.InodeDBSet(0, &tmpInodeInfo)
+	if err != nil {
+		return 1
+	}
 
 	return 0
 }
 
-func GetNameSpace(UUID string) (int32, *nameSpace) {
-	gMutex.RLock()
-	defer gMutex.RUnlock()
-	if v, ok := AllNameSpace[UUID]; ok {
-		return 0, v
-	} else {
-		return -1, nil
+//CreateNameSpace ...
+func CreateNameSpace(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir string, UUID string, raftGroupID uint64, IsLoad bool) int32 {
+
+	defer catchPanic()
+
+	var err error
+	var errno int32
+
+	nameSpace := nameSpace{}
+	nameSpace.VolID = UUID
+	nameSpace.RaftGroupID = raftGroupID
+	nameSpace.RaftGroup, nameSpace.RaftStorage, err = createRaftGroup(rs, peers, nodeID, dir, UUID, nameSpace.RaftGroupID)
+	if err != nil {
+		logger.Error("createRaftGroup, failed,err:%v", err)
+		errno = -1
+		return errno
 	}
+
+	logger.Info("createRaftGroup, success")
+
+	gMutex.Lock()
+	AllNameSpace[UUID] = &nameSpace
+	gMutex.Unlock()
+
+	if !IsLoad {
+		go initNameSpace(rs, &nameSpace, UUID)
+	}
+	return errno
 }
 
+//SnapShootNameSpace ...
+func SnapShootNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
+
+	defer catchPanic()
+
+	ret, nameSpace := GetNameSpace(UUID)
+	if ret != 0 {
+		return ret
+	}
+	raftopt.TakeKvSnapShoot(nameSpace.RaftGroup, nameSpace.RaftStorage, path.Join(dir, UUID, "wal", "snap"))
+	return 0
+}
+
+//DeleteNameSpace ...
+func DeleteNameSpace(rs *raft.RaftServer, UUID string) int32 {
+
+	defer catchPanic()
+
+	ret, nameSpace := GetNameSpace(UUID)
+	if ret != 0 {
+		return 0
+	}
+	rs.RemoveRaft(nameSpace.RaftGroupID)
+
+	gMutex.Lock()
+	delete(AllNameSpace, UUID)
+	gMutex.Unlock()
+	return 0
+}
+
+//GetNameSpace ...
+func GetNameSpace(UUID string) (int32, *nameSpace) {
+
+	defer catchPanic()
+
+	gMutex.RLock()
+
+	if v, ok := AllNameSpace[UUID]; ok {
+		gMutex.RUnlock()
+		return 0, v
+	}
+	gMutex.RUnlock()
+	return -1, nil
+}
+
+//GetFSInfo ...
+func (ns *nameSpace) GetFSInfo(volID string) mp.GetFSInfoAck {
+
+	defer catchPanic()
+
+	ack := mp.GetFSInfoAck{}
+	var totalSpace uint64
+	var freeSpace uint64
+
+	ns.RaftGroup.BlockGroupLocker.RLock()
+
+	bgmap, _ := ns.BlockGroupDBGetAll()
+
+	var blockGroup mp.BlockGroup
+
+	for _, v := range *bgmap {
+
+		err := pbproto.Unmarshal(v, &blockGroup)
+		if err != nil {
+			continue
+		}
+		totalSpace = totalSpace + BlockGroupSize
+		freeSpace = freeSpace + uint64(blockGroup.FreeSize)
+	}
+
+	ns.RaftGroup.BlockGroupLocker.RUnlock()
+
+	ack.TotalSpace = totalSpace
+	ack.FreeSpace = freeSpace
+	ack.Ret = 0
+
+	return ack
+}
+
+//GetFSInfo ...
+func (ns *nameSpace) ExpandNameSpace(blockGroups []*mp.BlockGroup) int32 {
+
+	defer catchPanic()
+
+	for _, v := range blockGroups {
+		v.FreeSize = BlockGroupSize
+		err := ns.BlockGroupDBSet(v.BlockGroupID, v)
+		if err != nil {
+			return -1
+		}
+	}
+	return 0
+}
+
+// GetVolInfo ...
 func (ns *nameSpace) GetVolInfo(name string) (int32, []*vp.BlockGroup) {
-	//fmt.Println("GetVolInfo ... ")
-	conn, err := grpc.Dial(volMgrAddress, grpc.WithInsecure())
+
+	defer catchPanic()
+
+	conn, err := grpc.Dial(VolMgrAddress, grpc.WithInsecure())
 	if err != nil {
-		fmt.Printf("did not connect: %v", err)
+		logger.Error("Dial failed: %v", err)
+		return -1, nil
 	}
 	defer conn.Close()
 	vc := vp.NewVolMgrClient(conn)
 	pGetVolInfoReq := &vp.GetVolInfoReq{UUID: name}
 	pGetVolInfoAck, _ := vc.GetVolInfo(context.Background(), pGetVolInfoReq)
 	if pGetVolInfoAck.Ret != 0 {
+		logger.Error("GetVolInfo failed: %v", pGetVolInfoAck.Ret)
 		return pGetVolInfoAck.Ret, nil
 	}
 	return 0, pGetVolInfoAck.VolInfo.BlockGroups
 }
 
-func (ns *nameSpace) CreateDir(path string) int32 {
-	var ret int32
-	ret = 0
-	keys := ns.GetAllKeyByFullPath(path)
-	keysNum := len(keys)
-	//fmt.Println(keys)
-	var pParentInodeInfo *mp.InodeInfo
-	var ok bool
-	if ok, pParentInodeInfo = ns.Get(keys[keysNum-2]); !ok {
-		ret = 2 /*ENOENT*/
-		return ret
-	}
-	if pParentInodeInfo.InodeType == true {
-		ret = 1 /*EPERM*/
-		return ret
-	}
-	if ok, _ = ns.Get(keys[keysNum-1]); ok {
-		ret = 17 /*ENOENT*/
-		return ret
-	}
-	/*update inode info*/
-	inodeID := ns.AllocateInodeID()
-	name := utils.GetSelfName(path)
-	tmpInodeInfo := mp.InodeInfo{
-		ParentInodeID: pParentInodeInfo.InodeID,
-		InodeID:       inodeID,
-		Name:          name,
-		AccessTime:    time.Now().Unix(),
-		ModifiTime:    time.Now().Unix(),
-		InodeType:     false}
+//GetVolList ...
+func GetVolList() (int32, []*vp.VolIDs) {
 
-	ns.Set(strconv.FormatInt(inodeID, 10), &tmpInodeInfo)
-	tmpKey := strconv.FormatInt(pParentInodeInfo.InodeID, 10) + "-" + name
-	ns.Set(tmpKey, &tmpInodeInfo)
-	/*update patent inode info*/
-	pParentInodeInfo.ChildrenInodeIDs = append(pParentInodeInfo.ChildrenInodeIDs, inodeID)
-	parentName := utils.GetParentName(path)
-	if parentName == "/" {
-		ns.Set("0", pParentInodeInfo)
-	} else {
-		ns.Set(strconv.FormatInt(pParentInodeInfo.InodeID, 10), pParentInodeInfo)
-		tmpKey = strconv.FormatInt(pParentInodeInfo.ParentInodeID, 10) + "-" + utils.GetParentName(path)
-		ns.Set(tmpKey, pParentInodeInfo)
-	}
-	return ret
-}
+	defer catchPanic()
 
-func (ns *nameSpace) Stat(path string) (*mp.InodeInfo, int32) {
-	var ret int32
-	ret = 0
-	var ok bool
-	var pInodeInfo *mp.InodeInfo
-
-	if path == "/" {
-		_, pInodeInfo = ns.Get("0")
-		//		ack = mp.StatAck{Ret: 0, InodeInfo: pInodeInfo}
-		return pInodeInfo, 0
-	}
-	keys := ns.GetAllKeyByFullPath(path)
-	keysNum := len(keys)
-
-	if ok, pInodeInfo = ns.Get(keys[keysNum-1]); !ok {
-		ret = 2 /*ENOENT*/
-		return nil, ret
-	}
-	return pInodeInfo, 0
-}
-
-func (ns *nameSpace) List(path string) ([]*mp.InodeInfo, int32) {
-	var ret int32
-	ret = 0
-
-	var pInodeInfo *mp.InodeInfo
-	var ok bool
-	if path == "/" {
-		_, pInodeInfo = ns.Get("0")
-	} else {
-		keys := ns.GetAllKeyByFullPath(path)
-		keysNum := len(keys)
-
-		if ok, pInodeInfo = ns.Get(keys[keysNum-1]); !ok {
-			ret = 2 /*ENOENT*/
-			return nil, ret
-		}
-	}
-	var tmpInodeInfos []*mp.InodeInfo
-	if pInodeInfo.InodeType == true {
-		tmpInodeInfos = append(tmpInodeInfos, pInodeInfo)
-		return tmpInodeInfos, ret
-	}
-
-	var pTmpInodeInfo *mp.InodeInfo
-	for _, value := range pInodeInfo.ChildrenInodeIDs {
-		_, pTmpInodeInfo = ns.Get(strconv.FormatInt(value, 10))
-		tmpInodeInfos = append(tmpInodeInfos, pTmpInodeInfo)
-	}
-	return tmpInodeInfos, ret
-}
-
-func (ns *nameSpace) DeleteDir(path string) int32 {
-	var ret int32
-	ret = 0
-
-	if path == "/" {
-		ret = 1
-		return ret
-	}
-
-	keys := ns.GetAllKeyByFullPath(path)
-	keysNum := len(keys)
-
-	var ok bool
-	var pInodeInfo *mp.InodeInfo
-
-	if ok, pInodeInfo = ns.Get(keys[keysNum-1]); !ok {
-		ret = 2 /*ENOENT*/
-		return ret
-	}
-	if pInodeInfo.InodeType == true {
-		ret = 1 /*EPERM*/
-		return ret
-	}
-	if tmplen := len(pInodeInfo.ChildrenInodeIDs); tmplen > 0 {
-		ret = 1 /*EPERM*/
-		return ret
-	}
-
-	/*update patent inode info*/
-	var pTmpParentInodeInfo *mp.InodeInfo
-	_, pTmpParentInodeInfo = ns.Get(keys[keysNum-2])
-	for index, value := range pTmpParentInodeInfo.ChildrenInodeIDs {
-		if value == pInodeInfo.InodeID {
-			//fmt.Println("find the child index:")
-			pTmpParentInodeInfo.ChildrenInodeIDs = append(pTmpParentInodeInfo.ChildrenInodeIDs[:index], pTmpParentInodeInfo.ChildrenInodeIDs[index+1:]...)
-			break
-		}
-	}
-	ns.Set(keys[keysNum-2], pTmpParentInodeInfo)
-	ns.Set(strconv.FormatInt(pTmpParentInodeInfo.ParentInodeID, 10)+"-"+utils.GetParentName(path), pTmpParentInodeInfo)
-
-	/*delete inode info*/
-	ns.Delete(strconv.FormatInt(pInodeInfo.InodeID, 10))
-	ns.Delete(strconv.FormatInt(pInodeInfo.ParentInodeID, 10) + "-" + utils.GetSelfName(path))
-
-	return ret
-}
-
-func (ns *nameSpace) Rename(path1 string, path2 string) int32 {
-	var ret int32
-	ret = 0
-
-	if path1 == "/" || path2 == "/" {
-		ret = 1
-		return ret
-	}
-
-	key1s := ns.GetAllKeyByFullPath(path1)
-	key1sNum := len(key1s)
-	var pInodeInfo *mp.InodeInfo
-	var ok bool
-	if ok, pInodeInfo = ns.Get(key1s[key1sNum-1]); !ok {
-		ret = 17 /*ENOENT*/
-		return ret
-	}
-
-	key2s := ns.GetAllKeyByFullPath(path2)
-	key2sNum := len(key2s)
-
-	var pParentInodeInfo2 *mp.InodeInfo
-
-	if ok, pParentInodeInfo2 = ns.Get(key2s[key2sNum-2]); !ok {
-		ret = 2 /*ENOENT*/
-		return ret
-	}
-	if pParentInodeInfo2.InodeType == true {
-		ret = 1 /*EPERM*/
-		return ret
-	}
-	if ok, _ = ns.Get(key2s[key2sNum-1]); ok {
-		ret = 17 /*ENOENT*/
-		return ret
-	}
-
-	/*add a new parentID + name key  */
-	name := utils.GetSelfName(path2)
-	tmpInodeInfo := mp.InodeInfo{
-		ParentInodeID:    pParentInodeInfo2.InodeID,
-		InodeID:          pInodeInfo.InodeID,
-		Name:             name,
-		AccessTime:       pInodeInfo.AccessTime,
-		ModifiTime:       pInodeInfo.ModifiTime,
-		InodeType:        pInodeInfo.InodeType,
-		ChildrenInodeIDs: pInodeInfo.ChildrenInodeIDs}
-
-	tmpKey := strconv.FormatInt(pParentInodeInfo2.InodeID, 10) + "-" + name
-	ns.Set(tmpKey, &tmpInodeInfo)
-
-	/*modfiy inode key */
-	ns.Set(strconv.FormatInt(pInodeInfo.InodeID, 10), &tmpInodeInfo)
-
-	/*modify parents inodeinfo if they are not same*/
-	if key2s[key2sNum-2] != key1s[key1sNum-2] {
-		/*update patent1 inode info*/
-		var pTmpParentInodeInfo1 *mp.InodeInfo
-		_, pTmpParentInodeInfo1 = ns.Get(key1s[key1sNum-2])
-		for index, value := range pTmpParentInodeInfo1.ChildrenInodeIDs {
-			if value == pInodeInfo.InodeID {
-				//fmt.Println("find the child index:")
-				pTmpParentInodeInfo1.ChildrenInodeIDs = append(pTmpParentInodeInfo1.ChildrenInodeIDs[:index], pTmpParentInodeInfo1.ChildrenInodeIDs[index+1:]...)
-				break
-			}
-		}
-		ns.Set(strconv.FormatInt(pTmpParentInodeInfo1.InodeID, 10), pTmpParentInodeInfo1)
-		ns.Set(strconv.FormatInt(pTmpParentInodeInfo1.ParentInodeID, 10)+"-"+utils.GetParentName(path1), pTmpParentInodeInfo1)
-
-		/*update patent2 inode info*/
-		pParentInodeInfo2.ChildrenInodeIDs = append(pParentInodeInfo2.ChildrenInodeIDs, pInodeInfo.InodeID)
-		parent2Name := utils.GetParentName(path2)
-		if parent2Name == "/" {
-			ns.Set("0", pParentInodeInfo2)
-		} else {
-			ns.Set(strconv.FormatInt(pParentInodeInfo2.InodeID, 10), pParentInodeInfo2)
-			tmpKey2 := strconv.FormatInt(pParentInodeInfo2.ParentInodeID, 10) + "-" + utils.GetParentName(path2)
-			ns.Set(tmpKey2, pParentInodeInfo2)
-		}
-	}
-	/*delete old parentID + name key*/
-	ns.Delete(strconv.FormatInt(pInodeInfo.ParentInodeID, 10) + "-" + utils.GetSelfName(path1))
-
-	return ret
-}
-func (ns *nameSpace) CreateFile(path string) int32 {
-
-	var ret int32
-	ret = 0
-
-	keys := ns.GetAllKeyByFullPath(path)
-	keysNum := len(keys)
-
-	//fmt.Println(keys)
-	var ok bool
-	var pParentInodeInfo *mp.InodeInfo
-	if ok, pParentInodeInfo = ns.Get(keys[keysNum-2]); !ok {
-		ret = 2 /*ENOENT*/
-		return ret
-	}
-
-	if pParentInodeInfo.InodeType == true {
-		ret = 1 /*EPERM*/
-		return ret
-	}
-
-	if ok, _ = ns.Get(keys[keysNum-1]); ok {
-		ret = 17 /*ENOENT*/
-		return ret
-	}
-
-	/*update inode info*/
-	inodeID := ns.AllocateInodeID()
-	name := utils.GetSelfName(path)
-	tmpInodeInfo := mp.InodeInfo{
-		ParentInodeID: pParentInodeInfo.InodeID,
-		InodeID:       inodeID,
-		Name:          name,
-		AccessTime:    time.Now().Unix(),
-		ModifiTime:    time.Now().Unix(),
-		InodeType:     true}
-
-	ns.Set(strconv.FormatInt(inodeID, 10), &tmpInodeInfo)
-	tmpKey := strconv.FormatInt(pParentInodeInfo.InodeID, 10) + "-" + name
-	ns.Set(tmpKey, &tmpInodeInfo)
-
-	/*update patent inode info*/
-	pParentInodeInfo.ChildrenInodeIDs = append(pParentInodeInfo.ChildrenInodeIDs, inodeID)
-
-	parentName := utils.GetParentName(path)
-	if parentName == "/" {
-		ns.Set("0", pParentInodeInfo)
-	} else {
-		ns.Set(strconv.FormatInt(pParentInodeInfo.InodeID, 10), pParentInodeInfo)
-		tmpKey = strconv.FormatInt(pParentInodeInfo.ParentInodeID, 10) + "-" + utils.GetParentName(path)
-		ns.Set(tmpKey, pParentInodeInfo)
-	}
-
-	return ret
-}
-
-func (ns *nameSpace) DeleteFile(path string) int32 {
-
-	fmt.Println("DeleteFile in namespace ...")
-
-	var ret int32
-	ret = 0
-
-	if path == "/" {
-		ret = 1
-		return ret
-	}
-
-	keys := ns.GetAllKeyByFullPath(path)
-	keysNum := len(keys)
-
-	var ok bool
-	var pInodeInfo *mp.InodeInfo
-
-	if ok, pInodeInfo = ns.Get(keys[keysNum-1]); !ok {
-		ret = 2 /*ENOENT*/
-		return ret
-	}
-	if pInodeInfo.InodeType == false {
-		ret = 1 /*EPERM*/
-		return ret
-	}
-
-	/*update patent inode info*/
-	var pTmpParentInodeInfo *mp.InodeInfo
-	_, pTmpParentInodeInfo = ns.Get(keys[keysNum-2])
-	for index, value := range pTmpParentInodeInfo.ChildrenInodeIDs {
-		if value == pInodeInfo.InodeID {
-			//fmt.Println("find the child index:")
-			pTmpParentInodeInfo.ChildrenInodeIDs = append(pTmpParentInodeInfo.ChildrenInodeIDs[:index], pTmpParentInodeInfo.ChildrenInodeIDs[index+1:]...)
-			break
-		}
-	}
-	ns.Set(keys[keysNum-2], pTmpParentInodeInfo)
-	ns.Set(strconv.FormatInt(pTmpParentInodeInfo.ParentInodeID, 10)+"-"+utils.GetParentName(path), pTmpParentInodeInfo)
-
-	/*delete chunk info*/
-	for _, value := range pInodeInfo.ChunkIDs {
-
-		ns.CMutex.Lock()
-		chunkInfo := ns.ChunkDB[value]
-		ns.CMutex.Unlock()
-		/*release bg cnt*/
-		ns.ReleaseBlockGroup(chunkInfo.BlockGroup.BlockGroupID)
-		ns.CMutex.Lock()
-		delete(ns.ChunkDB, value)
-		ns.CMutex.Unlock()
-	}
-
-	/*delete inode info*/
-	ns.Delete(strconv.FormatInt(pInodeInfo.InodeID, 10))
-	ns.Delete(strconv.FormatInt(pInodeInfo.ParentInodeID, 10) + "-" + utils.GetSelfName(path))
-
-	fmt.Println("DeleteFile in namespace end ...")
-
-	return ret
-}
-func (ns *nameSpace) AllocateChunk(path string) (int32, *mp.ChunkInfo) {
-	//fmt.Println("AllocateChunk in ...")
-	var ret int32
-
-	keys := ns.GetAllKeyByFullPath(path)
-	keysNum := len(keys)
-
-	if ok, _ := ns.Get(keys[keysNum-1]); !ok {
-		ret = 2 /*ENOENT*/
+	conn, err := grpc.Dial(VolMgrAddress, grpc.WithInsecure())
+	if err != nil {
+		logger.Error("Dial failed: %v", err)
 		return -1, nil
+	}
+	defer conn.Close()
+	vc := vp.NewVolMgrClient(conn)
+	pGetVolListReq := &vp.GetVolListReq{}
+	pGetVolListAck, err := vc.GetVolList(context.Background(), pGetVolListReq)
+	if err != nil {
+		return -1, nil
+	}
+	if pGetVolListAck.Ret != 0 {
+		logger.Error("GetVolList failed: %v", pGetVolListAck.Ret)
+		return pGetVolListAck.Ret, nil
+	}
+	return 0, pGetVolListAck.VolIDs
+}
+
+//CreateDirDirect ...
+func (ns *nameSpace) CreateDirDirect(pinode uint64, name string) (int32, uint64) {
+
+	defer catchPanic()
+
+	/*update inode info*/
+	inodeID, err := ns.AllocateInodeID()
+	if err != nil {
+		return 2, 0
+	}
+	tmpInodeInfo := mp.InodeInfo{
+		AccessTime: time.Now().Unix(),
+		ModifiTime: time.Now().Unix(),
+	}
+
+	err = ns.InodeDBSet(inodeID, &tmpInodeInfo)
+	if err != nil {
+		return 1, 0
+	}
+
+	err = ns.DentryDBSet(strconv.FormatUint(pinode, 10)+"-"+name, false, inodeID)
+	if err != nil {
+		ns.InodeDBDelete(inodeID)
+		return 1, 0
+	}
+
+	return 0, inodeID
+}
+
+//GetInodeInfoDirect ...
+func (ns *nameSpace) GetInodeInfoDirect(pinode uint64, name string) (int32, *mp.InodeInfo, uint64) {
+
+	defer catchPanic()
+
+	var ok bool
+	var pInodeInfo *mp.InodeInfo
+
+	ok, dirent := ns.DentryDBGet(strconv.FormatUint(pinode, 10) + "-" + name)
+	if !ok {
+		return -1, nil, 0
+	}
+
+	if ok, pInodeInfo = ns.InodeDBGet(dirent.Inode); !ok {
+		return 2, nil, 0
+	}
+	return 0, pInodeInfo, dirent.Inode
+}
+
+//StatDirect ...
+func (ns *nameSpace) StatDirect(pinode uint64, name string) (bool, uint64, int32) {
+
+	defer catchPanic()
+
+	var ok bool
+
+	ok, dirent := ns.DentryDBGet(strconv.FormatUint(pinode, 10) + "-" + name)
+	if !ok {
+		return false, 0, 2
+	}
+
+	return dirent.InodeType, dirent.Inode, 0
+}
+
+//ListDirect ...
+func (ns *nameSpace) ListDirect(pinode uint64) ([]*mp.DirentN, int32) {
+
+	//defer catchPanic()
+
+	var tmpDirents []*mp.DirentN
+
+	pinodePrefix := strconv.FormatUint(pinode, 10) + "-"
+
+	allMap, _ := ns.RaftGroup.DentryGetAll(ns.RaftGroupID)
+
+	ns.RaftGroup.DentryLocker.RLock()
+	for k, v := range *allMap {
+
+		idex := strings.Index(k, "-")
+		runes := []rune(k)
+
+		if string(runes[0:idex+1]) == pinodePrefix {
+
+			name := string(runes[idex+1:])
+
+			dirent := mp.Dirent{}
+			pbproto.Unmarshal(v, &dirent)
+
+			direntN := mp.DirentN{Name: name, Inode: dirent.Inode, InodeType: dirent.InodeType}
+			tmpDirents = append(tmpDirents, &direntN)
+
+		}
+	}
+	ns.RaftGroup.DentryLocker.RUnlock()
+
+	return tmpDirents, 0
+}
+
+//DeleteDirDirect ...
+func (ns *nameSpace) DeleteDirDirect(pinode uint64, name string) int32 {
+
+	defer catchPanic()
+
+	ok, dirent := ns.DentryDBGet(strconv.FormatUint(pinode, 10) + "-" + name)
+	if !ok {
+		return 1
+	}
+	ns.InodeDBDelete(dirent.Inode)
+	ns.DentryDBDelete(strconv.FormatUint(pinode, 10) + "-" + name)
+
+	return 0
+}
+
+//RenameDirect ...
+func (ns *nameSpace) RenameDirect(oldpinode uint64, oldName string, newpinode uint64, newName string) int32 {
+
+	defer catchPanic()
+
+	oldDentryKey := strconv.FormatUint(oldpinode, 10) + "-" + oldName
+	newDentryKey := strconv.FormatUint(newpinode, 10) + "-" + newName
+
+	ok, dirent := ns.DentryDBGet(oldDentryKey)
+	if !ok {
+		return 1
+	}
+
+	err := ns.DentryDBSet(newDentryKey, dirent.InodeType, dirent.Inode)
+	if err != nil {
+		return 1
+	}
+	err = ns.DentryDBDelete(oldDentryKey)
+	if err != nil {
+		ns.DentryDBDelete(newDentryKey)
+		return 1
+	}
+	return 0
+}
+
+//CreateFileDirect ...
+func (ns *nameSpace) CreateFileDirect(pinode uint64, name string) (int32, uint64) {
+
+	defer catchPanic()
+
+	/*update inode info*/
+	inodeID, err := ns.AllocateInodeID()
+	if err != nil {
+		return 1, 0
+	}
+	tmpInodeInfo := mp.InodeInfo{
+		AccessTime: time.Now().Unix(),
+		ModifiTime: time.Now().Unix(),
+	}
+
+	err = ns.InodeDBSet(inodeID, &tmpInodeInfo)
+	if err != nil {
+		return 1, 0
+	}
+
+	tmpKey := strconv.FormatUint(pinode, 10) + "-" + name
+	err = ns.DentryDBSet(tmpKey, true, inodeID)
+	if err != nil {
+		ns.InodeDBDelete(inodeID)
+		return 1, 0
+	}
+
+	return 0, inodeID
+}
+
+//DeleteFileDirect ...
+func (ns *nameSpace) DeleteFileDirect(pinode uint64, name string) int32 {
+
+	defer catchPanic()
+
+	ok, dirent := ns.DentryDBGet(strconv.FormatUint(pinode, 10) + "-" + name)
+	if !ok {
+		return 1
+	}
+	ok, pInodeInfo := ns.InodeDBGet(dirent.Inode)
+	if !ok {
+		return 1
+	}
+
+	if pInodeInfo.Chunks != nil {
+		for _, v := range pInodeInfo.Chunks {
+			ns.ReleaseBlockGroup(v.BlockGroupID, v.ChunkSize)
+		}
+	}
+
+	ns.InodeDBDelete(dirent.Inode)
+	ns.DentryDBDelete(strconv.FormatUint(pinode, 10) + "-" + name)
+
+	return 0
+}
+
+//GetFileChunksDirect ...
+func (ns *nameSpace) GetFileChunksDirect(pinode uint64, name string) (int32, []*mp.ChunkInfo, uint64) {
+
+	defer catchPanic()
+
+	ok, dirent := ns.DentryDBGet(strconv.FormatUint(pinode, 10) + "-" + name)
+	if !ok {
+		return 1, nil, 0
+	}
+	ok, pInodeInfo := ns.InodeDBGet(dirent.Inode)
+	if !ok {
+		return 1, nil, 0
+	}
+	return 0, pInodeInfo.Chunks, dirent.Inode
+}
+
+//AllocateChunk ...
+func (ns *nameSpace) AllocateChunk(pinode uint64, name string) (int32, *mp.ChunkInfo) {
+
+	defer catchPanic()
+
+	var ret int32
+
+	key := strconv.FormatUint(pinode, 10) + "-" + name
+
+	fmt.Println("AllocateChunk...")
+
+	ok, dirent := ns.DentryDBGet(key)
+	if !ok {
+		ret = 2 /*ENOENT*/
+		return ret, nil
+	}
+
+	ok, inodeInfo := ns.InodeDBGet(dirent.Inode)
+	if !ok {
+		ret = 2 /*ENOENT*/
+		return ret, nil
 	}
 
 	var chunkInfo = mp.ChunkInfo{}
 	ret, _, blockGroup := ns.ChooseBlockGroup()
+
 	if ret != 0 {
-		return -1, nil
+		return 28 /*ENOSPC*/, nil
 	}
-	chunkInfo.BlockGroup = ns.blockGroupVp2Mp(blockGroup)
+	chunkInfo.BlockGroupID = blockGroup.BlockGroupID
 	chunkInfo.ChunkSize = 0
-	chunkInfo.ChunkID = ns.AllocateChunkID()
+
+	var err error
+	chunkInfo.ChunkID, err = ns.AllocateChunkID()
+	if err != nil {
+		return 1, nil
+	}
+
+	inodeInfo.Chunks = append(inodeInfo.Chunks, &chunkInfo)
+	ns.InodeDBSet(dirent.Inode, inodeInfo)
+
 	return 0, &chunkInfo
 
 }
 
-func (ns *nameSpace) GetFileChunks(path string) (int32, []*mp.ChunkInfo) {
+//SyncChunk ...
+func (ns *nameSpace) SyncChunk(pinode uint64, name string, chunkinfo *mp.ChunkInfo) int32 {
+
+	defer catchPanic()
+
 	var ret int32
-	var ok bool
-	keys := ns.GetAllKeyByFullPath(path)
-	keysNum := len(keys)
 
-	var pTmpInodeInfo *mp.InodeInfo
-	if ok, pTmpInodeInfo = ns.Get(keys[keysNum-1]); !ok {
-		ret = 2 /*ENOENT*/
-		return ret, nil
-	}
-	chunkInfos := make([]*mp.ChunkInfo, 0)
-	ns.CMutex.RLock()
-	for i := range pTmpInodeInfo.ChunkIDs {
-		chunkID := pTmpInodeInfo.ChunkIDs[i]
-		chunkInfos = append(chunkInfos, ns.ChunkDB[chunkID])
-	}
-	ns.CMutex.RUnlock()
-	//fmt.Println("getfilechunks in ... ")
-	//fmt.Println(chunkInfos)
-	return 0, chunkInfos
+	key := strconv.FormatUint(pinode, 10) + "-" + name
 
-}
-
-func (ns *nameSpace) SyncChunk(path string, chunkinfo *mp.ChunkInfo) int32 {
-	var ret int32
-	var ok bool
-	keys := ns.GetAllKeyByFullPath(path)
-	keysNum := len(keys)
-
-	var pTmpInodeInfo *mp.InodeInfo
-	if ok, pTmpInodeInfo = ns.Get(keys[keysNum-1]); !ok {
+	ok, dirent := ns.DentryDBGet(key)
+	if !ok {
 		ret = 2 /*ENOENT*/
 		return ret
 	}
-	pTmpInodeInfo.ChunkIDs = append(pTmpInodeInfo.ChunkIDs, chunkinfo.ChunkID)
-	pTmpInodeInfo.ModifiTime = time.Now().Unix()
-	pTmpInodeInfo.FileSize += int64(chunkinfo.ChunkSize)
-	ns.Set(strconv.FormatInt(pTmpInodeInfo.InodeID, 10), pTmpInodeInfo)
-	ns.Set(keys[keysNum-1], pTmpInodeInfo)
 
-	ns.CMutex.Lock()
-	ns.ChunkDB[chunkinfo.ChunkID] = chunkinfo
-	ns.CMutex.Unlock()
-	//fmt.Println("update chunkinfo to chunkDB ... ")
-	//fmt.Println(ns.ChunkDB[chunkinfo.ChunkID])
+	ok, inodeInfo := ns.InodeDBGet(dirent.Inode)
+	if !ok {
+		ret = 2 /*ENOENT*/
+		return ret
+	}
+
+	inodeInfo.ModifiTime = time.Now().Unix()
+
+	var lastChunkID uint64
+	var blockGroupUsed int32
+	if len(inodeInfo.Chunks) > 0 {
+		//for appned write
+		lastChunkID = inodeInfo.Chunks[len(inodeInfo.Chunks)-1].ChunkID
+		if lastChunkID == chunkinfo.ChunkID {
+			inodeInfo.FileSize = inodeInfo.FileSize + int64(chunkinfo.ChunkSize) - int64(inodeInfo.Chunks[len(inodeInfo.Chunks)-1].ChunkSize)
+			blockGroupUsed = chunkinfo.ChunkSize - inodeInfo.Chunks[len(inodeInfo.Chunks)-1].ChunkSize
+			inodeInfo.Chunks[len(inodeInfo.Chunks)-1] = chunkinfo
+		} else {
+			inodeInfo.Chunks = append(inodeInfo.Chunks, chunkinfo)
+			inodeInfo.FileSize += int64(chunkinfo.ChunkSize)
+			blockGroupUsed = chunkinfo.ChunkSize
+		}
+	} else {
+		inodeInfo.Chunks = append(inodeInfo.Chunks, chunkinfo)
+		inodeInfo.FileSize += int64(chunkinfo.ChunkSize)
+		blockGroupUsed = chunkinfo.ChunkSize
+	}
+
+	err := ns.InodeDBSet(dirent.Inode, inodeInfo)
+	if err != nil {
+
+		return 1
+	}
+
+	ns.Lock()
+
+	var pTmpBlockGroup *mp.BlockGroup
+	if ok, pTmpBlockGroup = ns.BlockGroupDBGet(chunkinfo.BlockGroupID); !ok {
+		ns.Unlock()
+		return 2
+	}
+
+	pTmpBlockGroup.FreeSize = pTmpBlockGroup.FreeSize - int64(blockGroupUsed)
+
+	err = ns.BlockGroupDBSet(chunkinfo.BlockGroupID, pTmpBlockGroup)
+	if err != nil {
+		ns.Unlock()
+		return 1
+	}
+
+	ns.Unlock()
 	return 0
 
 }
 
-func (ns *nameSpace) blockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
+//BlockGroupVp2Mp ...
+func (ns *nameSpace) BlockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
+
+	defer catchPanic()
+
 	var mpBlockGroup = mp.BlockGroup{}
 
-	mpBlockInfos := make([]*mp.BlockInfo, 1)
+	mpBlockInfos := make([]*mp.BlockInfo, len(in.BlockInfos))
 
 	mpBlockGroup.BlockGroupID = in.BlockGroupID
-	mpBlockGroup.FreeCnt = in.FreeCnt
+	mpBlockGroup.FreeSize = in.FreeSize
 	mpBlockGroup.Status = in.Status
-	//fmt.Println("blockGroupVp2Mp")
-	//fmt.Println(in.BlockInfos)
 
 	for i := range in.BlockInfos {
 		var pVpBlockInfo *vp.BlockInfo
@@ -540,6 +621,8 @@ func (ns *nameSpace) blockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 		mpBlockInfo.BlockID = pVpBlockInfo.BlockID
 		mpBlockInfo.DataNodeIP = pVpBlockInfo.DataNodeIP
 		mpBlockInfo.DataNodePort = pVpBlockInfo.DataNodePort
+		mpBlockInfo.Status = pVpBlockInfo.Status
+
 		mpBlockInfos[i] = &mpBlockInfo
 
 	}
@@ -549,127 +632,268 @@ func (ns *nameSpace) blockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 
 }
 
-func (ns *nameSpace) ChooseBlockGroup() (int32, int32, *vp.BlockGroup) {
-	//fmt.Println("ChooseBlockGroup in ...")
-	ns.BGMutex.Lock()
-	defer ns.BGMutex.Unlock()
-	var blockGroupID int32
-	var blockGroup *vp.BlockGroup
+//ChooseBlockGroup ...
+func (ns *nameSpace) ChooseBlockGroup() (int32, uint32, *mp.BlockGroup) {
+
+	defer catchPanic()
+
+	var blockGroup mp.BlockGroup
 	flag := false
-	// find the using blockgroup
-	for k, v := range ns.BlockBroupDB {
-		if v.Status == 1 {
-			blockGroupID = v.BlockGroupID
-			v.FreeCnt = v.FreeCnt - 1
-			if v.FreeCnt <= 0 {
-				v.Status = 2
-			}
-			ns.BlockBroupDB[k] = v
-			blockGroup = v
-			fmt.Println("find a using blockgroup !!!")
-			//fmt.Println(blockGroup)
-			flag = true
+
+	ns.RaftGroup.BlockGroupLocker.RLock()
+
+	bgmap, _ := ns.BlockGroupDBGetAll()
+
+	for _, v := range *bgmap {
+
+		err := pbproto.Unmarshal(v, &blockGroup)
+		if err != nil {
+			continue
+		}
+
+		if blockGroup.Status == 2 {
+			continue
+		}
+
+		if blockGroup.FreeSize <= ChunkSize {
+			blockGroup.Status = 2
+		} else {
+			blockGroup.Status = 1
+		}
+		logger.Debug("find a blockgroup,blgid:%v\n", blockGroup.BlockGroupID)
+		flag = true
+		break
+	}
+
+	ns.RaftGroup.BlockGroupLocker.RUnlock()
+	if flag {
+		ns.BlockGroupDBSet(blockGroup.BlockGroupID, &blockGroup)
+		return 0, blockGroup.BlockGroupID, &blockGroup
+	}
+	return 1, 0, nil
+}
+
+//ReleaseBlockGroup ...
+func (ns *nameSpace) ReleaseBlockGroup(blockGroupID uint32, chunSize int32) {
+
+	ns.Lock()
+	defer ns.Unlock()
+	defer catchPanic()
+
+	ok, blockGroup := ns.BlockGroupDBGet(blockGroupID)
+	if !ok {
+		return
+	}
+
+	var status int32
+	blockGroup.FreeSize = blockGroup.FreeSize + int64(chunSize)
+	if blockGroup.FreeSize > BlockGroupSize {
+		blockGroup.FreeSize = BlockGroupSize
+	}
+	if blockGroup.FreeSize > int64(ChunkSize) {
+		status = 1
+		if blockGroup.Status != status && blockGroup.Status != 3 {
+			blockGroup.Status = 1
+			//ns.SetBlockGroupStatus(blockGroupID, blockGroup.Status)
+		}
+
+	}
+	if blockGroup.FreeSize == BlockGroupSize {
+		status = 0
+		if blockGroup.Status != status && blockGroup.Status != 3 {
+			blockGroup.Status = 0
+			//ns.SetBlockGroupStatus(blockGroupID, blockGroup.Status)
+		}
+
+	}
+
+	ns.BlockGroupDBSet(blockGroupID, blockGroup)
+
+}
+
+//UpdateChunkInfo ...
+func (ns *nameSpace) UpdateChunkInfo(in *mp.UpdateChunkInfoReq) int32 {
+
+	defer catchPanic()
+
+	ok, inodeinfo := ns.InodeDBGet(in.Inode)
+	if !ok {
+		return 0
+	}
+	for i, v := range inodeinfo.Chunks {
+		if v.ChunkID == in.ChunkID {
+			inodeinfo.Chunks[i].Status[in.Position] = in.Status
 			break
 		}
 	}
-	// find the free blockgroup
-	if flag == false {
-		for k, v := range ns.BlockBroupDB {
-			if v.Status == 0 {
-				blockGroupID = v.BlockGroupID
-				v.FreeCnt = v.FreeCnt - 1
-				if v.FreeCnt == 0 {
-					v.Status = 2
-				} else {
-					v.Status = 1
-				}
-				ns.BlockBroupDB[k] = v
-				blockGroup = v
-				fmt.Println("find a free blockgroup !!!")
-				//fmt.Println(blockGroup)
-				flag = true
-				break
-			}
-		}
-	}
-	if flag {
 
-		return 0, blockGroupID, blockGroup
-	} else {
-		return 1, -1, nil
-	}
+	ns.InodeDBSet(in.Inode, inodeinfo)
 
+	return 0
 }
 
-func (ns *nameSpace) ReleaseBlockGroup(blockGroupID int32) {
-	fmt.Println("ReleaseBlockGroup in ...")
-	ns.BGMutex.Lock()
-	defer ns.BGMutex.Unlock()
-
-	blockGroup := ns.BlockBroupDB[blockGroupID]
-	blockGroup.FreeCnt += 1
-	if blockGroup.FreeCnt > 0 {
-		blockGroup.Status = 1
-	}
-	if blockGroup.FreeCnt >= 0 {
-		blockGroup.Status = 0
-	}
-	ns.BlockBroupDB[blockGroupID] = blockGroup
-
+//AllocateInodeID ...
+func (ns *nameSpace) AllocateInodeID() (uint64, error) {
+	return ns.RaftGroup.InodeIDGET(ns.RaftGroupID)
 }
-func (ns *nameSpace) GetAllKeyByFullPath(in string) (keys []string) {
 
-	tmp := strings.Split(in, "/")
-	//fmt.Println(tmp)
-	keys = make([]string, 1)
+//AllocateChunkID ...
+func (ns *nameSpace) AllocateChunkID() (uint64, error) {
+	return ns.RaftGroup.ChunkIDGET(ns.RaftGroupID)
+}
 
-	for i, v := range tmp {
-		if i == 0 {
-			keys[i] = "0"
-		} else {
-			if ok, pInodeInfo := ns.Get(keys[i-1]); ok {
-				buffer := new(bytes.Buffer)
-				buffer.WriteString(strconv.FormatInt(pInodeInfo.InodeID, 10))
-				buffer.WriteString("-")
-				buffer.WriteString(v)
-				//newkey := strconv.FormatInt(pInodeInfo.InodeID, 10) + "-" + v
-				newkey := buffer.String()
-				keys = append(keys, newkey)
-			} else {
-				keys = append(keys, " ")
-			}
+//InodeDBGet ...
+func (ns *nameSpace) InodeDBGet(inode uint64) (bool, *mp.InodeInfo) {
+	inodestr := strconv.FormatUint(inode, 10)
+
+	value, err := ns.RaftGroup.InodeGet(ns.RaftGroupID, inodestr)
+	if err != nil {
+		value, err = ns.RaftGroup.InodeGet(ns.RaftGroupID, inodestr)
+		if err != nil {
+			//logger.Error("InodeDBGet vol:%v,key:%v,err:%v\n", ns.VolID, inodestr, err)
+			return false, nil
 		}
 	}
 
-	return
-}
-
-func (ns *nameSpace) AllocateInodeID() int64 {
-	return ns.BaseInodeID.Id()
-}
-
-func (ns *nameSpace) AllocateChunkID() int64 {
-	return ns.BaseChunkID.Id()
-}
-
-func (ns *nameSpace) Get(k string) (bool, *mp.InodeInfo) {
-	ns.Mutex.RLock()
-	defer ns.Mutex.RUnlock()
-	if v, ok := ns.InodeDB[k]; ok {
-		return true, v
-	} else {
+	inodeInfo := mp.InodeInfo{}
+	err = pbproto.Unmarshal(value, &inodeInfo)
+	if err != nil {
 		return false, nil
 	}
+
+	return true, &inodeInfo
 }
 
-func (ns *nameSpace) Set(k string, v *mp.InodeInfo) {
-	ns.Mutex.Lock()
-	defer ns.Mutex.Unlock()
-	ns.InodeDB[k] = v
+//InodeDBSet ...
+func (ns *nameSpace) InodeDBSet(inode uint64, v *mp.InodeInfo) error {
+
+	inodestr := strconv.FormatUint(inode, 10)
+
+	val, _ := pbproto.Marshal(v)
+	err := ns.RaftGroup.InodeSet(ns.RaftGroupID, inodestr, val)
+	if err != nil {
+		err := ns.RaftGroup.InodeSet(ns.RaftGroupID, inodestr, val)
+		if err != nil {
+			logger.Error("InodeSet vol:%v,key:%v,err:%v\n", ns.VolID, inodestr, err)
+			return err
+		}
+	}
+
+	return nil
+
 }
 
-func (ns *nameSpace) Delete(k string) {
-	ns.Mutex.Lock()
-	defer ns.Mutex.Unlock()
-	delete(ns.InodeDB, k)
+//InodeDBDelete ...
+func (ns *nameSpace) InodeDBDelete(inode uint64) error {
+
+	inodestr := strconv.FormatUint(inode, 10)
+
+	err := ns.RaftGroup.InodeDel(ns.RaftGroupID, inodestr)
+	if err != nil {
+		err := ns.RaftGroup.InodeDel(ns.RaftGroupID, inodestr)
+		if err != nil {
+			logger.Error("InodeDBDelete vol:%v,key:%v,err:%v\n", ns.VolID, inodestr, err)
+			return err
+		}
+	}
+	return nil
+}
+
+//DentryDBGet ...
+func (ns *nameSpace) DentryDBGet(dentryKey string) (bool, *mp.Dirent) {
+	value, err := ns.RaftGroup.DentryGet(ns.RaftGroupID, dentryKey)
+	if err != nil {
+		value, err = ns.RaftGroup.DentryGet(ns.RaftGroupID, dentryKey)
+		if err != nil {
+			//logger.Error("DentryDBGet vol:%v,key:%v,err:%v\n", ns.VolID, dentryKey, err)
+			return false, nil
+		}
+	}
+
+	dirent := mp.Dirent{}
+	err = pbproto.Unmarshal(value, &dirent)
+	if err != nil {
+		return false, nil
+	}
+
+	return true, &dirent
+}
+
+//BlockGroupDBGet ...
+func (ns *nameSpace) DentryDBGetAll() (*map[string][]byte, error) {
+	return ns.RaftGroup.DentryGetAll(ns.RaftGroupID)
+}
+
+//DentryDBSet ...
+func (ns *nameSpace) DentryDBSet(dentryKey string, inodeType bool, inode uint64) error {
+
+	dirent := &mp.Dirent{InodeType: inodeType, Inode: inode}
+
+	val, _ := pbproto.Marshal(dirent)
+
+	err := ns.RaftGroup.DentrySet(ns.RaftGroupID, dentryKey, val)
+	if err != nil {
+		err := ns.RaftGroup.DentrySet(ns.RaftGroupID, dentryKey, val)
+		if err != nil {
+			logger.Error("DentryDBSet vol:%v,key:%v,err:%v\n", ns.VolID, dentryKey, err)
+			return err
+		}
+	}
+
+	return nil
+
+}
+
+//DentryDBDelete ...
+func (ns *nameSpace) DentryDBDelete(dentryKey string) error {
+
+	err := ns.RaftGroup.DentryDel(ns.RaftGroupID, dentryKey)
+	if err != nil {
+		err := ns.RaftGroup.DentryDel(ns.RaftGroupID, dentryKey)
+		if err != nil {
+			logger.Error("DentryDBDelete vol:%v,key:%v,err:%v\n", ns.VolID, dentryKey, err)
+			return err
+		}
+	}
+
+	return nil
+}
+
+//BlockGroupDBGet ...
+func (ns *nameSpace) BlockGroupDBGet(k uint32) (bool, *mp.BlockGroup) {
+	value, err := ns.RaftGroup.BGGet(ns.RaftGroupID, strconv.Itoa(int(k)))
+	if err != nil {
+		value, err = ns.RaftGroup.BGGet(ns.RaftGroupID, strconv.Itoa(int(k)))
+		if err != nil {
+			logger.Error("BlockGroupDBGet vol:%v,key:%v,err:%v\n", ns.VolID, strconv.Itoa(int(k)), err)
+			return false, nil
+		}
+	}
+
+	blockGroup := mp.BlockGroup{}
+	err = pbproto.Unmarshal(value, &blockGroup)
+	if err != nil {
+		return false, nil
+	}
+	return true, &blockGroup
+
+}
+
+//BlockGroupDBSet ...
+func (ns *nameSpace) BlockGroupDBSet(k uint32, v *mp.BlockGroup) error {
+	val, _ := pbproto.Marshal(v)
+	err := ns.RaftGroup.BGSet(ns.RaftGroupID, strconv.Itoa(int(k)), val)
+	if err != nil {
+		err := ns.RaftGroup.BGSet(ns.RaftGroupID, strconv.Itoa(int(k)), val)
+		if err != nil {
+			logger.Error("BlockGroupDBSet vol:%v,key:%v,err=%v\n", ns.VolID, strconv.Itoa(int(k)), err)
+			return err
+		}
+	}
+	return nil
+}
+
+//BlockGroupDBGet ...
+func (ns *nameSpace) BlockGroupDBGetAll() (*map[string][]byte, error) {
+	return ns.RaftGroup.BGGetAll(ns.RaftGroupID)
 }

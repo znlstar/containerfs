@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 )
 
+// GenUUID ...
 func GenUUID() (string, error) {
 	uuid := make([]byte, 16)
 	n, err := rand.Read(uuid)
