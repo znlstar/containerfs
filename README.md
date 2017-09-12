@@ -18,4 +18,4 @@ a volume = a metadata table + multiple block groups
 # User Case
 
 # 微信交流群
-！image(doc/20170912130826.png)
+！[image](doc/20170912130826.png)
