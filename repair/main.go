@@ -10,6 +10,7 @@ import (
 	"github.com/ipdcode/containerfs/logger"
 	mp "github.com/ipdcode/containerfs/proto/mp"
 	rp "github.com/ipdcode/containerfs/proto/rp"
+	dr "github.com/ipdcode/containerfs/volmgr/driver"
 	"github.com/ipdcode/containerfs/utils"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -56,130 +57,140 @@ var err string
 // RepairServer ...
 type RepairServer struct{}
 
-// VolMgrDB ...
-var VolMgrDB *sql.DB
-
-func checkErr(err error) {
+func checkErr(op string, err error) {
 	if err != nil {
-		logger.Error("%s", err)
+		logger.Error("opreation:%v error:%v", op, err)
 	}
 }
 
+type Repair struct {
+	VolID string
+	BlkGrpID string
+	BlkID string
+	BlkPort string
+    ChunkID string
+    Position string
+    Inode string
+}
+
 func getNeedRepairChunks() {
-	var volid string
-	var blkgrpid uint32
-	var blkid uint32
-	var blkport int
-	var inode uint64
-	var chkid uint64
-	var position int
-	rpr, err := VolMgrDB.Query("select volid,blkgrpid,blkid,blkport,chkid, position,inode  from repair where blkip=? and status=2 limit 10", RepairServerAddr.host)
+	sql := "select volid,blkgrpid,blkid,blkport,chkid, position,inode from repair where blkip=? and status=2 limit 10"
+	args := utils.ConvertValueToArgs(RepairServerAddr.host)
+	tRepair := Repair{"volid", "blkgrpid", "blkid", "blkport", "chkid", "position", "inode"}
+	result, err := dr.Select(sql, &tRepair, args...)
 	if err != nil {
 		logger.Error("Get from blk table for need repair blkds in this node error:%s", err)
+		return
 	}
-	defer rpr.Close()
-	for rpr.Next() {
-		err = rpr.Scan(&volid, &blkgrpid, &blkid, &blkport, &chkid, &position, &inode)
-		if err != nil {
-			logger.Error("Scan db for get need repair chunks error:%v", err)
-			continue
-		}
+
+	for _, v := range result {
+		trepair := v.(Repair)
+		blkgrpid, _ := strconv.Atoi(trepair.BlkGrpID)
+		blkid, _ := strconv.Atoi(trepair.BlkID)
+		blkport, _ := strconv.Atoi(trepair.BlkPort)
+		chkid, _ := strconv.Atoi(trepair.ChunkID)
+		position, _ := strconv.Atoi(trepair.Position)
+		inode, _ := strconv.Atoi(trepair.Inode)
+	
 		Wg.Add(1)
-		go repairchk(volid, blkgrpid, blkid, blkport, chkid, position, inode)
+		go repairchk(trepair.VolID, uint32(blkgrpid), uint32(blkid), blkport, uint64(chkid), position, uint64(inode))
 	}
+}
+
+type DNode struct {
+	Path string
+	Status string
+}
+
+type BlkGrp struct {
+	Blks string
+}
+
+type Blk struct {
+	Ip string
+	Port string
+	Disabled string
 }
 
 func repairchk(volid string, blkgrpid uint32, blkid uint32, blkport int, chkid uint64, position int, inode uint64) {
 	logger.Debug("=== Begin repair blkgrp:%v - blk:%v - chk:%v", blkgrpid, blkid, chkid)
 
 	//if disk bad(I/O error)
-	var status int
-	var path string
-	disk, err := VolMgrDB.Query("select mount,statu from disks where ip=? and port=?", RepairServerAddr.host, blkport)
-	if err != nil {
+	sql := "select mount,statu from disks where ip=? and port=?"
+	args := utils.ConvertValueToArgs(RepairServerAddr.host, blkport)
+	tDnode := DNode{"mount", "statu"}
+	result, err := dr.Select(sql, &tDnode, args...)
+	if err != nil || len(result) != 1 {
 		logger.Error("Get from disk table for this node bad chunk error:%s", err)
 		Wg.Add(-1)
 		return
 	}
-	defer disk.Close()
-	for disk.Next() {
-		err = disk.Scan(&path, &status)
-		if err != nil {
-			logger.Error("Scan db for get bad blk error:%v", err)
-			Wg.Add(-1)
-			return
-		}
-	}
+
+	tdnode := result[0].(DNode)
+	path := tdnode.Path
+	status, _ := strconv.Atoi(tdnode.Status)
 	if status == 2 {
 		logger.Debug("The blk:%v bad chunk:%v on disk:%v-%v I/O error, so not repair util the disk recover", blkid, chkid, RepairServerAddr.host, blkport)
 		Wg.Add(-1)
 		return
 	}
 
-	var blks string
-	var bakcnt int
-	blkgrp, err := VolMgrDB.Query("SELECT blks FROM blkgrp WHERE blkgrpid=?", blkgrpid)
-	if err != nil {
+	sql = "select blks from blkgrp where blkgrpid=?"
+	args = utils.ConvertValueToArgs(blkgrpid)
+	tBlkGrp := BlkGrp{"blks"}
+	result, err = dr.Select(sql, &tBlkGrp, args...)
+	if err != nil || len(result) != 1 {
 		logger.Error("Get from blkgrp table for  bad chunk error:%s", err)
 		Wg.Add(-1)
 		return
 	}
-	defer blkgrp.Close()
-	for blkgrp.Next() {
-		err = blkgrp.Scan(&blks)
-		if err != nil {
-			logger.Error("Scan db for get bak blk error:%v", err)
-			Wg.Add(-1)
-			return
-		}
-		s := strings.Split(blks, ",")
-		for _, v := range s[:len(s)-1] {
-			srcblkid, _ := strconv.Atoi(v)
-			if uint32(srcblkid) != blkid {
-				var srcip string
-				var srcport int
-				var disabled int
-				blk, err := VolMgrDB.Query("SELECT hostip,hostport,disabled FROM blk WHERE blkid=?", srcblkid)
-				if err != nil {
-					logger.Error("Get from blk table bakblk:%v for need repair chunk:%v error:%s", srcblkid, chkid, err)
-					bakcnt++
+	
+	tblkgrp := result[0].(BlkGrp)
+
+	s := strings.Split(tblkgrp.Blks, ",")
+	var bakcnt int
+	for _, v := range s[:len(s)-1] {
+		srcblkid, _ := strconv.Atoi(v)
+		if uint32(srcblkid) != blkid {
+			var srcip string
+			var srcport int
+			var disabled int
+			blksql := "select hostip,hostport,disabled from blk where blkid=?"
+			arg := utils.ConvertValueToArgs(srcblkid)
+			tBlk := Blk{"hostip", "hostport", "disabled"}
+			r, err := dr.Select(blksql, &tBlk, arg...)
+			if err != nil || len(r) != 1 {
+				logger.Error("Get from blk table bakblk:%v for need repair chunk:%v error:%s", srcblkid, chkid, err)
+				bakcnt++
+				continue
+			}
+			
+			tblk := r[0].(Blk)
+			srcport, _ = strconv.Atoi(tblk.Port)
+			disabled, _ = strconv.Atoi(tblk.Disabled)
+			srcip = tblk.Ip
+			if disabled != 0 {
+				bakcnt++
+				continue
+			}
+			if bakcnt == 2 {
+				logger.Debug("The bad chunk no good bakchunk(bakchunk badcnt:%v) for repair", bakcnt)
+				Wg.Add(-1)
+				return
+			}
+			ret := beginRepairchunk(volid, srcip, srcport, uint32(srcblkid), path, blkid, chkid, position, inode)
+			if ret != 0 {
+				continue
+			} else {
+				rsql := "delete from repair where blkid=? and chkid=?"
+				rarg := utils.ConvertValueToArgs(blkid, chkid)
+				if ret, _ := dr.Exec(rsql, rarg...); ret != 0 {
+					logger.Error("delete have repaire complete blk:%v-chunk:%v from repair tables err", blkid, chkid)
 					continue
 				}
-				defer blk.Close()
-				for blk.Next() {
-					err = blk.Scan(&srcip, &srcport, &disabled)
-					if err != nil {
-						logger.Error("Scan db for get need repair blk:%v - bakblk:%v chunk:%v error:%v", blkid, srcblkid, chkid, err)
-					}
-				}
-				if err != nil || disabled != 0 {
-					bakcnt++
-					continue
-				}
-				if bakcnt == 2 {
-					logger.Debug("The bad chunk no good bakchunk(bakchunk badcnt:%v) for repair", bakcnt)
-					Wg.Add(-1)
-					return
-				}
-				ret := beginRepairchunk(volid, srcip, srcport, uint32(srcblkid), path, blkid, chkid, position, inode)
-				if ret != 0 {
-					continue
-				} else {
-					rpr, err := VolMgrDB.Prepare("delete from repair where blkid=? and chkid=?")
-					if err != nil {
-						logger.Error("delete have repaire complete blk:%v-chunk:%v from repair tables prepare err:%v", blkid, chkid, err)
-						continue
-					}
-					defer rpr.Close()
-					_, err = rpr.Exec(blkid, chkid)
-					if err != nil {
-						logger.Error("delete have repaire complete blk:%v-chunk:%v from repair tables exec err:%v", blkid, chkid, err)
-						continue
-					}
-					logger.Debug("Repair volume:%v-blkgrp:%v-blk:%v-chunk:%v have all step complete!", volid, blkgrpid, blkid, chkid)
-					Wg.Add(-1)
-					return
-				}
+				logger.Debug("Repair volume:%v-blkgrp:%v-blk:%v-chunk:%v have all step complete!", volid, blkgrpid, blkid, chkid)
+				Wg.Add(-1)
+				return
 			}
 		}
 	}
@@ -258,27 +269,18 @@ func beginRepairchunk(volid string, srcip string, srcport int, srcblkid uint32, 
 // GetSrcData Repair bad chunk get data from good backup chunk
 func (s *RepairServer) GetSrcData(in *rp.GetSrcDataReq, stream rp.Repair_GetSrcDataServer) error {
 	var ack rp.GetSrcDataAck
-	srcid := in.BlkId
-	srcip := in.SrcIp
-	srcport := in.SrcPort
-	chkid := in.ChkId
 
-	var srcmp string
-
-	disk, err := VolMgrDB.Query("SELECT mount FROM disks WHERE ip=? and port=?", srcip, srcport)
+	sql := "select mount,statu from disks where ip=? and port=?"
+	args := utils.ConvertValueToArgs(in.SrcIp, in.SrcPort)
+	tDnode := DNode{"mount", "statu"}
+	result, err := dr.Select(sql, &tDnode, args...)
 	if err != nil {
-		logger.Error("Get srcblk:%v mountpath for repair error:%s", srcid, err)
+		logger.Error("Get srcblk:%v mountpath for repair error:%s", in.BlkId, err)
 		return err
 	}
-	defer disk.Close()
-	for disk.Next() {
-		err = disk.Scan(&srcmp)
-		if err != nil {
-			logger.Error("Scan db for get need repair chunk:%v srcblk:%v mountpath error:%v", chkid, srcid, err)
-			return err
-		}
-	}
-	srcchkpath := srcmp + "/block-" + strconv.FormatInt(int64(srcid), 10) + "/chunk-" + strconv.FormatInt(int64(chkid), 10)
+
+	tdnode := result[0].(DNode)
+	srcchkpath := tdnode.Path + "/block-" + strconv.FormatInt(int64(in.BlkId), 10) + "/chunk-" + strconv.FormatInt(int64(in.ChkId), 10)
 	fi, err := os.Stat(srcchkpath)
 	if err != nil {
 		logger.Error("Read SrcChkPath:%v error:%v", srcchkpath, err)
@@ -407,10 +409,10 @@ func init() {
 	}
 
 	var err error
-	VolMgrDB, err = sql.Open("mysql", mysqlConf.dbusername+":"+mysqlConf.dbpassword+"@tcp("+mysqlConf.dbhost+")/"+mysqlConf.dbname+"?charset=utf8")
-	checkErr(err)
-	err = VolMgrDB.Ping()
-	checkErr(err)
+	dr.DB, err = sql.Open("mysql", mysqlConf.dbusername+":"+mysqlConf.dbpassword+"@tcp("+mysqlConf.dbhost+")/"+mysqlConf.dbname+"?charset=utf8")
+	checkErr("repair init open db", err)
+	err = dr.DB.Ping()
+	checkErr("repair init ping db", err)
 
 }
 func main() {
@@ -433,6 +435,7 @@ func main() {
 		}
 	}()
 	Wg.Wait()
-	defer VolMgrDB.Close()
+	defer dr.DB.Close()
 	StartRepairService()
 }
+
