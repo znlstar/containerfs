@@ -65,3 +65,11 @@ func LocalPathExists(path string) (bool, error) {
 	}
 	return false, err
 }
+
+func ConvertValueToArgs(args ...interface{}) []interface{} {
+	var ret []interface{}
+	for _, v := range args {
+		ret = append(ret, v)
+	}
+	return ret
+}
