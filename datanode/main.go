@@ -1,18 +1,16 @@
 package main
 
 import (
-	//"encoding/json"
-	"fmt"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
-	//"io/ioutil"
 	"bufio"
+	"flag"
+	"fmt"
 	"github.com/ipdcode/containerfs/logger"
 	dp "github.com/ipdcode/containerfs/proto/dp"
 	vp "github.com/ipdcode/containerfs/proto/vp"
 	"github.com/ipdcode/containerfs/utils"
-	"github.com/lxmgo/config"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 	"net"
 	"os"
 	"runtime"
@@ -36,8 +34,7 @@ type addr struct {
 	Flag  string
 	Log   string
 
-	VolMgrIP   string
-	VolMgrPort string
+	VolMgrHost string
 }
 
 // DataNodeServerAddr ...
@@ -58,7 +55,7 @@ func startDataService() {
 }
 
 func registryToVolMgr() {
-	conn, err := grpc.Dial(DataNodeServerAddr.VolMgrIP+":"+DataNodeServerAddr.VolMgrPort, grpc.WithInsecure())
+	conn, err := grpc.Dial(DataNodeServerAddr.VolMgrHost, grpc.WithInsecure())
 	if err != nil {
 		logger.Debug("data node statup failed : Dial to volmgr failed !")
 		os.Exit(1)
@@ -70,7 +67,7 @@ func registryToVolMgr() {
 	datanodeRegistryReq.Ip = DataNodeServerAddr.IPInt
 	datanodeRegistryReq.Port = DataNodeServerAddr.Port
 	diskInfo := utils.DiskUsage(DataNodeServerAddr.Path)
-	capacity := int32(float64(diskInfo.All) / float64(1024*1024*1024) * 0.8)
+	capacity := int32(float64(diskInfo.All) / float64(1024*1024*1024))
 	datanodeRegistryReq.Capacity = capacity
 	datanodeRegistryReq.MountPoint = DataNodeServerAddr.Path
 
@@ -84,9 +81,6 @@ func registryToVolMgr() {
 	if pDatanodeRegistryAck.Ret == 0 {
 		logger.Debug("registry success!")
 		os.Create(DataNodeServerAddr.Flag)
-		for _, v := range pDatanodeRegistryAck.BlkIDs {
-			os.MkdirAll(DataNodeServerAddr.Path+"/block-"+strconv.Itoa(int(v)), 0777)
-		}
 	} else {
 		logger.Debug("data node statup failed : registry to volmgr failed !")
 		os.Exit(1)
@@ -98,7 +92,7 @@ func registryToVolMgr() {
 
 func heartbeatToVolMgr() {
 
-	conn, err := grpc.Dial(DataNodeServerAddr.VolMgrIP+":"+DataNodeServerAddr.VolMgrPort, grpc.WithInsecure())
+	conn, err := grpc.Dial(DataNodeServerAddr.VolMgrHost, grpc.WithInsecure())
 	if err != nil {
 		logger.Debug("HearBeat failed : Dial to volmgr failed !")
 	}
@@ -150,7 +144,12 @@ func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (
 	chunkID := in.ChunkID
 	blockID := in.BlockID
 
-	chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
+	path := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID))
+	if ok, err := utils.LocalPathExists(path); !ok && err == nil {
+		os.MkdirAll(path, 0777)
+	}
+
+	chunkFileName := path + "/chunk-" + strconv.Itoa(int(chunkID))
 
 	f, err = os.OpenFile(chunkFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0660)
 	defer f.Close()
@@ -254,7 +253,9 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 
 	var ack dp.StreamReadChunkAck
 	totalsize := readsize
-	buf := make([]byte, 64*1024*1024)
+	//buf := make([]byte, 64*1024*1024)
+	buf := make([]byte, readsize)
+
 	bfRd := bufio.NewReader(f)
 	for {
 		n, err := bfRd.Read(buf)
@@ -303,29 +304,30 @@ func (s *DataNodeServer) DeleteChunk(ctx context.Context, in *dp.DeleteChunkReq)
 }
 
 func init() {
-	c, err := config.NewConfig(os.Args[1])
-	if err != nil {
-		fmt.Println("NewConfig err")
-		os.Exit(1)
-	}
 
-	DataNodeServerAddr.IPStr = c.String("host")
+	var loglevel string
+	var port int
+
+	flag.StringVar(&DataNodeServerAddr.IPStr, "host", "127.0.0.1", "ContainerFS DataNode Host")
+	flag.IntVar(&port, "port", 8000, "ContainerFS DataNode Port")
+	flag.StringVar(&DataNodeServerAddr.Path, "datapath", "", "ContainerFS DataNode Data Path")
+	flag.StringVar(&DataNodeServerAddr.VolMgrHost, "volmgr", "127.0.0.1:7000", "ContainerFS VolMgr Host")
+	flag.StringVar(&DataNodeServerAddr.Log, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Log Path")
+	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS Log Level")
+
+	flag.Parse()
+
+	DataNodeServerAddr.Port = int32(port)
 	ipnr := net.ParseIP(DataNodeServerAddr.IPStr)
 	DataNodeServerAddr.Ipnr = ipnr
 	ipint := utils.InetAton(ipnr)
 	DataNodeServerAddr.IPInt = ipint
-	port, _ := c.Int("port")
-	DataNodeServerAddr.Port = int32(port)
-	DataNodeServerAddr.Path = c.String("path")
-	DataNodeServerAddr.Log = c.String("log")
 	DataNodeServerAddr.Flag = DataNodeServerAddr.Path + "/.registryflag"
-	DataNodeServerAddr.VolMgrIP = c.String("volmgr::host")
-	DataNodeServerAddr.VolMgrPort = c.String("volmgr::port")
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(DataNodeServerAddr.Log, "datanode.log", 10, 100, logger.MB) //each 100M rolling
 
-	switch level := c.String("loglevel"); level {
+	switch loglevel {
 	case "error":
 		logger.SetLevel(logger.ERROR)
 	case "debug":
@@ -358,6 +360,7 @@ func main() {
 		}
 	}()
 
+	heartbeatToVolMgr()
 	ticker := time.NewTicker(time.Second * 60)
 	go func() {
 		for range ticker.C {

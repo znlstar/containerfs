@@ -14,7 +14,7 @@ func GetLeader(volumeID string) (string, error) {
 	var leader string
 	var flag bool
 	for _, ip := range MetaNodePeers {
-		conn, err := grpc.Dial(ip, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+		conn, err := grpc.Dial(ip, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
 		if err != nil {
 			continue
 		}
@@ -24,11 +24,13 @@ func GetLeader(volumeID string) (string, error) {
 			VolID: volumeID,
 		}
 		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-		pmGetMetaLeaderAck, err1 := mc.GetMetaLeader(ctx, pmGetMetaLeaderReq)
-		if err1 != nil {
+		pmGetMetaLeaderAck, err := mc.GetMetaLeader(ctx, pmGetMetaLeaderReq)
+		if err != nil {
+			time.Sleep(time.Millisecond * 300)
 			continue
 		}
 		if pmGetMetaLeaderAck.Ret != 0 {
+			time.Sleep(time.Millisecond * 300)
 			continue
 		}
 		leader = pmGetMetaLeaderAck.Leader
@@ -47,16 +49,25 @@ func DialMeta(volumeID string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
 
-	MetaNodeAddr, _ = GetLeader(volumeID)
-	conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+	MetaNodeAddr, err = GetLeader(volumeID)
 	if err != nil {
-		time.Sleep(500 * time.Millisecond)
-		MetaNodeAddr, _ = GetLeader(volumeID)
-		conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+		return nil, err
+	}
+	conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
+	if err != nil {
+		time.Sleep(300 * time.Millisecond)
+		MetaNodeAddr, err = GetLeader(volumeID)
 		if err != nil {
-			time.Sleep(500 * time.Millisecond)
-			MetaNodeAddr, _ = GetLeader(volumeID)
-			conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+			return nil, err
+		}
+		conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
+		if err != nil {
+			time.Sleep(300 * time.Millisecond)
+			MetaNodeAddr, err = GetLeader(volumeID)
+			if err != nil {
+				return nil, err
+			}
+			conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
 		}
 	}
 	return conn, err
@@ -66,13 +77,13 @@ func DialMeta(volumeID string) (*grpc.ClientConn, error) {
 func DialData(host string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
-	conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+	conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
 	if err != nil {
 		time.Sleep(300 * time.Millisecond)
-		conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+		conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
 		if err != nil {
 			time.Sleep(300 * time.Millisecond)
-			conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+			conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
 		}
 	}
 	return conn, err
@@ -82,13 +93,13 @@ func DialData(host string) (*grpc.ClientConn, error) {
 func DialVolmgr(host string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
-	conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+	conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
 	if err != nil {
 		time.Sleep(300 * time.Millisecond)
-		conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+		conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
 		if err != nil {
 			time.Sleep(300 * time.Millisecond)
-			conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+			conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
 		}
 	}
 	return conn, err

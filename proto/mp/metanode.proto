@@ -7,25 +7,29 @@ service MetaNode {
     rpc GetMetaLeader(GetMetaLeaderReq) returns (GetMetaLeaderAck){};
 
     rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
+    rpc ExpandNameSpace(ExpandNameSpaceReq) returns (ExpandNameSpaceAck){};
     rpc SnapShootNameSpace(SnapShootNameSpaceReq) returns (SnapShootNameSpaceAck){};
     rpc DeleteNameSpace(DeleteNameSpaceReq) returns (DeleteNameSpaceAck){};
 
     rpc GetFSInfo(GetFSInfoReq) returns (GetFSInfoAck){};
 
-    rpc CreateDir(CreateDirReq) returns (CreateDirAck){};
-    rpc Stat(StatReq) returns (StatAck){};
-    rpc List(ListReq) returns (ListAck){};
-    rpc DeleteDir(DeleteDirReq) returns (DeleteDirAck){};
-    rpc Rename(RenameReq) returns (RenameAck){};
+    rpc CreateDirDirect(CreateDirDirectReq) returns (CreateDirDirectAck){};
+    rpc StatDirect(StatDirectReq) returns (StatDirectAck){};
+    rpc GetInodeInfoDirect(GetInodeInfoDirectReq) returns (GetInodeInfoDirectAck){};
 
-    rpc CreateFile(CreateFileReq) returns (CreateFileAck){};
-    rpc DeleteFile(DeleteFileReq) returns (DeleteFileAck){};
+    rpc ListDirect(ListDirectReq) returns (ListDirectAck){};
+    rpc DeleteDirDirect(DeleteDirDirectReq) returns (DeleteDirDirectAck){};
+    rpc RenameDirect(RenameDirectReq) returns (RenameDirectAck){};
+    rpc CreateFileDirect(CreateFileDirectReq) returns (CreateFileDirectAck){};
+    rpc DeleteFileDirect(DeleteFileDirectReq) returns (DeleteFileDirectAck){};
+    rpc GetFileChunksDirect(GetFileChunksDirectReq) returns (GetFileChunksDirectAck){};
+
 
     rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
-    rpc GetFileChunks(GetFileChunksReq) returns (GetFileChunksAck){};
     rpc SyncChunk(SyncChunkReq) returns (SyncChunkAck){};
-
     rpc UpdateChunkInfo(UpdateChunkInfoReq) returns (UpdateChunkInfoAck){};
+
+    //rpc UpdateBlockGroup(UpdateBlockGroupReq) returns (UpdateBlockGroupAck){};
 
 }
 
@@ -49,6 +53,16 @@ message CreateNameSpaceReq{
 message CreateNameSpaceAck{
     int32 Ret = 1;
 }
+
+message ExpandNameSpaceReq{
+    string VolID = 1;
+    repeated BlockGroup BlockGroups = 2;
+}
+
+message ExpandNameSpaceAck{
+    int32 Ret = 1;
+}
+
 message SnapShootNameSpaceReq{
     string VolID = 1;
     int32  Type =2 ;
@@ -72,72 +86,109 @@ message GetFSInfoAck {
     uint64 FreeSpace = 3;
 }
 
-message CreateDirReq{
+
+message CreateDirDirectReq{
     string VolID = 1;
-    string FullPathName = 2;
+    uint64 PInode = 2;
+    string Name = 3;
 }
-message CreateDirAck{
+message CreateDirDirectAck{
+    int32 Ret = 1;
+    uint64 Inode = 2;
+}
+
+message CreateFileDirectReq{
+    string VolID = 1;
+    uint64 PInode = 2;
+    string Name = 3;
+}
+message CreateFileDirectAck{
+    int32 Ret = 1;
+    uint64 Inode = 2;
+}
+
+message DeleteDirDirectReq{
+    string VolID = 1;
+    uint64 PInode = 2;
+    string Name = 3;
+}
+message DeleteDirDirectAck{
     int32 Ret = 1;
 }
-message DeleteDirReq{
+
+message RenameDirectReq {
     string VolID = 1;
-    string FullPathName = 2;
+    uint64 OldPInode = 2;
+    string OldName = 3; 
+    uint64 NewPInode = 4;
+    string NewName = 5;
 }
-message DeleteDirAck{
+
+message RenameDirectAck {
     int32 Ret = 1;
 }
-message RenameReq{
+
+message DeleteFileDirectReq{
     string VolID = 1;
-    string FullPathName1 = 2;
-    string FullPathName2 = 3;
+    uint64 PInode = 2;
+    string Name = 3;
 }
-message RenameAck{
+message DeleteFileDirectAck{
     int32 Ret = 1;
 }
-message CreateFileReq{
+
+
+message GetInodeInfoDirectReq{
     string VolID = 1;
-    string FullPathName = 2;
+    uint64 PInode = 2;
+    string Name = 3;
 }
-message CreateFileAck{
-    int32 Ret = 1;
-}
-message DeleteFileReq{
-    string VolID = 1;
-    string FullPathName = 2;
-}
-message DeleteFileAck{
-    int32 Ret = 1;
-}
-message StatFileReq{
-    string VolID = 1;
-    string FullPathName = 2;
-}
-message StatFileAck{
+message GetInodeInfoDirectAck{
     int32 Ret = 1;
     InodeInfo InodeInfo = 2;
+    uint64 Inode = 3;
 }
-message StatReq{
+
+
+message StatDirectReq{
     string VolID = 1;
-    string FullPathName = 2;
+    uint64 PInode = 2;
+    string Name = 3;
 }
-message StatAck{
+message StatDirectAck{
     int32 Ret = 1;
-    InodeInfo InodeInfo = 2;
+    bool InodeType = 2;
+    uint64 Inode = 3;
 }
-message ListReq{
+
+
+message ListDirectReq{
     string VolID = 1;
-    string FullPathName = 2;
+    uint64 PInode = 2;
 }
-message ListAck{
+message ListDirectAck{
     int32 Ret = 1;
-    repeated InodeInfo InodeInfos = 2;
+    repeated DirentN Dirents = 2;
 }
+
+message GetFileChunksDirectReq {
+    string VolID = 1;
+    uint64 PInode = 2;
+    string Name = 3;
+}
+message GetFileChunksDirectAck {
+    int32 Ret = 1;
+    repeated ChunkInfoWithBG ChunkInfos = 2; 
+    uint64 Inode = 3;
+}
+
 
 
 message AllocateChunkReq {
     int64 SequenceID = 1;
     string VolID = 2;
-    string FileName = 3;
+    uint64 ParentInodeID = 3;
+    string Name = 4;
 }
 message AllocateChunkAck {
     int32 Ret = 1;
@@ -145,83 +196,85 @@ message AllocateChunkAck {
     ChunkInfoWithBG ChunkInfo = 3; 
 }
 
-message GetFileChunksReq {
-    string VolID = 1;
-    string FileName = 2;
-}
-message GetFileChunksAck {
-    int32 Ret = 1;
-    repeated ChunkInfoWithBG ChunkInfos = 2; 
-}
+
+
 
 
 message SyncChunkReq {
     string VolID = 1;
-    string FileName = 2;
-    ChunkInfo ChunkInfo = 3;
-    int64 Size = 4;
+    uint64 ParentInodeID = 2;
+    string Name = 3;
+    ChunkInfo ChunkInfo = 4;
+    int64 Size = 5;
 }
 message SyncChunkAck {
     int32 Ret = 1;
 }
-message FinishChunkReq {
-    int64 SequenceID = 1;
-    int64 ChunkID = 2;
-    string FileName = 3;
-    int64 ChunkSize = 4;
-    bool CloseWithError = 5;
-}
-message FinishChunkAck {
-    int32 Ret = 1;
-    int64 SequenceID = 2;
-}
 
 message UpdateChunkInfoReq {
     string  VolID = 1;
-    int64   ChunkID = 2;
+    uint64   ChunkID = 2;
     int32   Position = 3;
     int32   Status = 4;
+    uint64  Inode = 5;
 }
 
 message UpdateChunkInfoAck {
     int32 Ret = 1;
 }
 
-message InodeInfo{
-    int64 ParentInodeID = 1;
-    int64 InodeID = 2;
-    string Name = 3;
-    int64 ModifiTime = 4;
-    int64 AccessTime = 5;
-    bool InodeType = 6;
-    int64 FileSize = 7;
-    repeated int64 ChunkIDs = 8;
-    repeated int64 ChildrenInodeIDs = 9;
+message UpdateBlockGroupReq {
+    string  VolID = 1;
+    BlockGroup   BlockGroup = 2;
 }
 
+message UpdateBlockGroupAck {
+    int32 Ret = 1;
+}
+
+message InodeInfo{
+    int64 ModifiTime = 1;
+    int64 AccessTime = 2;
+    uint32 Link = 3;
+    int64 FileSize = 4;
+    repeated ChunkInfo Chunks = 5;
+}
+
+message Dirent{
+    bool InodeType = 1;
+    uint64 Inode = 2;
+}
+
+message DirentN{
+    bool InodeType = 1;
+    uint64 Inode = 2;
+    string Name = 3;
+}
+
+
 message BlockGroup{
-    int32 BlockGroupID = 1;
-    int32 FreeCnt = 2;
+    uint32 BlockGroupID = 1;
+    int64 FreeSize = 2;
     int32 Status = 3;
     repeated BlockInfo BlockInfos = 4;
 }
 
 message BlockInfo{
-    int32 BlockID = 1;
+    uint32 BlockID = 1;
     int32 DataNodeIP = 2;
     int32 DataNodePort = 3;
     int32 Status = 4;
 }
 
 message ChunkInfo{
-    int64 ChunkID = 1;
+    uint64 ChunkID = 1;
     int32 ChunkSize = 2;
-    int32 BlockGroupID = 3;
+    uint32 BlockGroupID = 3;
     repeated int32 Status = 4;
 }
 
 message ChunkInfoWithBG{
-    int64 ChunkID = 1;
+    uint64 ChunkID = 1;
     int32 ChunkSize = 2;
     BlockGroup BlockGroup = 3;
     repeated int32 Status = 4;

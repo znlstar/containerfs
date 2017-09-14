@@ -4,12 +4,13 @@ import (
 	"bufio"
 	"database/sql"
 	"errors"
+	"flag"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/ipdcode/containerfs/logger"
 	mp "github.com/ipdcode/containerfs/proto/mp"
 	rp "github.com/ipdcode/containerfs/proto/rp"
-	"github.com/lxmgo/config"
+	"github.com/ipdcode/containerfs/utils"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -66,28 +67,29 @@ func checkErr(err error) {
 
 func getNeedRepairChunks() {
 	var volid string
-	var blkgrpid int
-	var blkid int
+	var blkgrpid uint32
+	var blkid uint32
 	var blkport int
-	var chkid int
+	var inode uint64
+	var chkid uint64
 	var position int
-	rpr, err := VolMgrDB.Query("select volid,blkgrpid,blkid,blkport,chkid, position from repair where blkip=? and status=2 limit 10", RepairServerAddr.host)
+	rpr, err := VolMgrDB.Query("select volid,blkgrpid,blkid,blkport,chkid, position,inode  from repair where blkip=? and status=2 limit 10", RepairServerAddr.host)
 	if err != nil {
 		logger.Error("Get from blk table for need repair blkds in this node error:%s", err)
 	}
 	defer rpr.Close()
 	for rpr.Next() {
-		err = rpr.Scan(&volid, &blkgrpid, &blkid, &blkport, &chkid, &position)
+		err = rpr.Scan(&volid, &blkgrpid, &blkid, &blkport, &chkid, &position, &inode)
 		if err != nil {
 			logger.Error("Scan db for get need repair chunks error:%v", err)
 			continue
 		}
 		Wg.Add(1)
-		go repairchk(volid, blkgrpid, blkid, blkport, chkid, position)
+		go repairchk(volid, blkgrpid, blkid, blkport, chkid, position, inode)
 	}
 }
 
-func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, position int) {
+func repairchk(volid string, blkgrpid uint32, blkid uint32, blkport int, chkid uint64, position int, inode uint64) {
 	logger.Debug("=== Begin repair blkgrp:%v - blk:%v - chk:%v", blkgrpid, blkid, chkid)
 
 	//if disk bad(I/O error)
@@ -133,7 +135,7 @@ func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, po
 		s := strings.Split(blks, ",")
 		for _, v := range s[:len(s)-1] {
 			srcblkid, _ := strconv.Atoi(v)
-			if srcblkid != blkid {
+			if uint32(srcblkid) != blkid {
 				var srcip string
 				var srcport int
 				var disabled int
@@ -159,7 +161,7 @@ func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, po
 					Wg.Add(-1)
 					return
 				}
-				ret := beginRepairchunk(volid, srcip, srcport, srcblkid, path, blkid, chkid, position)
+				ret := beginRepairchunk(volid, srcip, srcport, uint32(srcblkid), path, blkid, chkid, position, inode)
 				if ret != 0 {
 					continue
 				} else {
@@ -183,7 +185,7 @@ func repairchk(volid string, blkgrpid int, blkid int, blkport int, chkid int, po
 	}
 }
 
-func beginRepairchunk(volid string, srcip string, srcport int, srcblkid int, path string, blkid int, chkid int, position int) (ret int) {
+func beginRepairchunk(volid string, srcip string, srcport int, srcblkid uint32, path string, blkid uint32, chkid uint64, position int, inode uint64) (ret int) {
 	logger.Debug("Begin repair chunkfile path:%v-%v from srcip:%v-srcport:%v-srcblk:%v", path, chkid, srcip, srcport, srcblkid)
 	srcAddr := srcip + ":" + strconv.Itoa(RepairServerAddr.port)
 	conn, err := grpc.Dial(srcAddr, grpc.WithInsecure())
@@ -194,10 +196,10 @@ func beginRepairchunk(volid string, srcip string, srcport int, srcblkid int, pat
 	defer conn.Close()
 	c := rp.NewRepairClient(conn)
 	getSrcDataReq := &rp.GetSrcDataReq{
-		BlkId:   int32(srcblkid),
+		BlkId:   srcblkid,
 		SrcIp:   srcip,
 		SrcPort: int32(srcport),
-		ChkId:   int32(chkid),
+		ChkId:   chkid,
 	}
 	stream, err := c.GetSrcData(context.Background(), getSrcDataReq)
 	if err != nil {
@@ -205,7 +207,13 @@ func beginRepairchunk(volid string, srcip string, srcport int, srcblkid int, pat
 		return -1
 	}
 
-	dfile := path + "/block-" + strconv.FormatInt(int64(blkid), 10) + "/chunk-" + strconv.FormatInt(int64(chkid), 10)
+	dpath := path + "/block-" + strconv.FormatUint(uint64(blkid), 10)
+	dfile := dpath + "/chunk-" + strconv.FormatUint(chkid, 10)
+
+	if ok, err := utils.LocalPathExists(dpath); !ok && err == nil {
+		os.MkdirAll(dpath, 0777)
+	}
+
 	f, err := os.OpenFile(dfile, os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0666)
 	if err != nil {
 		logger.Error("Open repair blk chunk:%v error:%v", dfile, err)
@@ -233,9 +241,10 @@ func beginRepairchunk(volid string, srcip string, srcport int, srcblkid int, pat
 	mc := mp.NewMetaNodeClient(conn)
 	pmUpdateChunkInfo := &mp.UpdateChunkInfoReq{
 		VolID:    volid,
-		ChunkID:  int64(chkid),
+		ChunkID:  chkid,
 		Position: int32(position),
 		Status:   int32(0),
+		Inode:    inode,
 	}
 	_, err = mc.UpdateChunkInfo(context.Background(), pmUpdateChunkInfo)
 	if err != nil {
@@ -304,7 +313,7 @@ func GetLeader(volumeID string) (string, error) {
 	var leader string
 	var flag bool
 	for _, ip := range MetaNodePeers {
-		conn, err := grpc.Dial(ip, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+		conn, err := grpc.Dial(ip, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
 		if err != nil {
 			continue
 		}
@@ -369,28 +378,24 @@ func StartRepairService() {
 }
 
 func init() {
-	c, err := config.NewConfig(os.Args[1])
-	if err != nil {
-		fmt.Println("NewConfig err")
-		os.Exit(1)
-	}
-	port, _ := c.Int("port")
-	RepairServerAddr.port = port
-	RepairServerAddr.log = c.String("log")
-	RepairServerAddr.host = c.String("host")
-	//EtcdAddrs = c.Strings("etcd::hosts")
-	os.MkdirAll(RepairServerAddr.log, 0777)
 
-	mysqlConf.dbhost = c.String("mysql::host")
-	mysqlConf.dbusername = c.String("mysql::user")
-	mysqlConf.dbpassword = c.String("mysql::passwd")
-	mysqlConf.dbname = c.String("mysql::db")
+	flag.StringVar(&RepairServerAddr.host, "host", "127.0.0.1", "ContainerFS Repair Host")
+	flag.IntVar(&RepairServerAddr.port, "port", 8000, "ContainerFS Repair Port")
+	flag.StringVar(&RepairServerAddr.log, "log", "/export/Logs/containerfs/logs/", "ContainerFS Repair logpath")
+	loglevel := flag.String("loglevel", "error", "ContainerFS Repair log level")
+	flag.StringVar(&mysqlConf.dbhost, "sqlhost", "127.0.0.1:3306", "ContainerFS DBHOST")
+	flag.StringVar(&mysqlConf.dbusername, "sqluser", "root", "ContainerFS DBUSER")
+	flag.StringVar(&mysqlConf.dbpassword, "sqlpasswd", "root", "ContainerFS DBPASSWD")
+	flag.StringVar(&mysqlConf.dbname, "sqldb", "containerfs", "ContainerFS DB")
+	addr := flag.String("metanode", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS metanode hosts")
 
-	MetaNodePeers = c.Strings("metanode::host")
+	flag.Parse()
+
+	MetaNodePeers = strings.Split(*addr, ",")
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(RepairServerAddr.log, "repair.log", 10, 100, logger.MB) //each 100M rolling
-	switch level := c.String("loglevel"); level {
+	switch *loglevel {
 	case "error":
 		logger.SetLevel(logger.ERROR)
 	case "debug":
@@ -401,6 +406,7 @@ func init() {
 		logger.SetLevel(logger.ERROR)
 	}
 
+	var err error
 	VolMgrDB, err = sql.Open("mysql", mysqlConf.dbusername+":"+mysqlConf.dbpassword+"@tcp("+mysqlConf.dbhost+")/"+mysqlConf.dbname+"?charset=utf8")
 	checkErr(err)
 	err = VolMgrDB.Ping()

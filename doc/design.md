@@ -49,42 +49,63 @@ Linux kernel
 ## Struct
 #### volume namespace
 <pre>
-&nbsp;type nameSpace struct {
-&nbsp;	sync.RWMutex
-&nbsp;	VolID       string
-&nbsp;	RaftGroupID uint64
-&nbsp;	RaftGroup   *raftopt.KvStateMachine
-&nbsp;	RaftStorage *wal.Storage
+&nbsp;type KvStateMachine struct {
+&nbsp;	id      uint64
+&nbsp;	applied uint64
+&nbsp;	raft    *raft.RaftServer
+&nbsp;	DentryLocker sync.RWMutex
+&nbsp;	dentryData   map[string][]byte
+&nbsp;	inodeLocker  sync.RWMutex
+&nbsp;	inodeData    map[string][]byte
+&nbsp;	BlockGroupLocker sync.RWMutex
+&nbsp;	blockGroupData   map[string][]byte
+&nbsp;	chunkID uint64
+&nbsp;	inodeID uint64
+&nbsp;}
+</pre>
+
+#### dentry
+<pre>
+&nbsp;type Dirent struct {
+&nbsp;	InodeType bool   `protobuf:"varint,1,opt,name=InodeType" json:"InodeType,omitempty"`
+&nbsp;	Inode     uint64 `protobuf:"varint,2,opt,name=Inode" json:"Inode,omitempty"`
 &nbsp;}
 </pre>
 
 #### inode
 <pre>
-&nbsp;InodeDB : *protobuf.InodeInfo 
 &nbsp;type InodeInfo struct {
-&nbsp;        ParentInodeID    int64   `protobuf:"varint,1,opt,name=ParentInodeID" json:"ParentInodeID,omitempty"`
-&nbsp;        InodeID          int64   `protobuf:"varint,2,opt,name=InodeID" json:"InodeID,omitempty"`
-&nbsp;        Name             string  `protobuf:"bytes,3,opt,name=Name" json:"Name,omitempty"`
-&nbsp;        ModifiTime       int64   `protobuf:"varint,4,opt,name=ModifiTime" json:"ModifiTime,omitempty"`
-&nbsp;        AccessTime       int64   `protobuf:"varint,5,opt,name=AccessTime" json:"AccessTime,omitempty"`
-&nbsp;        InodeType        bool    `protobuf:"varint,6,opt,name=InodeType" json:"InodeType,omitempty"`
-&nbsp;        FileSize         int64   `protobuf:"varint,7,opt,name=FileSize" json:"FileSize,omitempty"`
-&nbsp;        ChunkIDs         []int64 `protobuf:"varint,8,rep,packed,name=ChunkIDs" json:"ChunkIDs,omitempty"`
-&nbsp;        ChildrenInodeIDs []int64 `protobuf:"varint,9,rep,packed,name=ChildrenInodeIDs" json:"ChildrenInodeIDs,omitempty"`
+&nbsp;	ModifiTime int64        `protobuf:"varint,1,opt,name=ModifiTime" json:"ModifiTime,omitempty"`
+&nbsp;	AccessTime int64        `protobuf:"varint,2,opt,name=AccessTime" json:"AccessTime,omitempty"`
+&nbsp;	Link       uint32       `protobuf:"varint,3,opt,name=Link" json:"Link,omitempty"`
+&nbsp;	FileSize   int64        `protobuf:"varint,4,opt,name=FileSize" json:"FileSize,omitempty"`
+&nbsp;	Chunks     []*ChunkInfo `protobuf:"bytes,5,rep,name=Chunks" json:"Chunks,omitempty"`
 &nbsp;}
 </pre>
-#### chunk
+
+#### block group
 <pre>
-&nbsp;ChunkDB : *protobuf.ChunkInfo
-&nbsp;type ChunkInfo struct {
-&nbsp;        ChunkSize  int32        `protobuf:"varint,1,opt,name=ChunkSize" json:"ChunkSize,omitempty"`
-&nbsp;        BlockGroupID int32        `protobuf:"varint,2,opt,name=BlockGroupID" json:"BlockGroupID,omitempty"`
-&nbsp;        BlockGroup []*BlockInfo `protobuf:"bytes,3,rep,name=BlockGroup" json:"BlockGroup,omitempty"`
+&nbsp;type BlockGroup struct {
+&nbsp;	BlockGroupID uint32       `protobuf:"varint,1,opt,name=BlockGroupID" json:"BlockGroupID,omitempty"`
+&nbsp;	FreeSize     int64        `protobuf:"varint,2,opt,name=FreeSize" json:"FreeSize,omitempty"`
+&nbsp;	Status       int32        `protobuf:"varint,3,opt,name=Status" json:"Status,omitempty"`
+&nbsp;	BlockInfos   []*BlockInfo `protobuf:"bytes,4,rep,name=BlockInfos" json:"BlockInfos,omitempty"`
 &nbsp;}
 &nbsp;
 &nbsp;type BlockInfo struct {
-&nbsp;        BlockID      int32 `protobuf:"varint,1,opt,name=BlockID" json:"BlockID,omitempty"`
-&nbsp;        DataNodeIP   int32 `protobuf:"varint,2,opt,name=DataNodeIP" json:"DataNodeIP,omitempty"`
-&nbsp;        DataNodePort int32 `protobuf:"varint,3,opt,name=DataNodePort" json:"DataNodePort,omitempty"`
+&nbsp;	BlockID      uint32 `protobuf:"varint,1,opt,name=BlockID" json:"BlockID,omitempty"`
+&nbsp;	DataNodeIP   int32  `protobuf:"varint,2,opt,name=DataNodeIP" json:"DataNodeIP,omitempty"`
+&nbsp;	DataNodePort int32  `protobuf:"varint,3,opt,name=DataNodePort" json:"DataNodePort,omitempty"`
+&nbsp;	Status       int32  `protobuf:"varint,4,opt,name=Status" json:"Status,omitempty"`
+&nbsp;}
+</pre>
+
+#### chunk
+<pre>
+&nbsp;type ChunkInfo struct {
+&nbsp;	ChunkID      uint64  `protobuf:"varint,1,opt,name=ChunkID" json:"ChunkID,omitempty"`
+&nbsp;	ChunkSize    int32   `protobuf:"varint,2,opt,name=ChunkSize" json:"ChunkSize,omitempty"`
+&nbsp;	BlockGroupID uint32  `protobuf:"varint,3,opt,name=BlockGroupID" json:"BlockGroupID,omitempty"`
+&nbsp;	Status       []int32 `protobuf:"varint,4,rep,packed,name=Status" json:"Status,omitempty"`
 &nbsp;}
 </pre>

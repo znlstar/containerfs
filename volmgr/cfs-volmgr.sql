@@ -28,9 +28,10 @@ CREATE TABLE `blk` (
   `hostport` int(16) NOT NULL,
   `allocated` tinyint(2) DEFAULT NULL,
   `disabled` tinyint(2) DEFAULT NULL,
-  `createdTime` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `createdTime` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `volid` varchar(32) DEFAULT NULL,
   PRIMARY KEY (`blkid`)
-) ENGINE=InnoDB AUTO_INCREMENT=1067 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 
@@ -47,7 +48,7 @@ CREATE TABLE `blkgrp` (
   `volume_uuid` varchar(32) NOT NULL,
   `createdTime` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`blkgrpid`)
-) ENGINE=InnoDB AUTO_INCREMENT=125 DEFAULT CHARSET=utf8;
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 
@@ -80,16 +81,19 @@ DROP TABLE IF EXISTS `repair`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `repair` (
+  `id` bigint(32) NOT NULL AUTO_INCREMENT,
   `volid` varchar(32) NOT NULL,
   `blkgrpid` bigint(32) NOT NULL,
   `blkid` bigint(32) NOT NULL,
   `blkip` varchar(32) NOT NULL,
   `blkport` int(16) NOT NULL,
   `chkid` bigint(32) NOT NULL,
+  `inode` bigint(32) NOT NULL,
   `position` tinyint(8) NOT NULL,
   `status` tinyint(8) NOT NULL,
-  `createdTime` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+  `createdTime` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 

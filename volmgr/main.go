@@ -2,13 +2,13 @@ package main
 
 import (
 	"database/sql"
+	"flag"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/ipdcode/containerfs/logger"
 	dp "github.com/ipdcode/containerfs/proto/dp"
 	vp "github.com/ipdcode/containerfs/proto/vp"
 	"github.com/ipdcode/containerfs/utils"
-	"github.com/lxmgo/config"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -88,41 +88,7 @@ func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegi
 		return &ack, err
 	}
 
-	blkcount := dnCapacity / BlkSize
-
-	hostip := ip
-	hostport := strconv.Itoa(int(dnPort))
-	blk, err := VolMgrDB.Prepare("INSERT INTO blk(hostip, hostport, allocated, disabled) VALUES(?, ?, ?, ?)")
-	if err != nil {
-		logger.Error("DataNode(%v:%v) Registry insert into blk table prepare err:%v", ip, dnPort, err)
-		ack.Ret = -1
-		return &ack, err
-	}
-	defer blk.Close()
-
-	//VolMgrDB.Exec("lock table blk write,disks write")
-
-	for i := int32(0); i < blkcount; i++ {
-		blk.Exec(hostip, hostport, 0, 0)
-	}
-	//VolMgrDB.Exec("unlock table")
-
-	blkids := make([]int32, 0)
-	rows, err := VolMgrDB.Query("SELECT blkid FROM blk WHERE hostip = ? and hostport = ?", hostip, hostport)
-	checkErr(err)
-	defer rows.Close()
-	var blkid int
-	for rows.Next() {
-		err := rows.Scan(&blkid)
-		checkErr(err)
-		blkids = append(blkids, int32(blkid))
-	}
-
-	//sort.Ints(blkids)
-	logger.Debug("The disk(%s:%s) mount:%s have blks:%v", hostip, hostport, dnMount, blkids)
-	//ack.StartBlockID = int32(blkids[0])
-	//ack.EndBlockID = int32(blkids[len(blkids)-1])
-	ack.BlkIDs = blkids
+	logger.Debug("The disk(%s:%s) mount:%s have registry success", ip, dnPort, dnMount)
 	ack.Ret = 0 //success
 	return &ack, nil
 }
@@ -146,17 +112,7 @@ func (s *VolMgrServer) DatanodeHeartbeat(ctx context.Context, in *vp.DatanodeHea
 		logger.Error("The disk(%s:%d) heartbeat update to db error:%s", ip, port, err)
 		return &ack, nil
 	}
-	/*
-		if statu != 0 {
-			logger.Debug("The disk(%s:%d) bad statu:%d, so make it all blks is disabled", ip, port, statu)
-			blk, err := VolMgrDB.Prepare("UPDATE blk SET disabled=1 WHERE hostip=? and hostport=?")
-			checkErr(err)
-			defer blk.Close()
-			_, err = blk.Exec(ip, port)
-			if err != nil {
-				logger.Error("The disk(%s:%d) bad statu:%d update blk table disabled error:%s", ip, port, statu, err)
-			}
-		}*/
+
 	checkandupdatediskstatu(ip, int(port), int(statu))
 	return &ack, nil
 }
@@ -192,11 +148,20 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		return &ack, err
 	}
 	defer vol.Close()
-	vol.Exec(voluuid, volname, volsize, metadomain)
+	r, err := vol.Exec(voluuid, volname, volsize, metadomain)
+	if err != nil {
+		ack.Ret = 1
+		return &ack, err
+	}
+	raftgroupid, err := r.LastInsertId()
+	if err != nil {
+		ack.Ret = 1
+		return &ack, err
+	}
 
 	//allocate block group for the volume
 	for i := int32(0); i < blkgrpnum; i++ {
-		rows, err := VolMgrDB.Query("SELECT blkid FROM blk WHERE allocated = 0 and disabled=0 group by hostip ORDER BY rand() LIMIT 3 FOR UPDATE")
+		rows, err := VolMgrDB.Query("select ip,port from (select * from disks WHERE free > 10 and statu = 0 order by rand())t  group by ip order BY rand() limit 3 for update")
 		if err != nil {
 			logger.Error("Create volume(%s -- %s) select blk for the %dth blkgroup error:%s", volname, voluuid, i, err)
 			ack.Ret = 1
@@ -204,38 +169,39 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		}
 		defer rows.Close()
 
-		var blkid int
-		var blks string
+		var ip string
+		var port int
 		var count int
+		var blks string
 		for rows.Next() {
-			err := rows.Scan(&blkid)
+			err := rows.Scan(&ip, &port)
 			if err != nil {
 				ack.Ret = 1
 				return &ack, err
 			}
 
-			blk, err := VolMgrDB.Prepare("UPDATE blk SET allocated=1 WHERE blkid=?")
+			blk, err := VolMgrDB.Prepare("insert into blk(hostip, hostport, disabled, volid) values(?, ?, 0, ?)")
 			if err != nil {
-				logger.Error("update blk:%d have allocated error:%s", blkid)
+				logger.Error("insert blk table error:%s", err)
 				ack.Ret = 1
 				return &ack, err
 			}
 			defer blk.Close()
-			_, err = blk.Exec(blkid)
+			result, err := blk.Exec(ip, port, voluuid)
 			if err != nil {
 				ack.Ret = 1
 				return &ack, err
 			}
-			blks = blks + strconv.Itoa(blkid) + ","
+			blkid, err := result.LastInsertId()
+			if err != nil {
+				ack.Ret = 1
+				return &ack, err
+			}
+
+			blks = blks + strconv.FormatInt(blkid, 10) + ","
 			count++
 		}
 		logger.Debug("The volume(%s -- %s) one blkgroup have blks:%s", volname, voluuid, blks)
-		/*
-			if count < 1 || count > 3 {
-				logger.Debug("The volume(%s -- %s) one blkgroup no enough or over 3th blks:%s, so create volume failed!", volname, voluuid, count)
-				ack.Ret = 1
-				return &ack, err
-			}*/
 
 		blkgrp, err := VolMgrDB.Prepare("INSERT INTO blkgrp(blks, volume_uuid) VALUES(?, ?)")
 		if err != nil {
@@ -245,20 +211,10 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		}
 		defer blkgrp.Close()
 		blkgrp.Exec(blks, voluuid)
-	}
 
-	var raftgroupid uint64
-
-	vols, err := VolMgrDB.Query("SELECT raftgroupid FROM volumes WHERE uuid = ?", voluuid)
-	if err != nil {
-		logger.Error("Get volume(%s) from db error:%s", voluuid, err)
-		ack.Ret = 1
-		return &ack, err
-	}
-	defer vols.Close()
-	for vols.Next() {
-		err = vols.Scan(&raftgroupid)
-		if err != nil {
+		if count != 3 {
+			logger.Error("Create The volume(%s -- %s) one blkgroup not equal 3 blk(%s), so create volume failed!", volname, voluuid, count)
+			cleanRS(voluuid)
 			ack.Ret = 1
 			return &ack, err
 		}
@@ -266,8 +222,219 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 
 	ack.Ret = 0 //success
 	ack.UUID = voluuid
-	ack.RaftGroupID = raftgroupid
+	ack.RaftGroupID = uint64(raftgroupid)
 	return &ack, nil
+}
+
+// ExpendVol : extent a Volume size
+func (s *VolMgrServer) ExpendVol(ctx context.Context, in *vp.ExpendVolReq) (*vp.ExpendVolAck, error) {
+	ack := vp.ExpendVolAck{}
+	voluuid := in.VolID
+	volsize := in.ExpendQuota
+
+	//the volume need block group total numbers
+	var blkgrpnum int32
+	if volsize < BlkSize {
+		blkgrpnum = 1
+	} else if volsize%BlkSize == 0 {
+		blkgrpnum = volsize / BlkSize
+	} else {
+		blkgrpnum = volsize/BlkSize + 1
+	}
+
+	pBlockGroups := []*vp.BlockGroup{}
+	//allocate block group for the volume
+	for i := int32(0); i < blkgrpnum; i++ {
+		rows, err := VolMgrDB.Query("select ip,port from (select * from disks WHERE free > 10 and statu = 0 order by rand())t  group by ip order BY rand() limit 3 for update")
+		if err != nil {
+			logger.Error("Expend volume:%v select blk for the %dth blkgroup error:%s", voluuid, i, err)
+			ack.Ret = 1
+			return &ack, err
+		}
+		defer rows.Close()
+
+		var ip string
+		var port int
+		var count int
+		var blks string
+		pBlockInfos := []*vp.BlockInfo{}
+		for rows.Next() {
+			tmpBlockInfo := vp.BlockInfo{}
+			err := rows.Scan(&ip, &port)
+			if err != nil {
+				ack.Ret = 1
+				return &ack, err
+			}
+
+			blk, err := VolMgrDB.Prepare("insert into blk(hostip, hostport, disabled, volid) values(?, ?, 0, ?)")
+			if err != nil {
+				logger.Error("Expend insert blk table error:%s", err)
+				ack.Ret = 1
+				return &ack, err
+			}
+			defer blk.Close()
+			result, err := blk.Exec(ip, port, voluuid)
+			if err != nil {
+				ack.Ret = 1
+				return &ack, err
+			}
+			blkid, err := result.LastInsertId()
+			if err != nil {
+				ack.Ret = 1
+				return &ack, err
+			}
+
+			tmpBlockInfo.BlockID = uint32(blkid)
+			ipnr := net.ParseIP(ip)
+			ipint := utils.InetAton(ipnr)
+			tmpBlockInfo.DataNodeIP = ipint
+			tmpBlockInfo.DataNodePort = int32(port)
+			pBlockInfos = append(pBlockInfos, &tmpBlockInfo)
+
+			blks = blks + strconv.FormatInt(blkid, 10) + ","
+			count++
+		}
+		logger.Debug("The Expend volume:%v size:%v one blkgroup have blks:%s", voluuid, volsize, blks)
+
+		if count != 3 {
+			logger.Error("Expend The volume:%v size:%v one blkgroup not equal 3 blk(%s), so create volume failed!", voluuid, volsize, count)
+			ack.Ret = 1
+			cleanBlk(blks, pBlockGroups)
+			return &ack, err
+		}
+
+		blkgrp, err := VolMgrDB.Prepare("insert into blkgrp(blks, volume_uuid) values(?, ?)")
+		if err != nil {
+			logger.Error("Expend Volume:%v insert blks to blkgrp prepare err:%v", voluuid, err)
+			ack.Ret = 1
+			cleanBlk(blks, pBlockGroups)
+			return &ack, err
+		}
+		defer blkgrp.Close()
+		result, err := blkgrp.Exec(blks, voluuid)
+		if err != nil {
+			ack.Ret = 1
+			cleanBlk(blks, pBlockGroups)
+			return &ack, err
+		}
+		blkgrpid, err := result.LastInsertId()
+		if err != nil {
+			ack.Ret = 1
+			return &ack, err
+		}
+
+		tmpBlockGroup := vp.BlockGroup{}
+		tmpBlockGroup.BlockGroupID = uint32(blkgrpid)
+		tmpBlockGroup.BlockInfos = pBlockInfos
+		pBlockGroups = append(pBlockGroups, &tmpBlockGroup)
+	}
+
+	// update the volume info to volumes tables
+	vol, err := VolMgrDB.Prepare("update volumes set size = size + ? where uuid = ?")
+	if err != nil {
+		logger.Error("Extent volume:%v Size:%v prepare volumes table error:%s", voluuid, volsize, err)
+	}
+	defer vol.Close()
+	_, err = vol.Exec(volsize, voluuid)
+	if err != nil {
+		logger.Error("Extent volume:%v Size:%v exec volumes table error:%s", voluuid, volsize, err)
+	}
+
+	logger.Debug("Extent volume:%v Size:%v Success", voluuid, volsize)
+	ack.Ret = 0 //success
+	ack.BlockGroups = pBlockGroups
+	return &ack, nil
+}
+
+func cleanBlk(blks string, pBlockGroups []*vp.BlockGroup) int {
+	if blks != "" {
+		blkids := strings.Split(blks, ",")
+		for _, ele := range blkids {
+			if ele == "," {
+				continue
+			}
+			blkid, err := strconv.Atoi(ele)
+			blk, err := VolMgrDB.Prepare("delete from blk where blkid=?")
+			if err != nil {
+				logger.Error("delete blk:%v from blk tables prepare err:%v", blkid, err)
+				return -1
+			}
+			defer blk.Close()
+			_, err = blk.Exec(blkid)
+			if err != nil {
+				logger.Error("delete blk:%v from blk tables exec err:%v", blkid, err)
+				return -1
+			}
+		}
+	}
+
+	for k, v := range pBlockGroups {
+		bgrp, err := VolMgrDB.Prepare("delete from blkgrp where blkgrpid=?")
+		if err != nil {
+			logger.Error("delete blkgrp:%v from blkgrp tables prepare err:%v", v.BlockGroupID, err)
+			return -1
+		}
+		defer bgrp.Close()
+		_, err = bgrp.Exec(v.BlockGroupID)
+		if err != nil {
+			logger.Error("delete blkgrp:%v from blkgrp tables exec err:%v", v.BlockGroupID, err)
+			return -1
+		}
+
+		blk, err := VolMgrDB.Prepare("delete from blk where blkid=?")
+		if err != nil {
+			logger.Error("delete blk:%v from blk tables prepare err:%v", v.BlockInfos[k].BlockID, err)
+			return -1
+		}
+		defer blk.Close()
+		_, err = blk.Exec(v.BlockInfos[k].BlockID)
+		if err != nil {
+			logger.Error("delete blk:%v from blk tables exec err:%v", v.BlockInfos[k].BlockID, err)
+			return -1
+		}
+	}
+	return 0
+}
+
+func cleanRS(volid string) int {
+	//delete blkgroup table
+	bgrp, err := VolMgrDB.Prepare("delete from blkgrp where volume_uuid=?")
+	if err != nil {
+		logger.Error("delete volume:%v from blkgrp tables err:%v", volid, err)
+		return -1
+	}
+	defer bgrp.Close()
+	_, err = bgrp.Exec(volid)
+	if err != nil {
+		return -1
+	}
+
+	//delete blk table
+	blk, err := VolMgrDB.Prepare("delete from blk where volid=?")
+	if err != nil {
+		logger.Error("delete volume:%v from blk tables err:%v", volid, err)
+		return -1
+	}
+	defer blk.Close()
+	_, err = blk.Exec(volid)
+	if err != nil {
+		return -1
+	}
+
+	//delete volumes table
+	vol, err := VolMgrDB.Prepare("delete from volumes where uuid=?")
+	if err != nil {
+		logger.Error("delete volume:%v from volumes tables err:%v", volid, err)
+		return -1
+	}
+	defer vol.Close()
+	_, err = vol.Exec(volid)
+	if err != nil {
+		return -1
+	}
+
+	logger.Debug("== Delete db tables data success for volume:%v", volid)
+	return 0
 }
 
 //DeleteVol : Delete a Volume for User
@@ -275,70 +442,14 @@ func (s *VolMgrServer) DeleteVol(ctx context.Context, in *vp.DeleteVolReq) (*vp.
 	ack := vp.DeleteVolAck{}
 	volid := in.UUID
 
-	//delete volumes table
-	vol, err := VolMgrDB.Prepare("delete from volumes where uuid=?")
-	if err != nil {
-		logger.Error("delete volume:%v from volumes tables err:%v", volid, err)
+	if ret := cleanRS(volid); ret != 0 {
+		logger.Debug("== Delete db tables data failed for volume:%v", volid)
 		ack.Ret = -1
-		return &ack, err
-	}
-	defer vol.Close()
-	_, err = vol.Exec(volid)
-	if err != nil {
-		ack.Ret = -1
-		return &ack, err
+	} else {
+		logger.Debug("== Delete db tables data success for volume:%v", volid)
+		ack.Ret = 0
 	}
 
-	//update blk table for delete
-	blkgrp, err := VolMgrDB.Query("SELECT blks FROM blkgrp WHERE volume_uuid=?", volid)
-	if err != nil {
-		logger.Error("select blks for delete volume:%v error:%s", volid, err)
-		ack.Ret = -1
-		return &ack, err
-	}
-	defer blkgrp.Close()
-
-	var blks string
-	for blkgrp.Next() {
-		err := blkgrp.Scan(&blks)
-		if err != nil {
-			ack.Ret = -1
-			return &ack, err
-		}
-
-		s := strings.Split(blks, ",")
-		for _, v := range s[:len(s)-1] {
-			blkid, _ := strconv.Atoi(v)
-			blk, err := VolMgrDB.Prepare("UPDATE blk SET allocated=0 WHERE blkid=?")
-			if err != nil {
-				logger.Error("update blk:%d allocated=0 error:%s for delete volume:%v", blkid, volid)
-				ack.Ret = -1
-				return &ack, err
-			}
-			defer blk.Close()
-			_, err = blk.Exec(blkid)
-			if err != nil {
-				ack.Ret = -1
-				return &ack, err
-			}
-		}
-	}
-
-	//delete blkgrp table
-	bgrp, err := VolMgrDB.Prepare("delete from blkgrp where volume_uuid=?")
-	if err != nil {
-		logger.Error("delete volume:%v from blkgrp tables err:%v", volid, err)
-		ack.Ret = -1
-		return &ack, err
-	}
-	defer bgrp.Close()
-	_, err = bgrp.Exec(volid)
-	if err != nil {
-		ack.Ret = -1
-		return &ack, err
-	}
-	logger.Debug("== Delete db tables data success for volume:%v", volid)
-	ack.Ret = 0
 	return &ack, nil
 }
 
@@ -353,15 +464,16 @@ func (s *VolMgrServer) UpdateChunkInfo(ctx context.Context, in *vp.UpdateChunkIn
 	chkid := in.ChunkID
 	status := in.Status
 	position := in.Position
+	inode := in.Inode
 
-	rp, err := VolMgrDB.Prepare("INSERT INTO repair(volid,blkgrpid,blkid,blkip,blkport,chkid,status,position) VALUES(?, ?, ?, ?, ?, ?, ?, ?)")
+	rp, err := VolMgrDB.Prepare("insert into repair(volid,blkgrpid,blkid,blkip,blkport,chkid,status,position,inode) values(?, ?, ?, ?, ?, ?, ?, ?,?)")
 	if err != nil {
 		logger.Error("insert need repair volid:%v - blk:%v - chunk:%v to repair table prepare error:%v!", volid, blkid, chkid, err)
 		ack.Ret = -1
 		return &ack, err
 	}
 	defer rp.Close()
-	_, err = rp.Exec(volid, blkgrpid, blkid, ip, port, chkid, status, position)
+	_, err = rp.Exec(volid, blkgrpid, blkid, ip, port, chkid, status, position, inode)
 	if err != nil {
 		logger.Error("insert need repair volid:%v - blk:%v - chunk:%v to repair table exec error:%v!", volid, blkid, chkid, err)
 		ack.Ret = -1
@@ -441,7 +553,7 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 					return &ack, err
 				}
 				tmpBlockInfo := vp.BlockInfo{}
-				tmpBlockInfo.BlockID = int32(blkid)
+				tmpBlockInfo.BlockID = uint32(blkid)
 				ipnr := net.ParseIP(hostip)
 				ipint := utils.InetAton(ipnr)
 				tmpBlockInfo.DataNodeIP = ipint
@@ -450,7 +562,7 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 			}
 		}
 		tmpBlockGroup := vp.BlockGroup{}
-		tmpBlockGroup.BlockGroupID = int32(blkgrpid)
+		tmpBlockGroup.BlockGroupID = uint32(blkgrpid)
 		tmpBlockGroup.BlockInfos = pBlockInfos
 		pBlockGroups = append(pBlockGroups, &tmpBlockGroup)
 	}
@@ -620,26 +732,59 @@ func StartVolMgrService() {
 	}
 }
 
-func init() {
-	c, err := config.NewConfig(os.Args[1])
-	if err != nil {
-		fmt.Println("NewConfig err")
-		os.Exit(1)
-	}
-	port, _ := c.Int("port")
-	VolMgrServerAddr.port = port
-	VolMgrServerAddr.log = c.String("log")
-	VolMgrServerAddr.host = c.String("host")
-	os.MkdirAll(VolMgrServerAddr.log, 0777)
+// MdcServer ...
+type MdcServer struct{}
 
-	mysqlConf.dbhost = c.String("mysql::host")
-	mysqlConf.dbusername = c.String("mysql::user")
-	mysqlConf.dbpassword = c.String("mysql::passwd")
-	mysqlConf.dbname = c.String("mysql::db")
+//FetchMeters ...
+func (s *MdcServer) FetchMeters(ctx context.Context, in *vp.MdcRequest) (*vp.Meters, error) {
+	ack := vp.Meters{}
+	meter := vp.Meter{}
+
+	meter.Name = "Service Status"
+	meter.Volume = 0
+	meter.Resource = "volmgr#" + VolMgrServerAddr.host
+	meter.IP = VolMgrServerAddr.host
+	meter.Timestamp = ""
+	meter.Type = "gague"
+
+	ack.Meters = append(ack.Meters, &meter)
+	return &ack, nil
+}
+
+// StarMdcService ...
+func StarMdcService() {
+
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", VolMgrServerAddr.port+10))
+	if err != nil {
+		panic(fmt.Sprintf("Failed to listen on:%v", VolMgrServerAddr.port))
+	}
+	s := grpc.NewServer()
+	vp.RegisterMdcServiceServer(s, &MdcServer{})
+	// Register reflection service on gRPC server.
+	reflection.Register(s)
+	if err := s.Serve(lis); err != nil {
+		panic("Failed to serve")
+	}
+}
+
+func init() {
+
+	flag.StringVar(&VolMgrServerAddr.host, "host", "127.0.0.1", "ContainerFS VolMgr Host")
+	flag.IntVar(&VolMgrServerAddr.port, "port", 8000, "ContainerFS VolMgr Port")
+	flag.StringVar(&VolMgrServerAddr.log, "log", "/export/Logs/containerfs/logs/", "ContainerFS VolMgr logpath")
+	loglevel := flag.String("loglevel", "error", "ContainerFS VolMgr log level")
+	flag.StringVar(&mysqlConf.dbhost, "sqlhost", "127.0.0.1:3306", "ContainerFS DBHOST")
+	flag.StringVar(&mysqlConf.dbusername, "sqluser", "root", "ContainerFS DBUSER")
+	flag.StringVar(&mysqlConf.dbpassword, "sqlpasswd", "root", "ContainerFS DBPASSWD")
+	flag.StringVar(&mysqlConf.dbname, "sqldb", "containerfs", "ContainerFS DB")
+
+	flag.Parse()
+
+	os.MkdirAll(VolMgrServerAddr.log, 0777)
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(VolMgrServerAddr.log, "volmgr.log", 10, 100, logger.MB) //each 100M rolling
-	switch level := c.String("loglevel"); level {
+	switch *loglevel {
 	case "error":
 		logger.SetLevel(logger.ERROR)
 	case "debug":
@@ -649,7 +794,7 @@ func init() {
 	default:
 		logger.SetLevel(logger.ERROR)
 	}
-
+	var err error
 	VolMgrDB, err = sql.Open("mysql", mysqlConf.dbusername+":"+mysqlConf.dbpassword+"@tcp("+mysqlConf.dbhost+")/"+mysqlConf.dbname+"?charset=utf8")
 	checkErr(err)
 	err = VolMgrDB.Ping()
@@ -677,5 +822,9 @@ func main() {
 	}()
 	Wg.Wait()
 	defer VolMgrDB.Close()
-	StartVolMgrService()
+	go StartVolMgrService()
+	go StarMdcService()
+
+	loop := make(chan int)
+	<-loop
 }
