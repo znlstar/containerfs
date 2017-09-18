@@ -456,6 +456,14 @@ func validateVolumeSource(source *api.VolumeSource, fldPath *field.Path) field.E
 			allErrs = append(allErrs, validateGlusterfs(source.Glusterfs, fldPath.Child("glusterfs"))...)
 		}
 	}
+	if source.Containerfs != nil {
+		if numVolumes > 0 {
+			allErrs = append(allErrs, field.Forbidden(fldPath.Child("containerfs"), "may not specify more than 1 volume type"))
+		} else {
+			numVolumes++
+			allErrs = append(allErrs, validateContainerfs(source.Containerfs, fldPath.Child("containerfs"))...)
+		}
+	}
 	if source.Flocker != nil {
 		if numVolumes > 0 {
 			allErrs = append(allErrs, field.Forbidden(fldPath.Child("flocker"), "may not specify more than 1 volume type"))
@@ -764,6 +772,20 @@ func validateGlusterfs(glusterfs *api.GlusterfsVolumeSource, fldPath *field.Path
 	}
 	if len(glusterfs.Path) == 0 {
 		allErrs = append(allErrs, field.Required(fldPath.Child("path"), ""))
+	}
+	return allErrs
+}
+
+func validateContainerfs(containerfs *api.ContainerfsVolumeSource, fldPath *field.Path) field.ErrorList {
+	allErrs := field.ErrorList{}
+	if len(containerfs.Volmgr) == 0 {
+		allErrs = append(allErrs, field.Required(fldPath.Child("volmgr"), ""))
+	}
+	if len(containerfs.Metanode) == 0 {
+		allErrs = append(allErrs, field.Required(fldPath.Child("metanode"), ""))
+	}
+	if len(containerfs.Uuid) == 0 {
+		allErrs = append(allErrs, field.Required(fldPath.Child("uuid"), ""))
 	}
 	return allErrs
 }
@@ -1131,6 +1153,14 @@ func ValidatePersistentVolume(pv *api.PersistentVolume) field.ErrorList {
 		} else {
 			numVolumes++
 			allErrs = append(allErrs, validateGlusterfs(pv.Spec.Glusterfs, specPath.Child("glusterfs"))...)
+		}
+	}
+	if pv.Spec.Containerfs != nil {
+		if numVolumes > 0 {
+			allErrs = append(allErrs, field.Forbidden(specPath.Child("containerfs"), "may not specify more than 1 volume type"))
+		} else {
+			numVolumes++
+			allErrs = append(allErrs, validateContainerfs(pv.Spec.Containerfs, specPath.Child("containerfs"))...)
 		}
 	}
 	if pv.Spec.Flocker != nil {

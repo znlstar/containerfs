@@ -342,6 +342,16 @@ func (ContainerStatus) SwaggerDoc() map[string]string {
 	return map_ContainerStatus
 }
 
+var map_ContainerfsVolumeSource = map[string]string{
+	"":         "Represents a Containerfs mount that lasts the lifetime of a pod. Containerfs volumes do not support ownership management or SELinux relabeling.",
+	"uuid":     "Required: Uuid is the Containerfs volume uuid",
+	"readOnly": "Optional: Defaults to false (read/write). ReadOnly here will force the Containerfs to be mounted with read-only permissions",
+}
+
+func (ContainerfsVolumeSource) SwaggerDoc() map[string]string {
+	return map_ContainerfsVolumeSource
+}
+
 var map_DaemonEndpoint = map[string]string{
 	"":     "DaemonEndpoint contains information about a single Daemon endpoint.",
 	"Port": "Port number of the given endpoint.",
@@ -1125,6 +1135,7 @@ var map_PersistentVolumeSource = map[string]string{
 	"photonPersistentDisk": "PhotonPersistentDisk represents a PhotonController persistent disk attached and mounted on kubelets host machine",
 	"portworxVolume":       "PortworxVolume represents a portworx volume attached and mounted on kubelets host machine",
 	"scaleIO":              "ScaleIO represents a ScaleIO persistent volume attached and mounted on Kubernetes nodes.",
+	"containerfs":          "Containerfs represents a Containerfs volume that is attached to a host and exposed to the pod. Provisioned by an admin.",
 }
 
 func (PersistentVolumeSource) SwaggerDoc() map[string]string {
@@ -1931,6 +1942,7 @@ var map_VolumeSource = map[string]string{
 	"projected":            "Items for all in one resources secrets, configmaps, and downward API",
 	"portworxVolume":       "PortworxVolume represents a portworx volume attached and mounted on kubelets host machine",
 	"scaleIO":              "ScaleIO represents a ScaleIO persistent volume attached and mounted on Kubernetes nodes.",
+	"containerfs":          "Containerfs represents a Containerfs volume mounted on kubelets host machine",
 }
 
 func (VolumeSource) SwaggerDoc() map[string]string {

@@ -658,6 +658,22 @@ message ContainerStatus {
   optional string containerID = 8;
 }
 
+// Represents a Containerfs mount that lasts the lifetime of a pod.
+// Containerfs volumes do not support ownership management or SELinux relabeling.
+message ContainerfsVolumeSource {
+  optional string volmgr = 1;
+
+  optional string metanode = 2;
+
+  // Required: Uuid is the Containerfs volume uuid
+  optional string uuid = 3;
+
+  // Optional: Defaults to false (read/write). ReadOnly here will force
+  // the Containerfs to be mounted with read-only permissions
+  // +optional
+  optional bool readOnly = 4;
+}
+
 // DaemonEndpoint contains information about a single Daemon endpoint.
 message DaemonEndpoint {
   // Port number of the given endpoint.
@@ -2145,6 +2161,11 @@ message PersistentVolumeSource {
   // ScaleIO represents a ScaleIO persistent volume attached and mounted on Kubernetes nodes.
   // +optional
   optional ScaleIOVolumeSource scaleIO = 19;
+
+  // Containerfs represents a Containerfs volume that is attached to a host and
+  // exposed to the pod. Provisioned by an admin.
+  // +optional
+  optional ContainerfsVolumeSource containerfs = 20;
 }
 
 // PersistentVolumeSpec is the specification of a persistent volume.
@@ -3896,6 +3917,10 @@ message VolumeSource {
   // ScaleIO represents a ScaleIO persistent volume attached and mounted on Kubernetes nodes.
   // +optional
   optional ScaleIOVolumeSource scaleIO = 25;
+
+  // Containerfs represents a Containerfs volume mounted on kubelets host machine
+  // +optional
+  optional ContainerfsVolumeSource containerfs = 27;
 }
 
 // Represents a vSphere volume resource.

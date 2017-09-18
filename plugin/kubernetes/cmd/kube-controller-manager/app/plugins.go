@@ -55,6 +55,7 @@ import (
 	"k8s.io/kubernetes/pkg/volume/rbd"
 	"k8s.io/kubernetes/pkg/volume/scaleio"
 	"k8s.io/kubernetes/pkg/volume/vsphere_volume"
+	"k8s.io/kubernetes/pkg/volume/containerfs"
 )
 
 // ProbeAttachableVolumePlugins collects all volume plugins for the attach/
@@ -121,7 +122,7 @@ func ProbeControllerVolumePlugins(cloud cloudprovider.Interface, config componen
 	allPlugins = append(allPlugins, flocker.ProbeVolumePlugins()...)
 	allPlugins = append(allPlugins, portworx.ProbeVolumePlugins()...)
 	allPlugins = append(allPlugins, scaleio.ProbeVolumePlugins()...)
-
+	allPlugins = append(allPlugins, containerfs.ProbeVolumePlugins()...)
 	if cloud != nil {
 		switch {
 		case aws.ProviderName == cloud.ProviderName():

@@ -1509,6 +1509,10 @@
      "scaleIO": {
       "$ref": "v1.ScaleIOVolumeSource",
       "description": "ScaleIO represents a ScaleIO persistent volume attached and mounted on Kubernetes nodes."
+     },
+     "containerfs": {
+      "$ref": "v1.ContainerfsVolumeSource",
+      "description": "Containerfs represents a Containerfs volume mounted on kubelets host machine"
      }
     }
    },
@@ -2337,6 +2341,31 @@
      "readOnly": {
       "type": "boolean",
       "description": "Defaults to false (read/write). ReadOnly here will force the ReadOnly setting in VolumeMounts."
+     }
+    }
+   },
+   "v1.ContainerfsVolumeSource": {
+    "id": "v1.ContainerfsVolumeSource",
+    "description": "Represents a Containerfs mount that lasts the lifetime of a pod. Containerfs volumes do not support ownership management or SELinux relabeling.",
+    "required": [
+     "volmgr",
+     "metanode",
+     "uuid"
+    ],
+    "properties": {
+     "volmgr": {
+      "type": "string"
+     },
+     "metanode": {
+      "type": "string"
+     },
+     "uuid": {
+      "type": "string",
+      "description": "Required: Uuid is the Containerfs volume uuid"
+     },
+     "readOnly": {
+      "type": "boolean",
+      "description": "Optional: Defaults to false (read/write). ReadOnly here will force the Containerfs to be mounted with read-only permissions"
      }
     }
    },

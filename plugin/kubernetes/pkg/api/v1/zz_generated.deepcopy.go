@@ -63,6 +63,7 @@ func RegisterDeepCopies(scheme *runtime.Scheme) error {
 		conversion.GeneratedDeepCopyFunc{Fn: DeepCopy_v1_ContainerStateTerminated, InType: reflect.TypeOf(&ContainerStateTerminated{})},
 		conversion.GeneratedDeepCopyFunc{Fn: DeepCopy_v1_ContainerStateWaiting, InType: reflect.TypeOf(&ContainerStateWaiting{})},
 		conversion.GeneratedDeepCopyFunc{Fn: DeepCopy_v1_ContainerStatus, InType: reflect.TypeOf(&ContainerStatus{})},
+		conversion.GeneratedDeepCopyFunc{Fn: DeepCopy_v1_ContainerfsVolumeSource, InType: reflect.TypeOf(&ContainerfsVolumeSource{})},
 		conversion.GeneratedDeepCopyFunc{Fn: DeepCopy_v1_DaemonEndpoint, InType: reflect.TypeOf(&DaemonEndpoint{})},
 		conversion.GeneratedDeepCopyFunc{Fn: DeepCopy_v1_DeleteOptions, InType: reflect.TypeOf(&DeleteOptions{})},
 		conversion.GeneratedDeepCopyFunc{Fn: DeepCopy_v1_DownwardAPIProjection, InType: reflect.TypeOf(&DownwardAPIProjection{})},
@@ -700,6 +701,15 @@ func DeepCopy_v1_ContainerStatus(in interface{}, out interface{}, c *conversion.
 		if err := DeepCopy_v1_ContainerState(&in.LastTerminationState, &out.LastTerminationState, c); err != nil {
 			return err
 		}
+		return nil
+	}
+}
+
+func DeepCopy_v1_ContainerfsVolumeSource(in interface{}, out interface{}, c *conversion.Cloner) error {
+	{
+		in := in.(*ContainerfsVolumeSource)
+		out := out.(*ContainerfsVolumeSource)
+		*out = *in
 		return nil
 	}
 }
@@ -2033,6 +2043,11 @@ func DeepCopy_v1_PersistentVolumeSource(in interface{}, out interface{}, c *conv
 			if err := DeepCopy_v1_ScaleIOVolumeSource(*in, *out, c); err != nil {
 				return err
 			}
+		}
+		if in.Containerfs != nil {
+			in, out := &in.Containerfs, &out.Containerfs
+			*out = new(ContainerfsVolumeSource)
+			**out = **in
 		}
 		return nil
 	}
@@ -3473,6 +3488,11 @@ func DeepCopy_v1_VolumeSource(in interface{}, out interface{}, c *conversion.Clo
 			if err := DeepCopy_v1_ScaleIOVolumeSource(*in, *out, c); err != nil {
 				return err
 			}
+		}
+		if in.Containerfs != nil {
+			in, out := &in.Containerfs, &out.Containerfs
+			*out = new(ContainerfsVolumeSource)
+			**out = **in
 		}
 		return nil
 	}

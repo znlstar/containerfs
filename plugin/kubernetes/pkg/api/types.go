@@ -302,6 +302,9 @@ type VolumeSource struct {
 	// ScaleIO represents a ScaleIO persistent volume attached and mounted on Kubernetes nodes.
 	// +optional
 	ScaleIO *ScaleIOVolumeSource
+	// Containerfs represents a Containerfs mount on the host that shares a pod's lifetime
+	// +optional
+	Containerfs *ContainerfsVolumeSource
 }
 
 // Similar to VolumeSource but meant for the administrator who creates PVs.
@@ -367,6 +370,9 @@ type PersistentVolumeSource struct {
 	// PortworxVolume represents a portworx volume attached and mounted on kubelets host machine
 	// +optional
 	PortworxVolume *PortworxVolumeSource
+	// Containerfs represents a Containerfs volume that is attached to a host and exposed to the pod
+	// +optional
+	Containerfs *ContainerfsVolumeSource
 	// ScaleIO represents a ScaleIO persistent volume attached and mounted on Kubernetes nodes.
 	// +optional
 	ScaleIO *ScaleIOVolumeSource
@@ -854,6 +860,20 @@ type GlusterfsVolumeSource struct {
 
 	// Optional: Defaults to false (read/write). ReadOnly here will force
 	// the Glusterfs to be mounted with read-only permissions
+	// +optional
+	ReadOnly bool
+}
+
+// Represents a Containerfs mount that lasts the lifetime of a pod.
+// Containerfs volumes do not support ownership management or SELinux relabeling.
+type ContainerfsVolumeSource struct {
+	Volmgr string
+	Metanode string
+
+	// Required: Uuid is the Containerfs volume uuid
+	Uuid string
+	// Optional: Defaults to false (read/write). ReadOnly here will force
+	// the Containerfs to be mounted with read-only permissions
 	// +optional
 	ReadOnly bool
 }

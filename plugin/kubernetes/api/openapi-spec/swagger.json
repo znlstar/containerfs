@@ -2,7 +2,7 @@
   "swagger": "2.0",
   "info": {
    "title": "Kubernetes",
-   "version": "v1.6.2"
+   "version": "v1.6.2+477efc3"
   },
   "paths": {
    "/api/": {
@@ -38082,6 +38082,30 @@
      }
     }
    },
+   "io.k8s.kubernetes.pkg.api.v1.ContainerfsVolumeSource": {
+    "description": "Represents a Containerfs mount that lasts the lifetime of a pod. Containerfs volumes do not support ownership management or SELinux relabeling.",
+    "required": [
+     "volmgr",
+     "metanode",
+     "uuid"
+    ],
+    "properties": {
+     "metanode": {
+      "type": "string"
+     },
+     "readOnly": {
+      "description": "Optional: Defaults to false (read/write). ReadOnly here will force the Containerfs to be mounted with read-only permissions",
+      "type": "boolean"
+     },
+     "uuid": {
+      "description": "Required: Uuid is the Containerfs volume uuid",
+      "type": "string"
+     },
+     "volmgr": {
+      "type": "string"
+     }
+    }
+   },
    "io.k8s.kubernetes.pkg.api.v1.DaemonEndpoint": {
     "description": "DaemonEndpoint contains information about a single Daemon endpoint.",
     "required": [
@@ -39665,6 +39689,10 @@
      "claimRef": {
       "description": "ClaimRef is part of a bi-directional binding between PersistentVolume and PersistentVolumeClaim. Expected to be non-nil when bound. claim.VolumeName is the authoritative bind between PV and PVC. More info: http://kubernetes.io/docs/user-guide/persistent-volumes#binding",
       "$ref": "#/definitions/io.k8s.kubernetes.pkg.api.v1.ObjectReference"
+     },
+     "containerfs": {
+      "description": "Containerfs represents a Containerfs volume that is attached to a host and exposed to the pod. Provisioned by an admin.",
+      "$ref": "#/definitions/io.k8s.kubernetes.pkg.api.v1.ContainerfsVolumeSource"
      },
      "fc": {
       "description": "FC represents a Fibre Channel resource that is attached to a kubelet's host machine and then exposed to the pod.",
@@ -41264,6 +41292,10 @@
      "configMap": {
       "description": "ConfigMap represents a configMap that should populate this volume",
       "$ref": "#/definitions/io.k8s.kubernetes.pkg.api.v1.ConfigMapVolumeSource"
+     },
+     "containerfs": {
+      "description": "Containerfs represents a Containerfs volume mounted on kubelets host machine",
+      "$ref": "#/definitions/io.k8s.kubernetes.pkg.api.v1.ContainerfsVolumeSource"
      },
      "downwardAPI": {
       "description": "DownwardAPI represents downward API about the pod that should populate this volume",

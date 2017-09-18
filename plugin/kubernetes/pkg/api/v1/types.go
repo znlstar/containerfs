@@ -334,6 +334,9 @@ type VolumeSource struct {
 	// ScaleIO represents a ScaleIO persistent volume attached and mounted on Kubernetes nodes.
 	// +optional
 	ScaleIO *ScaleIOVolumeSource `json:"scaleIO,omitempty" protobuf:"bytes,25,opt,name=scaleIO"`
+	// Containerfs represents a Containerfs volume mounted on kubelets host machine
+	// +optional
+	Containerfs *ContainerfsVolumeSource `json:"containerfs,omitempty" protobuf:"bytes,27,opt,name=containerfs"`
 }
 
 // PersistentVolumeClaimVolumeSource references the user's PVC in the same namespace.
@@ -425,6 +428,10 @@ type PersistentVolumeSource struct {
 	// ScaleIO represents a ScaleIO persistent volume attached and mounted on Kubernetes nodes.
 	// +optional
 	ScaleIO *ScaleIOVolumeSource `json:"scaleIO,omitempty" protobuf:"bytes,19,opt,name=scaleIO"`
+	// Containerfs represents a Containerfs volume that is attached to a host and
+	// exposed to the pod. Provisioned by an admin.
+	// +optional
+	Containerfs *ContainerfsVolumeSource `json:"containerfs,omitempty" protobuf:"bytes,20,opt,name=containerfs"`
 }
 
 const (
@@ -685,6 +692,20 @@ type GlusterfsVolumeSource struct {
 	// More info: http://releases.k8s.io/HEAD/examples/volumes/glusterfs/README.md#create-a-pod
 	// +optional
 	ReadOnly bool `json:"readOnly,omitempty" protobuf:"varint,3,opt,name=readOnly"`
+}
+
+// Represents a Containerfs mount that lasts the lifetime of a pod.
+// Containerfs volumes do not support ownership management or SELinux relabeling.
+type ContainerfsVolumeSource struct {
+	Volmgr   string `json:"volmgr" protobuf:"bytes,1,opt,name=volmgr"`
+	Metanode string `json:"metanode" protobuf:"bytes,2,opt,name=metanode"`
+
+	// Required: Uuid is the Containerfs volume uuid
+	Uuid string `json:"uuid" protobuf:"bytes,3,opt,name=uuid"`
+	// Optional: Defaults to false (read/write). ReadOnly here will force
+	// the Containerfs to be mounted with read-only permissions
+	// +optional
+	ReadOnly bool `json:"readOnly,omitempty" protobuf:"varint,4,opt,name=readOnly"`
 }
 
 // Represents a Rados Block Device mount that lasts the lifetime of a pod.
