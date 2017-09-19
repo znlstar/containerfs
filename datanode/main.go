@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/reflection"
 	"net"
 	"os"
+	"io"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -237,7 +238,7 @@ func (s *DataNodeServer) ReadChunk(ctx context.Context, in *dp.ReadChunkReq) (*d
 func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.DataNode_StreamReadChunkServer) error {
 	chunkID := in.ChunkID
 	blockID := in.BlockID
-	offset := in.Offset
+	//offset := in.Offset
 	readsize := in.Readsize
 
 	chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
@@ -246,41 +247,39 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 	if err != nil {
 		return err
 	}
-	_, err = f.Seek(offset, 0)
-	if err != nil {
-		return err
-	}
 
 	var ack dp.StreamReadChunkAck
-	totalsize := readsize
-	//buf := make([]byte, 64*1024*1024)
-	buf := make([]byte, readsize)
-
+	var totalsize int64
+	buf := make([]byte, 2*1024*1024)
+	
 	bfRd := bufio.NewReader(f)
 	for {
 		n, err := bfRd.Read(buf)
-		if err != nil {
+		if err != nil && err != io.EOF {
+			logger.Error("read chunkfile:%v error:%v",chunkFileName,err)
 			return err
 		}
 
-		totalsize -= int64(n)
-		if totalsize <= 0 {
-			var m int64
-			m = int64(n) + totalsize
-			ack.Databuf = buf[:m]
-			if err := stream.Send(&ack); err != nil {
-				return err
-			}
+		if n == 0 {
+			logger.Debug("read chunkfile:%v endsize:%v",chunkFileName,totalsize)
 			break
 		}
+
+		totalsize += int64(n)
+		
 		ack.Databuf = buf[:n]
 		if err := stream.Send(&ack); err != nil {
+			logger.Error("Send stream data to fuse error:%v", err)
 			return err
+		}
+
+		if totalsize == readsize {
+			logger.Debug("Request chunkFileName:%v size:%v equal real ret size:%v", chunkFileName, readsize, totalsize)
+			break
 		}
 	}
 
 	return nil
-
 }
 
 //DeleteChunk rpc DeleteChunks(eleteChunksReq) returns (eleteChunksAck){};
