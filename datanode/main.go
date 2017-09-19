@@ -261,9 +261,10 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 		}
 
 		if n == 0 {
-            logger.Debug("read chunkfile:%v endsize:%v",chunkFileName,totalsize)
-            break
-        }
+			logger.Debug("read chunkfile:%v endsize:%v",chunkFileName,totalsize)
+			break
+		}
+
 		totalsize += int64(n)
 		
 		ack.Databuf = buf[:n]
@@ -273,9 +274,9 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 		}
 
 		if totalsize == readsize {
-            logger.Debug("Request chunkFileName:%v size:%v equal real ret size:%v", chunkFileName, readsize, totalsize)
-            break
-        }
+			logger.Debug("Request chunkFileName:%v size:%v equal real ret size:%v", chunkFileName, readsize, totalsize)
+			break
+		}
 	}
 
 	return nil
