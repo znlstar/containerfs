@@ -83,6 +83,14 @@ func main() {
 		if ret != 0 {
 			fmt.Println("failed")
 		}
+	case "getvolleader":
+		argNum := flag.NArg()
+		if argNum != 2 {
+			fmt.Println("getvolleader [voluuid]")
+			os.Exit(1)
+		}
+		leader := fs.GetVolumeLeader(flag.Arg(1))
+		fmt.Println(leader)
 	case "getvolinfo":
 		argNum := flag.NArg()
 		if argNum != 2 {
