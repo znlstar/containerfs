@@ -132,7 +132,7 @@ func ExpendVol(UUID string, expendQuota string) int32 {
 
 	conn, err := DialVolmgr(VolMgrAddr)
 	if err != nil {
-		logger.Error("CreateVol failed,Dial to volmgr fail :%v\n", err)
+		logger.Error("ExpendVol failed,Dial to volmgr fail :%v\n", err)
 		return -1
 
 	}
@@ -157,12 +157,14 @@ func ExpendVol(UUID string, expendQuota string) int32 {
 		mpBlockGroups = append(mpBlockGroups, mpBlockGroup)
 	}
 	// Meta handle
-	conn2, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
+
+	conn2, err := DialMeta(UUID)
 	if err != nil {
-		logger.Error("CreateVol failed,Dial to metanode fail :%v\n", err)
+		logger.Error("ExpendVol failed,Dial to metanode fail :%v", err)
 		return -1
 	}
 	defer conn2.Close()
+
 	mc := mp.NewMetaNodeClient(conn2)
 	pmExpandNameSpaceReq := &mp.ExpandNameSpaceReq{
 		VolID:       UUID,
@@ -231,6 +233,14 @@ func SnapShootVol(uuid string) int32 {
 		return -1
 	}
 	return 0
+}
+
+func GetVolumeLeader(uuid string) string {
+	leader, err := GetLeader(uuid)
+	if err != nil {
+		return "no leader"
+	}
+	return leader
 }
 
 // DeleteVol function
