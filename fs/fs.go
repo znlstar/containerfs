@@ -17,6 +17,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -440,6 +441,13 @@ func (cfs *CFS) ListDirect(pinode uint64) (int32, []*mp.DirentN) {
 
 // DeleteDirDirect ...
 func (cfs *CFS) DeleteDirDirect(pinode uint64, name string) int32 {
+
+	ret, _, inode := cfs.StatDirect(pinode, name)
+	if ret != 0 {
+		logger.Debug("DeleteDirDirect StatDirect Failed , no such dir")
+		return 0
+	}
+
 	conn, err := DialMeta(cfs.VolID)
 	if err != nil {
 		logger.Error("DeleteDir failed,Dial to metanode fail :%v\n", err)
@@ -447,12 +455,47 @@ func (cfs *CFS) DeleteDirDirect(pinode uint64, name string) int32 {
 	}
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
+
+	pListDirectReq := &mp.ListDirectReq{
+		PInode: inode,
+		VolID:  cfs.VolID,
+	}
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pListDirectAck, err := mc.ListDirect(ctx, pListDirectReq)
+	if err != nil {
+		logger.Error("DeleteDirDirect ListDirect :%v\n", err)
+		return -1
+	}
+
+	for _, v := range pListDirectAck.Dirents {
+		/*
+			if v.InodeType {
+				cfs.DeleteFileDirect(inode, v.Name)
+			} else {
+				cfs.DeleteDirDirect(inode, v.Name)
+			}
+		*/
+
+		if v.InodeType {
+			ret := cfs.DeleteFileDirect(inode, v.Name)
+			if ret != 0 {
+				return ret
+			}
+		} else {
+			ret := cfs.DeleteDirDirect(inode, v.Name)
+			if ret != 0 {
+				return ret
+			}
+		}
+
+	}
+
 	pDeleteDirDirectReq := &mp.DeleteDirDirectReq{
 		PInode: pinode,
 		Name:   name,
 		VolID:  cfs.VolID,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ = context.WithTimeout(context.Background(), 5*time.Second)
 	pDeleteDirDirectAck, err := mc.DeleteDirDirect(ctx, pDeleteDirDirectReq)
 	if err != nil {
 		return -1
@@ -1254,7 +1297,7 @@ func (cfile *CFile) SetChunkStatus(ip string, port int32, blkgrpid uint32, blkid
 
 	return 0
 }
-func (cfile *CFile) writeChunk(ip string, port int32, dc dp.DataNodeClient, req *dp.WriteChunkReq, blkgrpid uint32, copies *int, position int32) {
+func (cfile *CFile) writeChunk(ip string, port int32, dc dp.DataNodeClient, req *dp.WriteChunkReq, blkgrpid uint32, copies *uint64, position int32) {
 
 	if dc == nil {
 		cfile.SetChunkStatus(ip, port, blkgrpid, req.BlockID, req.ChunkID, position, 1)
@@ -1270,7 +1313,8 @@ func (cfile *CFile) writeChunk(ip string, port int32, dc dp.DataNodeClient, req 
 				cfile.SetChunkStatus(ip, port, blkgrpid, req.BlockID, req.ChunkID, position, 1)
 				cfile.CurChunkStatus[position] = 1
 			} else {
-				*copies = *copies + 1
+				//*copies = *copies + 1
+				atomic.AddUint64(copies, 1)
 			}
 		}
 	}
@@ -1281,7 +1325,7 @@ func (cfile *CFile) writeChunk(ip string, port int32, dc dp.DataNodeClient, req 
 func (cfile *CFile) send(v *wBuffer) int32 {
 
 	dataBuf := v.buffer.Next(v.buffer.Len())
-	copies := 0
+	var copies uint64
 
 	if v.chunkInfo.ChunkID != cfile.CurChunkID {
 		cfile.CurChunkID = v.chunkInfo.ChunkID
@@ -1333,7 +1377,7 @@ func (cfile *CFile) send(v *wBuffer) int32 {
 
 	cfile.wgWriteReps.Wait()
 
-	if copies < 2 {
+	if copies < uint64(2) {
 		logger.Error("WriteChunk copies < 2")
 		cfile.Status = 1
 		return cfile.Status
