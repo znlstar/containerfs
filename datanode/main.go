@@ -11,9 +11,9 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+	"io"
 	"net"
 	"os"
-	"io"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -159,8 +159,17 @@ func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (
 		return &ack, nil
 	}
 	w := bufio.NewWriter(f)
-	w.Write(in.Databuf)
-	w.Flush()
+	_, err = w.Write(in.Databuf)
+	if err != nil {
+		ack.Ret = -1
+		return &ack, nil
+	}
+
+	err = w.Flush()
+	if err != nil {
+		ack.Ret = -1
+		return &ack, nil
+	}
 
 	ack.Ret = 0
 	return &ack, nil
@@ -251,22 +260,22 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 	var ack dp.StreamReadChunkAck
 	var totalsize int64
 	buf := make([]byte, 2*1024*1024)
-	
+
 	bfRd := bufio.NewReader(f)
 	for {
 		n, err := bfRd.Read(buf)
 		if err != nil && err != io.EOF {
-			logger.Error("read chunkfile:%v error:%v",chunkFileName,err)
+			logger.Error("read chunkfile:%v error:%v", chunkFileName, err)
 			return err
 		}
 
 		if n == 0 {
-			logger.Debug("read chunkfile:%v endsize:%v",chunkFileName,totalsize)
+			logger.Debug("read chunkfile:%v endsize:%v", chunkFileName, totalsize)
 			break
 		}
 
 		totalsize += int64(n)
-		
+
 		ack.Databuf = buf[:n]
 		if err := stream.Send(&ack); err != nil {
 			logger.Error("Send stream data to fuse error:%v", err)
