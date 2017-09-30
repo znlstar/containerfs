@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	//BlockGroupSize 10GB
-	BlockGroupSize = 10 * 1024 * 1024 * 1024
+	//BlockGroupSize 5GB
+	BlockGroupSize = 5 * 1024 * 1024 * 1024
 	//ChunkSize 64MB
 	ChunkSize = 64 * 1024 * 1024
 )

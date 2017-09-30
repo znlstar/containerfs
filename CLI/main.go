@@ -15,11 +15,20 @@ func main() {
 	var loglevel string
 	var logpath string
 	var peers string
+	var cmd string
 
 	flag.StringVar(&fs.VolMgrAddr, "volmgr", "127.0.0.1:10001", "ContainerFS VolMgr Host")
 	flag.StringVar(&peers, "metanode", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS MetaNode Host")
 	flag.StringVar(&logpath, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Log Path")
 	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS Log Level")
+	flag.StringVar(&cmd,"action","",`
+		createvol [volumename ] size
+		expandvol [volumeuuid ] size
+		deletevol [volumeuuid ]
+		snapshootvol [volumeuuid ]
+		getvolleader [volumeuuid ]
+		getvolinfo [volumeuuid ]
+		getinodeinfo [volumeuuid ] parentinodeid name`)	
 
 	flag.Parse()
 
@@ -40,64 +49,65 @@ func main() {
 		logger.SetLevel(logger.ERROR)
 	}
 
-	switch flag.Arg(0) {
+	//switch flag.Arg(0) {
+	switch cmd {
 
 	case "createvol":
 		argNum := flag.NArg()
-		if argNum != 3 {
+		if argNum != 2 {
 			fmt.Println("createvol [volname] [space GB]")
 			os.Exit(1)
 		}
-		ret := fs.CreateVol(flag.Arg(1), flag.Arg(2))
+		ret := fs.CreateVol(flag.Arg(0), flag.Arg(1))
 		if ret != 0 {
 			fmt.Println("failed")
 		}
 
-	case "expendvol":
+	case "expandvol":
 		argNum := flag.NArg()
-		if argNum != 3 {
-			fmt.Println("expendvol [volUUID] [space GB]")
+		if argNum != 2 {
+			fmt.Println("expandvol [volUUID] [space GB]")
 			os.Exit(1)
 		}
-		ret := fs.ExpendVol(flag.Arg(1), flag.Arg(2))
+		ret := fs.ExpandVolTS(flag.Arg(0), flag.Arg(1))
 		if ret != 0 {
 			fmt.Println("failed")
 		}
 	case "deletevol":
 		argNum := flag.NArg()
-		if argNum != 2 {
+		if argNum != 1 {
 			fmt.Println("deletevol [voluuid]")
 			os.Exit(1)
 		}
-		ret := fs.DeleteVol(flag.Arg(1))
+		ret := fs.DeleteVol(flag.Arg(0))
 		if ret != 0 {
 			fmt.Println("failed")
 		}
 	case "snapshootvol":
 		argNum := flag.NArg()
-		if argNum != 2 {
+		if argNum != 1 {
 			fmt.Println("snapshootvol [voluuid]")
 			os.Exit(1)
 		}
-		ret := fs.SnapShootVol(flag.Arg(1))
+		ret := fs.SnapShootVol(flag.Arg(0))
 		if ret != 0 {
 			fmt.Println("failed")
 		}
 	case "getvolleader":
 		argNum := flag.NArg()
-		if argNum != 2 {
+		if argNum != 1 {
 			fmt.Println("getvolleader [voluuid]")
 			os.Exit(1)
 		}
-		leader := fs.GetVolumeLeader(flag.Arg(1))
+		leader := fs.GetVolumeLeader(flag.Arg(0))
 		fmt.Println(leader)
 	case "getvolinfo":
 		argNum := flag.NArg()
-		if argNum != 2 {
+		if argNum != 1 {
 			fmt.Println("getvolinfo [volUUID]")
 			os.Exit(1)
 		}
-		ret, vi := fs.GetVolInfo(flag.Arg(1))
+		ret, vi := fs.GetVolInfo(flag.Arg(0))
 		if ret == 0 {
 			fmt.Println(vi)
 		} else {
@@ -105,19 +115,19 @@ func main() {
 		}
 	case "getinodeinfo":
 		argNum := flag.NArg()
-		if argNum != 4 {
+		if argNum != 3 {
 			fmt.Println("getinodeinfo [volUUID] parentinodeid name")
 			os.Exit(1)
 		}
-		cfs := fs.OpenFileSystem(flag.Arg(1))
-		pinode, err := strconv.ParseUint(flag.Arg(2), 10, 64)
+		cfs := fs.OpenFileSystem(flag.Arg(0))
+		pinode, err := strconv.ParseUint(flag.Arg(1), 10, 64)
 		if err == nil {
-			ret, inode, inodeinfo := cfs.GetInodeInfoDirect(pinode, flag.Arg(3))
+			ret, inode, inodeinfo := cfs.GetInodeInfoDirect(pinode, flag.Arg(2))
 			if ret != 0 {
 				fmt.Println("no such inode")
 			} else {
 				fmt.Printf("inode:%v\ninodeinfo:%v\n", inode, inodeinfo)
-				ret, chunkinfo, _ := cfs.GetFileChunksDirect(pinode, flag.Arg(3))
+				ret, chunkinfo, _ := cfs.GetFileChunksDirect(pinode, flag.Arg(2))
 				if ret != 0 {
 					fmt.Printf("no chunkinfo")
 				} else {
@@ -130,7 +140,7 @@ func main() {
 		}
 
 	default:
-		fmt.Println("wrong operation")
+		fmt.Println("wrong action operation")
 	}
 
 }
