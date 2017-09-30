@@ -1,15 +1,15 @@
 package main
 
 import (
+	"database/sql"
 	"flag"
 	"fmt"
-	"database/sql"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/ipdcode/containerfs/logger"
 	dp "github.com/ipdcode/containerfs/proto/dp"
 	vp "github.com/ipdcode/containerfs/proto/vp"
-	dr "github.com/ipdcode/containerfs/volmgr/driver"
 	"github.com/ipdcode/containerfs/utils"
+	dr "github.com/ipdcode/containerfs/volmgr/driver"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -140,9 +140,9 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	//allocate block group for the volume
 	disks_sql := "select ip,port from (select * from disks where free > total*0.1 and statu = 0 order by rand())t  group by ip order by rand() limit 3 for update"
 	blk_sql := "insert into blk(hostip, hostport, disabled, volid) values(?, ?, 0, ?)"
-	blkgrp_sql := "insert into blkgrp(blks, volume_uuid) values(?, ?)" 
+	blkgrp_sql := "insert into blkgrp(blks, volume_uuid) values(?, ?)"
 	for i := int32(0); i < blkgrpnum; i++ {
-		dNode := DNode{"ip","port"}
+		dNode := DNode{"ip", "port"}
 		result, err := dr.Select(disks_sql, &dNode)
 		if err != nil {
 			logger.Error("Select Replica DataNode Group error:%v for Create Volume:%v", err, voluuid)
@@ -174,7 +174,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 			ack.Ret = -1
 			return &ack, nil
 		}
-		
+
 		if count != 3 {
 			logger.Error("Create The volume(%s -- %s) one blkgroup not equal 3 blk(%s), so create volume failed!", in.VolName, voluuid, count)
 			cleanRS(voluuid)
@@ -211,7 +211,7 @@ func (s *VolMgrServer) ExpendVol(ctx context.Context, in *vp.ExpendVolReq) (*vp.
 	blk_sql := "insert into blk(hostip, hostport, disabled, volid) values(?, ?, 0, ?)"
 	blkgrp_sql := "insert into blkgrp(blks, volume_uuid) values(?, ?)"
 	for i := int32(0); i < blkgrpnum; i++ {
-		dNode := DNode{"ip","port"}
+		dNode := DNode{"ip", "port"}
 		result, err := dr.Select(disks_sql, &dNode)
 		if err != nil {
 			logger.Error("Select Replica DataNode Group error:%v for Expend Volume:%v", err, voluuid)
@@ -238,7 +238,7 @@ func (s *VolMgrServer) ExpendVol(ctx context.Context, in *vp.ExpendVolReq) (*vp.
 			ipnr := net.ParseIP(dnode.Host)
 			ipint := utils.InetAton(ipnr)
 			tmpBlockInfo.DataNodeIP = ipint
-			
+
 			tmpBlockInfo.DataNodePort = int32(dport)
 			pBlockInfos = append(pBlockInfos, &tmpBlockInfo)
 
@@ -246,7 +246,7 @@ func (s *VolMgrServer) ExpendVol(ctx context.Context, in *vp.ExpendVolReq) (*vp.
 			count++
 		}
 		logger.Debug("The Expend volume:%v size:%v one blkgroup have blks:%s", voluuid, volsize, blks)
-		
+
 		if count != 3 {
 			logger.Error("Expend The volume:%v size:%v one blkgroup not equal 3 blk(%s), so create volume failed!", voluuid, volsize, count)
 			ack.Ret = 1
@@ -374,25 +374,25 @@ func (s *VolMgrServer) UpdateChunkInfo(ctx context.Context, in *vp.UpdateChunkIn
 		ack.Ret = -1
 		return &ack, nil
 	}
-	
+
 	ack.Ret = 0
 	return &ack, nil
 }
 
 //GetVolInfo : Get a Volume Info for User
 type VolInfo struct {
-	Name string
-	Size string
+	Name       string
+	Size       string
 	MetaDomain string
 }
 
 type BlkGrpInfo struct {
 	BGrpID string
-	Blks  string
+	Blks   string
 }
 
 type BlkInfo struct {
-	Ip string
+	Ip   string
 	Port string
 }
 
@@ -417,9 +417,9 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 	size, _ := strconv.Atoi(v.Size)
 	volInfo.SpaceQuota = int32(size)
 	volInfo.MetaDomain = v.MetaDomain
-	
+
 	sql = "select blkgrpid,blks from blkgrp where volume_uuid = ?"
-	tBGrpInfo := BlkGrpInfo{"blkgrpid","blks"}
+	tBGrpInfo := BlkGrpInfo{"blkgrpid", "blks"}
 	result, err = dr.Select(sql, &tBGrpInfo, args...)
 	if err != nil {
 		logger.Error("Get blkgroups for volume(%s) error:%s", voluuid, err)
@@ -428,7 +428,7 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 	}
 
 	pBlockGroups := []*vp.BlockGroup{}
-	for _,v := range result {
+	for _, v := range result {
 		tbgpinfo := v.(BlkGrpInfo)
 
 		logger.Debug("Get blks:%s in blkgroup:%v for volume(%s)", tbgpinfo.Blks, tbgpinfo.BGrpID, voluuid)
@@ -442,7 +442,7 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 			blkid, _ := strconv.Atoi(ele)
 			blk_sql := "select hostip, hostport from blk where blkid = ?"
 			arg := utils.ConvertValueToArgs(blkid)
-			tBlkInfo := BlkInfo{"hostip","hostport"}
+			tBlkInfo := BlkInfo{"hostip", "hostport"}
 			ret, err := dr.Select(blk_sql, &tBlkInfo, arg...)
 			if err != nil || len(ret) != 1 {
 				logger.Error("Get each blk:%d on which host error:%s for volume(%s)", blkid, err, voluuid)
@@ -450,7 +450,7 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 				return &ack, nil
 			}
 			tblkinfo := ret[0].(BlkInfo)
-			
+
 			tmpBlockInfo := vp.BlockInfo{}
 			tmpBlockInfo.BlockID = uint32(blkid)
 			ipnr := net.ParseIP(tblkinfo.Ip)
@@ -472,16 +472,17 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 	return &ack, nil
 }
 
-type  Vols struct {
+type Vols struct {
 	RaftGroupID string
-	VolID string
+	VolID       string
 }
+
 //GetVolList : get all volume list
 func (s *VolMgrServer) GetVolList(ctx context.Context, in *vp.GetVolListReq) (*vp.GetVolListAck, error) {
 	ack := vp.GetVolListAck{}
 
 	sql := "select raftgroupid,uuid from volumes"
-	tVols := Vols{"raftgrpid","uuid"}
+	tVols := Vols{"raftgrpid", "uuid"}
 	result, err := dr.Select(sql, &tVols)
 	if err != nil {
 		logger.Error("Get volumes from db error:%v", err)
@@ -507,6 +508,7 @@ func (s *VolMgrServer) GetVolList(ctx context.Context, in *vp.GetVolListReq) (*v
 type Disk struct {
 	Status string
 }
+
 func checkandupdatediskstatu(ip string, port int, statu int) {
 	sql := "select statu from disks where ip=? and port=?"
 	args := utils.ConvertValueToArgs(ip, port)
@@ -585,10 +587,11 @@ func updateDataNodeStatu(ip string, port int, statu int) {
 }
 
 type Disks struct {
-	Ip string
-	Port string
+	Ip     string
+	Port   string
 	Status string
 }
+
 func detectDataNodes() {
 	sql := "select ip,port,statu from disks"
 	tDisks := Disks{"ip", "port", "statu"}

@@ -51,9 +51,11 @@ type KvStateMachine struct {
 	BlockGroupLocker sync.RWMutex
 	blockGroupData   map[string][]byte
 
-	chunkID uint64
+	chunkIDLocker sync.Mutex
+	chunkID       uint64
 
-	inodeID uint64
+	inodeIDLocker sync.Mutex
+	inodeID       uint64
 }
 
 func newKvStatemachine(id uint64, raft *raft.RaftServer) *KvStateMachine {
@@ -419,14 +421,18 @@ func (ms *KvStateMachine) ChunkIDGET(raftGroupID uint64) (uint64, error) {
 	if data, err = pbproto.Marshal(kv); err != nil {
 		return 0, err
 	}
+
+	ms.chunkIDLocker.Lock()
 	resp := ms.raft.Submit(raftGroupID, data)
 	_, err = resp.Response()
 	if err != nil {
+		ms.chunkIDLocker.Unlock()
 		return 0, fmt.Errorf("Put error[%v]", err)
 	}
+	chunkID := ms.chunkID
+	ms.chunkIDLocker.Unlock()
 
-	fmt.Println("ChunkIDGET", ms.chunkID)
-	return ms.chunkID, nil
+	return chunkID, nil
 }
 
 //InodeIDGET ...
@@ -443,15 +449,18 @@ func (ms *KvStateMachine) InodeIDGET(raftGroupID uint64) (uint64, error) {
 	if data, err = pbproto.Marshal(kv); err != nil {
 		return 0, err
 	}
+
+	ms.inodeIDLocker.Lock()
 	resp := ms.raft.Submit(raftGroupID, data)
 	_, err = resp.Response()
 	if err != nil {
+		ms.inodeIDLocker.Unlock()
 		return 0, fmt.Errorf("Put error[%v]", err)
 	}
+	inodeID := ms.inodeID
+	ms.inodeIDLocker.Unlock()
 
-	fmt.Println("InodeIDGet", ms.inodeID)
-
-	return ms.inodeID, nil
+	return inodeID, nil
 }
 
 //AddNode ...

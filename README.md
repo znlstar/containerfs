@@ -16,6 +16,3 @@ a volume = a metadata table + multiple block groups
 [here](doc/guide.md)
 
 # User Case
-
-# 微信交流群
-![二维码](doc/20170912130826.png)
