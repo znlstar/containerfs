@@ -33,6 +33,7 @@ var MetaNodeAddr string
 // chunksize for write
 const (
 	chunkSize = 64 * 1024 * 1024
+	oneExpandSize = 30 *1024 * 1024 * 1024
 )
 
 // BufferSize ...
@@ -128,32 +129,61 @@ func BlockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 
 }
 
-// ExpendVol ...
-func ExpendVol(UUID string, expendQuota string) int32 {
+// Expand volume once for fuseclient
+func ExpandVolRS(UUID string, MtPath string) int32 {
+	path := MtPath + "/expanding"
+
+	fd, err := os.OpenFile(path, os.O_RDWR | os.O_CREATE| os.O_EXCL, 0666)
+	if err != nil {
+		return -2
+	}
+	defer fd.Close()
+
+	ok, ret := GetFSInfo(UUID)
+	if ok != 0 {
+		os.Remove(path)
+		return -1
+	}
+
+	used := ret.TotalSpace - ret.FreeSpace
+	
+	if float64(ret.FreeSpace) / float64(ret.TotalSpace) > 0.1 {
+		os.Remove(path)
+		return 0
+	}
 
 	conn, err := DialVolmgr(VolMgrAddr)
 	if err != nil {
-		logger.Error("ExpendVol failed,Dial to volmgr fail :%v\n", err)
+		logger.Error("ExpandVol once volume:%v failed,Dial to volmgr error:%v", UUID, err)
+		os.Remove(path)
 		return -1
 
 	}
 	defer conn.Close()
 	vc := vp.NewVolMgrClient(conn)
-	tmpExpendQuota, _ := strconv.Atoi(expendQuota)
-	pExpendVolReq := &vp.ExpendVolReq{
+	pExpandVolRSReq := &vp.ExpandVolRSReq{
 		VolID:       UUID,
-		ExpendQuota: int32(tmpExpendQuota),
+		UsedRS:      used,
 	}
 	ctx, _ := context.WithTimeout(context.Background(), 100*time.Second)
-	pExpendVolAck, err := vc.ExpendVol(ctx, pExpendVolReq)
+	pExpandVolRSAck, err := vc.ExpandVolRS(ctx, pExpandVolRSReq)
 	if err != nil {
+		logger.Error("ExpandVol once volume:%v failed, VolMgr return error:%v", UUID, err)
+		os.Remove(path)
 		return -1
 	}
-	if pExpendVolAck.Ret != 0 {
+	if pExpandVolRSAck.Ret == -1 {
+		logger.Error("ExpandVol once volume:%v failed, VolMgr return -1:%v", UUID)
+		os.Remove(path)
 		return -1
+	} else if pExpandVolRSAck.Ret == 0 {
+		logger.Error("ExpandVol volume:%v once failed, VolMgr return 0 because volume totalsize not enough expand:%v", UUID)
+		os.Remove(path)
+		return 0
 	}
+
 	var mpBlockGroups []*mp.BlockGroup
-	for _, v := range pExpendVolAck.BlockGroups {
+	for _, v := range pExpandVolRSAck.BlockGroups {
 		mpBlockGroup := BlockGroupVp2Mp(v)
 		mpBlockGroups = append(mpBlockGroups, mpBlockGroup)
 	}
@@ -161,7 +191,8 @@ func ExpendVol(UUID string, expendQuota string) int32 {
 
 	conn2, err := DialMeta(UUID)
 	if err != nil {
-		logger.Error("ExpendVol failed,Dial to metanode fail :%v", err)
+		logger.Error("ExpandVol volume:%v once failed,Dial to metanode fail :%v", UUID, err)
+		os.Remove(path)
 		return -1
 	}
 	defer conn2.Close()
@@ -174,12 +205,47 @@ func ExpendVol(UUID string, expendQuota string) int32 {
 	ctx2, _ := context.WithTimeout(context.Background(), 5*time.Second)
 	pmExpandNameSpaceAck, err := mc.ExpandNameSpace(ctx2, pmExpandNameSpaceReq)
 	if err != nil {
+		logger.Error("ExpandVol volume:%v once failed, MetaNode return error:%v", UUID, err)
+		os.Remove(path)
 		return -1
 	}
 	if pmExpandNameSpaceAck.Ret != 0 {
-		logger.Error("ExpandNameSpace failed :%v\n", pmExpandNameSpaceAck.Ret)
+		logger.Error("ExpandVol volume:%v once failed, MetaNode return not equal 0:%v", UUID)
+		os.Remove(path)
 		return -1
 	}
+
+	os.Remove(path)
+	return 1
+}
+
+// ExpandVol volume totalsize for CLI...
+func ExpandVolTS(UUID string, expandQuota string) int32 {
+
+	conn, err := DialVolmgr(VolMgrAddr)
+	if err != nil {
+		logger.Error("ExpandVol failed,Dial to volmgr fail :%v\n", err)
+		return -1
+
+	}
+	defer conn.Close()
+	vc := vp.NewVolMgrClient(conn)
+	tmpExpandQuota, _ := strconv.Atoi(expandQuota)
+	pExpandVolTSReq := &vp.ExpandVolTSReq{
+		VolID:       UUID,
+		ExpandQuota: int32(tmpExpandQuota),
+	}
+	ctx, _ := context.WithTimeout(context.Background(), 100*time.Second)
+	pExpandVolTSAck, err := vc.ExpandVolTS(ctx, pExpandVolTSReq)
+	if err != nil {
+		logger.Error("Expand Vol:%v TotalSize:%v but VolMgr return error:%v", UUID, expandQuota, err)
+		return -1
+	}
+	if pExpandVolTSAck.Ret != 0 {
+		logger.Error("Expand Vol:%v TotalSize:%v but VolMgr return -1", UUID, expandQuota)
+		return -1
+	}
+
 	return 0
 
 }

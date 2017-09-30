@@ -743,6 +743,21 @@ func main() {
 		}
 	}()
 
+	//allocate volume blkgrp
+	tic := time.NewTicker(30*time.Second)
+	go func() {
+        for range tic.C {
+            ret := cfs.ExpandVolRS(*uuid, *mountPoint)
+            if ret == -1 {
+                logger.Error("Expand volume%v once error",*uuid)
+            } else if ret == -2 {
+                logger.Error("Expand volume%v once by another client, this client not need expand",*uuid)
+            } else if ret == 1 {
+				logger.Debug("Expand volume%v once sucess", *uuid)
+			}
+        }
+	}()
+
 	err := mount(*uuid, *mountPoint, *isReadOnly)
 	if err != nil {
 		fmt.Println("mount failed ...", err)

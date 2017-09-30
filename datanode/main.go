@@ -155,6 +155,7 @@ func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (
 	f, err = os.OpenFile(chunkFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0660)
 	defer f.Close()
 	if err != nil {
+		logger.Error("Openfile:%v  error:%v ", chunkFileName, err)
 		ack.Ret = -1
 		return &ack, nil
 	}

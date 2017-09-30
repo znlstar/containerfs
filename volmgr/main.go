@@ -46,7 +46,9 @@ var mysqlConf mysqlc
 
 // BlkSize : each block size
 const (
-	BlkSize = 10 /*G*/
+	BlkSizeG = 5
+	BlkSize = 5 * 1024 * 1024 * 1024 /*one blksize 5G*/
+	OneExpandSize = 30 * 1024 * 1024 * 1024 /*allocated volumesize 30G for each time*/
 )
 
 // Mutex var g_RpcConfig RpcConfigOpts
@@ -68,8 +70,8 @@ func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegi
 	dnIP := utils.InetNtoa(in.Ip)
 	ip := dnIP.String()
 
-	sql := "insert into disks(ip,port,mount,total,statu) values(?, ?, ?, ?, ?)"
-	args := utils.ConvertValueToArgs(ip, in.Port, in.MountPoint, in.Capacity, 0)
+	sql := "insert into disks(ip,port,mount,total, free, statu) values(?, ?, ?, ?, ?, ?)"
+	args := utils.ConvertValueToArgs(ip, in.Port, in.MountPoint, in.Capacity, in.Capacity, 0)
 
 	if ret, _ := dr.Exec(sql, args...); ret != 0 {
 		logger.Debug("The DataNode(%s:%d:%s) Registry to Db Failed!", ip, in.Port, in.MountPoint)
@@ -90,8 +92,8 @@ func (s *VolMgrServer) DatanodeHeartbeat(ctx context.Context, in *vp.DatanodeHea
 
 	logger.Debug("The disks(%s:%d) heartbeat info(used:%d -- free:%d -- statu:%d)", ip, in.Port, in.Used, in.Free, in.Status)
 
-	sql := "update disks set used=?,free=? where ip=? and port=?"
-	args := utils.ConvertValueToArgs(in.Used, in.Free, ip, in.Port)
+	sql := "update disks set used=? where ip=? and port=?"
+	args := utils.ConvertValueToArgs(in.Used, ip, in.Port)
 
 	if ret, _ := dr.Exec(sql, args...); ret != 0 {
 		logger.Error("The disk(%s:%d) heartbeat update to db error", ip, in.Port)
@@ -119,16 +121,19 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 
 	//the volume need block group total numbers
 	var blkgrpnum int32
-	if in.SpaceQuota < BlkSize {
-		blkgrpnum = 1
-	} else if in.SpaceQuota%BlkSize == 0 {
-		blkgrpnum = in.SpaceQuota / BlkSize
+	if in.SpaceQuota % BlkSizeG == 0 {
+		blkgrpnum = in.SpaceQuota/BlkSizeG
 	} else {
-		blkgrpnum = in.SpaceQuota/BlkSize + 1
+    	blkgrpnum = in.SpaceQuota/BlkSizeG + 1
+	in.SpaceQuota = blkgrpnum * BlkSizeG
+	}
+
+	if blkgrpnum > 2 {
+		blkgrpnum = 2
 	}
 
 	// insert the volume info to volumes tables
-	sql := "insert into volumes(uuid, name, size,metadomain) values(?, ?, ?, ?)"
+	sql := "insert into volumes(uuid, name, size, metadomain) values(?, ?, ?, ?)"
 	args := utils.ConvertValueToArgs(voluuid, in.VolName, in.SpaceQuota, in.MetaDomain)
 	ret, raftgroupid := dr.Exec(sql, args...)
 	if ret != 0 {
@@ -139,8 +144,11 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 
 	//allocate block group for the volume
 	disks_sql := "select ip,port from (select * from disks where free > total*0.1 and statu = 0 order by rand())t  group by ip order by rand() limit 3 for update"
+	//disks_sql := "select ip,port from disks where free > total*0.1 and statu = 0 limit 3 for update"
 	blk_sql := "insert into blk(hostip, hostport, disabled, volid) values(?, ?, 0, ?)"
 	blkgrp_sql := "insert into blkgrp(blks, volume_uuid) values(?, ?)"
+	disk_sql := "update disks set free=free-5 where ip=? and port=?"
+	
 	for i := int32(0); i < blkgrpnum; i++ {
 		dNode := DNode{"ip", "port"}
 		result, err := dr.Select(disks_sql, &dNode)
@@ -158,6 +166,13 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 			ret, blkid := dr.Exec(blk_sql, args...)
 			if ret != 0 {
 				logger.Error("insert blk table error for volume:%v", voluuid)
+				ack.Ret = -1
+				return &ack, nil
+			}
+
+			args = utils.ConvertValueToArgs(dnode.Host, dnode.Port)
+			if ret, _ = dr.Exec(disk_sql, args...); ret != 0 {
+				logger.Error("The disk(%s:%d) update freesize(-5G) to db error", dnode.Host, dnode.Port)
 				ack.Ret = -1
 				return &ack, nil
 			}
@@ -189,32 +204,60 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	return &ack, nil
 }
 
-// ExpendVol : extent a Volume size
-func (s *VolMgrServer) ExpendVol(ctx context.Context, in *vp.ExpendVolReq) (*vp.ExpendVolAck, error) {
-	ack := vp.ExpendVolAck{}
+// ExpandVol : extent a Volume real size for fuseclient
+type Volume struct {
+	TSize  string
+} 
+func (s *VolMgrServer) ExpandVolRS(ctx context.Context, in *vp.ExpandVolRSReq) (*vp.ExpandVolRSAck, error) {
+	ack := vp.ExpandVolRSAck{}
 	voluuid := in.VolID
-	volsize := in.ExpendQuota
+	urs := in.UsedRS
+
+	sql := "select size from volumes where uuid=?"
+	tVolume := Volume{"size"}
+	targ := utils.ConvertValueToArgs(voluuid)
+	r, err := dr.Select(sql, &tVolume, targ...)
+	if err != nil {
+		return &ack, err
+	}
+	ts := r[0].(Volume)
+	trs, _ := strconv.Atoi(ts.TSize)
+
+	bgNums := urs / OneExpandSize + 1
+	volsize := uint64(trs) * 1024*1024*1024 - bgNums * OneExpandSize
+	if volsize <= 0 {
+		ack.Ret = 0
+		return &ack, nil
+	}
 
 	//the volume need block group total numbers
-	var blkgrpnum int32
-	if volsize < BlkSize {
-		blkgrpnum = 1
-	} else if volsize%BlkSize == 0 {
-		blkgrpnum = volsize / BlkSize
+	var blkgrpnum uint64
+	
+	if volsize%BlkSize == 0 {
+		blkgrpnum = volsize/BlkSize
 	} else {
 		blkgrpnum = volsize/BlkSize + 1
+	}
+
+	if  blkgrpnum > 2 {
+		volsize = OneExpandSize
+		blkgrpnum = 2
 	}
 
 	pBlockGroups := []*vp.BlockGroup{}
 	//allocate block group for the volume
 	disks_sql := "select ip,port from (select * from disks where free > total*0.1 and statu = 0 order by rand())t  group by ip order by rand() limit 3 for update"
+	//disks_sql := "select ip,port from disks where free > total*0.1 and statu = 0 limit 3 for update"
 	blk_sql := "insert into blk(hostip, hostport, disabled, volid) values(?, ?, 0, ?)"
 	blkgrp_sql := "insert into blkgrp(blks, volume_uuid) values(?, ?)"
-	for i := int32(0); i < blkgrpnum; i++ {
+	disk_sql := "update disks set free=free-5 where ip=? and port=?"
+
+	for i := uint64(0); i < blkgrpnum; i++ {
 		dNode := DNode{"ip", "port"}
 		result, err := dr.Select(disks_sql, &dNode)
 		if err != nil {
-			logger.Error("Select Replica DataNode Group error:%v for Expend Volume:%v", err, voluuid)
+			logger.Error("Select Replica DataNode Group error:%v for Expand Volume:%v", err, voluuid)
+			cleanBlk("", pBlockGroups)
 			ack.Ret = -1
 			return &ack, err
 		}
@@ -230,6 +273,7 @@ func (s *VolMgrServer) ExpendVol(ctx context.Context, in *vp.ExpendVolReq) (*vp.
 			ret, blkid := dr.Exec(blk_sql, args...)
 			if ret != 0 {
 				logger.Error("insert blk table error for volume:%v", voluuid)
+				cleanBlk("", pBlockGroups)
 				ack.Ret = -1
 				return &ack, nil
 			}
@@ -244,12 +288,20 @@ func (s *VolMgrServer) ExpendVol(ctx context.Context, in *vp.ExpendVolReq) (*vp.
 
 			blks = blks + strconv.FormatInt(blkid, 10) + ","
 			count++
+
+			args = utils.ConvertValueToArgs(dnode.Host, dport)
+			if ret, _ = dr.Exec(disk_sql, args...); ret != 0 {
+				logger.Error("The disk(%s:%d) update freesize(-5G) for ExpandVol:%v size:%v to db error", dnode.Host, dnode.Port, voluuid, volsize)
+				cleanBlk(blks, pBlockGroups)
+				ack.Ret = -1
+				return &ack, nil
+			}
 		}
-		logger.Debug("The Expend volume:%v size:%v one blkgroup have blks:%s", voluuid, volsize, blks)
+		logger.Debug("The Expand volume:%v once size:%v one blkgroup have blks:%s", voluuid, volsize, blks)
 
 		if count != 3 {
-			logger.Error("Expend The volume:%v size:%v one blkgroup not equal 3 blk(%s), so create volume failed!", voluuid, volsize, count)
-			ack.Ret = 1
+			logger.Error("Expand The volume:%v size:%v one blkgroup not equal 3 blk(%s), so create volume failed!", voluuid, volsize, count)
+			ack.Ret = -1
 			cleanBlk(blks, pBlockGroups)
 			return &ack, err
 		}
@@ -257,7 +309,7 @@ func (s *VolMgrServer) ExpendVol(ctx context.Context, in *vp.ExpendVolReq) (*vp.
 		args := utils.ConvertValueToArgs(blks, voluuid)
 		ret, blkgrpid := dr.Exec(blkgrp_sql, args...)
 		if ret != 0 {
-			logger.Error("Creat Volume:%v insert blks to blkgrp err", voluuid)
+			logger.Error("Expand Volume:%v insert blks to blkgrp err", voluuid)
 			ack.Ret = -1
 			cleanBlk(blks, pBlockGroups)
 			return &ack, nil
@@ -269,20 +321,60 @@ func (s *VolMgrServer) ExpendVol(ctx context.Context, in *vp.ExpendVolReq) (*vp.
 		pBlockGroups = append(pBlockGroups, &tmpBlockGroup)
 	}
 
+	logger.Debug("Expand volume:%v once Size:%v Success", voluuid, volsize)
+	ack.Ret = 1 //success
+	ack.BlockGroups = pBlockGroups
+	return &ack, nil
+}
+
+// Expand volume total size for CLI
+func (s *VolMgrServer) ExpandVolTS(ctx context.Context, in *vp.ExpandVolTSReq) (*vp.ExpandVolTSAck, error) {
+	ack := vp.ExpandVolTSAck{}
+	voluuid := in.VolID
+	volsize := in.ExpandQuota
+
+	var blkgrpnum int32
+	if volsize % BlkSizeG == 0 {
+		blkgrpnum = volsize/BlkSizeG
+	} else {
+    	blkgrpnum = volsize/BlkSizeG + 1
+	}
+
+	volsize = blkgrpnum * BlkSizeG
+
 	// update the volume info to volumes tables
 	sql := "update volumes set size = size + ? where uuid = ?"
 	args := utils.ConvertValueToArgs(volsize, voluuid)
 	if ret, _ := dr.Exec(sql, args...); ret != 0 {
 		logger.Error("Extent volume:%v Size:%v Update volumes table error", voluuid, volsize)
 		ack.Ret = -1
-		cleanBlk("", pBlockGroups)
 		return &ack, nil
 	}
 
-	logger.Debug("Extent volume:%v Size:%v Success", voluuid, volsize)
+	logger.Debug("Expand volume:%v Size:%v to db Success", voluuid, volsize)
 	ack.Ret = 0 //success
-	ack.BlockGroups = pBlockGroups
 	return &ack, nil
+}
+
+func updateBlkOnDiskFreeSize(blkid uint32) int {
+	sql := "select hostip, hostport from blk where blkid=?"
+	dNode := DNode{"hostip", "hostport"}
+	args := utils.ConvertValueToArgs(blkid)
+	result, err := dr.Select(sql, &dNode, args...)
+	if err != nil || len(result) == 0 {
+		logger.Error("select blk ip and port for updateBlkOnDiskFreeSize error:%v",err)
+		return -1
+	}
+
+	dnode := result[0].(DNode)
+	dport, _ := strconv.Atoi(dnode.Port)
+	disk_sql := "update disks set free=free+5 where ip=? and port=?"
+	args = utils.ConvertValueToArgs(dnode.Host, dport)
+	if ret, _ := dr.Exec(disk_sql, args...); ret != 0 {
+		logger.Error("delete blk:%v update the blk on disk freesize error", blkid)
+		return -1
+	}
+	return 0
 }
 
 func cleanBlk(blks string, pBlockGroups []*vp.BlockGroup) int {
@@ -292,10 +384,13 @@ func cleanBlk(blks string, pBlockGroups []*vp.BlockGroup) int {
 	if blks != "" {
 		blkids := strings.Split(blks, ",")
 		for _, ele := range blkids {
-			if ele == "," {
+			if ele == "" {
 				continue
 			}
 			blkid, _ := strconv.Atoi(ele)
+
+			updateBlkOnDiskFreeSize(uint32(blkid))
+
 			args := utils.ConvertValueToArgs(blkid)
 			if ret, _ := dr.Exec(blk_sql, args...); ret != 0 {
 				logger.Error("delete blk:%v from blk tables err", blkid)
@@ -310,6 +405,8 @@ func cleanBlk(blks string, pBlockGroups []*vp.BlockGroup) int {
 			logger.Error("delete blkgrp:%v from blkgrp tables err", v.BlockGroupID)
 			return -1
 		}
+		
+		updateBlkOnDiskFreeSize(v.BlockInfos[k].BlockID)
 
 		args = utils.ConvertValueToArgs(v.BlockInfos[k].BlockID)
 		if ret, _ := dr.Exec(blk_sql, args...); ret != 0 {
@@ -327,6 +424,25 @@ func cleanRS(volid string) int {
 	if ret, _ := dr.Exec(sql, args...); ret != 0 {
 		logger.Error("delete volume:%v from blkgrp tables err", volid)
 		return -1
+	}
+
+	sql = "select hostip, hostport from blk where volid=?"
+	dNode := DNode{"hostip", "hostport"}
+	args = utils.ConvertValueToArgs(volid)
+	result, err := dr.Select(sql, &dNode, args...)
+	if err != nil {
+		return -1
+	}
+
+	for _, v := range result {
+		dnode := v.(DNode)
+		dport, _ := strconv.Atoi(dnode.Port)
+		disk_sql := "update disks set free=free+5 where ip=? and port=?"
+		arg := utils.ConvertValueToArgs(dnode.Host, dport)
+		if ret, _ := dr.Exec(disk_sql, arg...); ret != 0 {
+			logger.Error("delete volume:%v update all blk on disks freesize error", volid)
+			return -1
+		}
 	}
 
 	//delete blk table
