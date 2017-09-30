@@ -124,8 +124,8 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	if in.SpaceQuota % BlkSizeG == 0 {
 		blkgrpnum = in.SpaceQuota/BlkSizeG
 	} else {
-    	blkgrpnum = in.SpaceQuota/BlkSizeG + 1
-	in.SpaceQuota = blkgrpnum * BlkSizeG
+		blkgrpnum = in.SpaceQuota/BlkSizeG + 1
+		in.SpaceQuota = blkgrpnum * BlkSizeG
 	}
 
 	if blkgrpnum > 6 {
@@ -337,7 +337,7 @@ func (s *VolMgrServer) ExpandVolTS(ctx context.Context, in *vp.ExpandVolTSReq) (
 	if volsize % BlkSizeG == 0 {
 		blkgrpnum = volsize/BlkSizeG
 	} else {
-    	blkgrpnum = volsize/BlkSizeG + 1
+		blkgrpnum = volsize/BlkSizeG + 1
 	}
 
 	volsize = blkgrpnum * BlkSizeG
