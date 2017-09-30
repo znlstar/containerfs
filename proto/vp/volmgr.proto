@@ -4,7 +4,8 @@ package vp;
 
 service VolMgr {
     rpc CreateVol(CreateVolReq) returns (CreateVolAck){};
-    rpc ExpendVol(ExpendVolReq) returns (ExpendVolAck){};
+    rpc ExpandVolRS(ExpandVolRSReq) returns (ExpandVolRSAck){};
+    rpc ExpandVolTS(ExpandVolTSReq) returns (ExpandVolTSAck){};
 
     rpc GetVolInfo(GetVolInfoReq) returns (GetVolInfoAck){};
     rpc DeleteVol(DeleteVolReq) returns (DeleteVolAck){};
@@ -29,15 +30,22 @@ message CreateVolAck {
     uint64 RaftGroupID = 3;
 }
 
-message ExpendVolReq {
+message ExpandVolRSReq {
     string VolID = 1 ;
-    int32  ExpendQuota = 2 ;
+    uint64 UsedRS = 2 ;
 }
-message ExpendVolAck {
+message ExpandVolRSAck {
     int32 Ret = 1;
     repeated BlockGroup BlockGroups = 2;
 }
 
+message ExpandVolTSReq {
+    string VolID = 1 ;
+    int32  ExpandQuota = 2 ;
+}
+message ExpandVolTSAck {
+    int32 Ret = 1;
+}
 
 message GetVolInfoReq {
     string UUID = 1 ;
