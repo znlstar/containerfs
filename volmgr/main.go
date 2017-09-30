@@ -128,8 +128,8 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	in.SpaceQuota = blkgrpnum * BlkSizeG
 	}
 
-	if blkgrpnum > 2 {
-		blkgrpnum = 2
+	if blkgrpnum > 6 {
+		blkgrpnum = 6
 	}
 
 	// insert the volume info to volumes tables
@@ -239,9 +239,9 @@ func (s *VolMgrServer) ExpandVolRS(ctx context.Context, in *vp.ExpandVolRSReq) (
 		blkgrpnum = volsize/BlkSize + 1
 	}
 
-	if  blkgrpnum > 2 {
+	if  blkgrpnum > 6 {
 		volsize = OneExpandSize
-		blkgrpnum = 2
+		blkgrpnum = 6
 	}
 
 	pBlockGroups := []*vp.BlockGroup{}
