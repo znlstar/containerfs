@@ -46,8 +46,8 @@ var mysqlConf mysqlc
 
 // BlkSize : each block size
 const (
-	BlkSizeG = 5
-	BlkSize = 5 * 1024 * 1024 * 1024 /*one blksize 5G*/
+	BlkSizeG      = 5
+	BlkSize       = 5 * 1024 * 1024 * 1024  /*one blksize 5G*/
 	OneExpandSize = 30 * 1024 * 1024 * 1024 /*allocated volumesize 30G for each time*/
 )
 
@@ -121,8 +121,8 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 
 	//the volume need block group total numbers
 	var blkgrpnum int32
-	if in.SpaceQuota % BlkSizeG == 0 {
-		blkgrpnum = in.SpaceQuota/BlkSizeG
+	if in.SpaceQuota%BlkSizeG == 0 {
+		blkgrpnum = in.SpaceQuota / BlkSizeG
 	} else {
 		blkgrpnum = in.SpaceQuota/BlkSizeG + 1
 		in.SpaceQuota = blkgrpnum * BlkSizeG
@@ -148,7 +148,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	blk_sql := "insert into blk(hostip, hostport, disabled, volid) values(?, ?, 0, ?)"
 	blkgrp_sql := "insert into blkgrp(blks, volume_uuid) values(?, ?)"
 	disk_sql := "update disks set free=free-5 where ip=? and port=?"
-	
+
 	for i := int32(0); i < blkgrpnum; i++ {
 		dNode := DNode{"ip", "port"}
 		result, err := dr.Select(disks_sql, &dNode)
@@ -206,8 +206,9 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 
 // ExpandVol : extent a Volume real size for fuseclient
 type Volume struct {
-	TSize  string
-} 
+	TSize string
+}
+
 func (s *VolMgrServer) ExpandVolRS(ctx context.Context, in *vp.ExpandVolRSReq) (*vp.ExpandVolRSAck, error) {
 	ack := vp.ExpandVolRSAck{}
 	voluuid := in.VolID
@@ -223,8 +224,8 @@ func (s *VolMgrServer) ExpandVolRS(ctx context.Context, in *vp.ExpandVolRSReq) (
 	ts := r[0].(Volume)
 	trs, _ := strconv.Atoi(ts.TSize)
 
-	bgNums := urs / OneExpandSize + 1
-	volsize := uint64(trs) * 1024*1024*1024 - bgNums * OneExpandSize
+	bgNums := urs/OneExpandSize + 1
+	volsize := uint64(trs)*1024*1024*1024 - bgNums*OneExpandSize
 	if volsize <= 0 {
 		ack.Ret = 0
 		return &ack, nil
@@ -232,14 +233,14 @@ func (s *VolMgrServer) ExpandVolRS(ctx context.Context, in *vp.ExpandVolRSReq) (
 
 	//the volume need block group total numbers
 	var blkgrpnum uint64
-	
+
 	if volsize%BlkSize == 0 {
-		blkgrpnum = volsize/BlkSize
+		blkgrpnum = volsize / BlkSize
 	} else {
 		blkgrpnum = volsize/BlkSize + 1
 	}
 
-	if  blkgrpnum > 6 {
+	if blkgrpnum > 6 {
 		volsize = OneExpandSize
 		blkgrpnum = 6
 	}
@@ -334,8 +335,8 @@ func (s *VolMgrServer) ExpandVolTS(ctx context.Context, in *vp.ExpandVolTSReq) (
 	volsize := in.ExpandQuota
 
 	var blkgrpnum int32
-	if volsize % BlkSizeG == 0 {
-		blkgrpnum = volsize/BlkSizeG
+	if volsize%BlkSizeG == 0 {
+		blkgrpnum = volsize / BlkSizeG
 	} else {
 		blkgrpnum = volsize/BlkSizeG + 1
 	}
@@ -362,7 +363,7 @@ func updateBlkOnDiskFreeSize(blkid uint32) int {
 	args := utils.ConvertValueToArgs(blkid)
 	result, err := dr.Select(sql, &dNode, args...)
 	if err != nil || len(result) == 0 {
-		logger.Error("select blk ip and port for updateBlkOnDiskFreeSize error:%v",err)
+		logger.Error("select blk ip and port for updateBlkOnDiskFreeSize error:%v", err)
 		return -1
 	}
 
@@ -405,7 +406,7 @@ func cleanBlk(blks string, pBlockGroups []*vp.BlockGroup) int {
 			logger.Error("delete blkgrp:%v from blkgrp tables err", v.BlockGroupID)
 			return -1
 		}
-		
+
 		updateBlkOnDiskFreeSize(v.BlockInfos[k].BlockID)
 
 		args = utils.ConvertValueToArgs(v.BlockInfos[k].BlockID)

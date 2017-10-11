@@ -1,8 +1,8 @@
 package manager
 
 import (
-	"github.com/ipdcode/containerfs/logger"
 	"database/sql"
+	"github.com/ipdcode/containerfs/logger"
 	"reflect"
 )
 
@@ -22,7 +22,6 @@ func Exec(sql string, args ...interface{}) (int, int64) {
 		return -1, -1
 	}
 
-	
 	if err := tx.Commit(); err != nil {
 		logger.Error("Db Commit error:%v for sql(%v)!", err, sql)
 		return -1, -1
