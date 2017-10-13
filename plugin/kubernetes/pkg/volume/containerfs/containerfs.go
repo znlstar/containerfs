@@ -402,7 +402,7 @@ func (d *containerfsVolumeDeleter) Delete() error {
 	options := []string{}
 	options = append(options, "-volmgr=" + d.spec.Spec.Containerfs.Volmgr)
 	options = append(options, "-metanode=" + d.spec.Spec.Containerfs.Metanode)
-	options = append(options, containerfsDeleteCommand)
+	options = append(options, "-action=" + containerfsDeleteCommand)
 	options = append(options, volumeId)
 	output, err := d.plugin.execCommand(containerfsBinariesPath, options)
 	if err != nil || dstrings.Contains(string(output), "failed") {
@@ -424,7 +424,7 @@ func (p *containerfsVolumeProvisioner) CreateVolume() (r *v1.ContainerfsVolumeSo
 	options := []string{}
 	options = append(options, "-volmgr=" + p.volmgr)
 	options = append(options, "-metanode=" + p.metanode)
-	options = append(options, containerfsCreateCommand)
+	options = append(options, "-action=" + containerfsCreateCommand)
 	options = append(options, p.options.PVName)
 	options = append(options, strconv.Itoa(sizeGB))
 	output, err := p.plugin.execCommand(containerfsBinariesPath, options)
