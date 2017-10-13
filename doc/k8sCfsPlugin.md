@@ -69,7 +69,7 @@ spec:
     spec:
       containers:
         - name: test
-          image: harbor.default.svc.n.jd.local/harbor/test:v1
+          image: busybox
           volumeMounts:
           - mountPath: "/export/Logs"
             name: logs
