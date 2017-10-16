@@ -1,7 +1,6 @@
 package namespace
 
 import (
-	"fmt"
 	pbproto "github.com/golang/protobuf/proto"
 	"github.com/ipdcode/containerfs/logger"
 	"github.com/ipdcode/containerfs/metanode/raftopt"
@@ -486,33 +485,36 @@ func (ns *nameSpace) GetFileChunksDirect(pinode uint64, name string) (int32, []*
 }
 
 //AllocateChunk ...
-func (ns *nameSpace) AllocateChunk(pinode uint64, name string) (int32, *mp.ChunkInfo) {
+func (ns *nameSpace) AllocateChunk() (int32, *mp.ChunkInfo) {
 
 	defer catchPanic()
 
-	var ret int32
+	/*
+		var ret int32
 
-	key := strconv.FormatUint(pinode, 10) + "-" + name
+		key := strconv.FormatUint(pinode, 10) + "-" + name
 
-	fmt.Println("AllocateChunk...")
+		fmt.Println("AllocateChunk...")
 
-	ok, dirent := ns.DentryDBGet(key)
-	if !ok {
-		ret = 2 /*ENOENT*/
-		return ret, nil
-	}
+		ok, dirent := ns.DentryDBGet(key)
+		if !ok {
+			ret = 2 //ENOENT
+			return ret, nil
+		}
 
-	ok, inodeInfo := ns.InodeDBGet(dirent.Inode)
-	if !ok {
-		ret = 2 /*ENOENT*/
-		return ret, nil
-	}
+		ok, inodeInfo := ns.InodeDBGet(dirent.Inode)
+		if !ok {
+			ret = 2 //ENOENT
+			return ret, nil
+		}
+
+	*/
 
 	var chunkInfo = mp.ChunkInfo{}
 	ret, _, blockGroup := ns.ChooseBlockGroup()
 
 	if ret != 0 {
-		return 28 /*ENOSPC*/, nil
+		return 28, nil //ENOSPC
 	}
 	chunkInfo.BlockGroupID = blockGroup.BlockGroupID
 	chunkInfo.ChunkSize = 0
@@ -523,8 +525,8 @@ func (ns *nameSpace) AllocateChunk(pinode uint64, name string) (int32, *mp.Chunk
 		return 1, nil
 	}
 
-	inodeInfo.Chunks = append(inodeInfo.Chunks, &chunkInfo)
-	ns.InodeDBSet(dirent.Inode, inodeInfo)
+	//inodeInfo.Chunks = append(inodeInfo.Chunks, &chunkInfo)
+	//ns.InodeDBSet(dirent.Inode, inodeInfo)
 
 	return 0, &chunkInfo
 
@@ -709,27 +711,6 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID uint32, chunSize int32) {
 
 	ns.BlockGroupDBSet(blockGroupID, blockGroup)
 
-}
-
-//UpdateChunkInfo ...
-func (ns *nameSpace) UpdateChunkInfo(in *mp.UpdateChunkInfoReq) int32 {
-
-	defer catchPanic()
-
-	ok, inodeinfo := ns.InodeDBGet(in.Inode)
-	if !ok {
-		return 0
-	}
-	for i, v := range inodeinfo.Chunks {
-		if v.ChunkID == in.ChunkID {
-			inodeinfo.Chunks[i].Status[in.Position] = in.Status
-			break
-		}
-	}
-
-	ns.InodeDBSet(in.Inode, inodeinfo)
-
-	return 0
 }
 
 //AllocateInodeID ...

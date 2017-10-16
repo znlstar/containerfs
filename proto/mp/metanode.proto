@@ -27,7 +27,7 @@ service MetaNode {
 
     rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
     rpc SyncChunk(SyncChunkReq) returns (SyncChunkAck){};
-    rpc UpdateChunkInfo(UpdateChunkInfoReq) returns (UpdateChunkInfoAck){};
+    //rpc UpdateChunkInfo(UpdateChunkInfoReq) returns (UpdateChunkInfoAck){};
 
     //rpc UpdateBlockGroup(UpdateBlockGroupReq) returns (UpdateBlockGroupAck){};
 
@@ -185,15 +185,11 @@ message GetFileChunksDirectAck {
 
 
 message AllocateChunkReq {
-    int64 SequenceID = 1;
-    string VolID = 2;
-    uint64 ParentInodeID = 3;
-    string Name = 4;
+    string VolID = 1;
 }
 message AllocateChunkAck {
     int32 Ret = 1;
-    int64 SequenceID = 2;
-    ChunkInfoWithBG ChunkInfo = 3; 
+    ChunkInfoWithBG ChunkInfo = 2; 
 }
 
 
@@ -211,17 +207,17 @@ message SyncChunkAck {
     int32 Ret = 1;
 }
 
-message UpdateChunkInfoReq {
-    string  VolID = 1;
-    uint64   ChunkID = 2;
-    int32   Position = 3;
-    int32   Status = 4;
-    uint64  Inode = 5;
-}
+//message UpdateChunkInfoReq {
+//    string  VolID = 1;
+//    uint64   ChunkID = 2;
+//    int32   Position = 3;
+//    int32   Status = 4;
+ //   uint64  Inode = 5;
+//}
 
-message UpdateChunkInfoAck {
-    int32 Ret = 1;
-}
+//message UpdateChunkInfoAck {
+//    int32 Ret = 1;
+//}
 
 message UpdateBlockGroupReq {
     string  VolID = 1;
@@ -270,7 +266,7 @@ message ChunkInfo{
     uint64 ChunkID = 1;
     int32 ChunkSize = 2;
     uint32 BlockGroupID = 3;
-    repeated int32 Status = 4;
+    //repeated int32 Status = 4;
 }
 
 message ChunkInfoWithBG{

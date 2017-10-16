@@ -564,8 +564,6 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	f.handles--
 
 	if int(req.Flags)&os.O_WRONLY != 0 || int(req.Flags)&os.O_RDWR != 0 {
-		//f.cfile.Flush()
-		f.cfile.CloseConns()
 		f.writers--
 	}
 
@@ -619,11 +617,9 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 	if w != int32(len(req.Data)) {
 		if w == -1 {
 			logger.Error("Write Failed Err:ENOSPC")
-			f.cfile.CloseConns()
 			return fuse.Errno(syscall.ENOSPC)
 		}
 		logger.Error("Write Failed Err:EIO")
-		f.cfile.CloseConns()
 		return fuse.Errno(syscall.EIO)
 
 	}
@@ -646,7 +642,6 @@ func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 
 	if ret := f.cfile.Flush(); ret != 0 {
 		logger.Error("Flush Flush err ...")
-		f.cfile.CloseConns()
 		return fuse.Errno(syscall.EIO)
 	}
 	//logger.Debug("Flush end : name %v ,inode %v, pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
@@ -668,7 +663,6 @@ func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 
 	if ret := f.cfile.Flush(); ret != 0 {
 		logger.Error("Fsync Flush err ...")
-		f.cfile.CloseConns()
 		return fuse.Errno(syscall.EIO)
 	}
 
@@ -744,18 +738,18 @@ func main() {
 	}()
 
 	//allocate volume blkgrp
-	tic := time.NewTicker(30*time.Second)
+	tic := time.NewTicker(30 * time.Second)
 	go func() {
-        for range tic.C {
-            ret := cfs.ExpandVolRS(*uuid, *mountPoint)
-            if ret == -1 {
-                logger.Error("Expand volume%v once error",*uuid)
-            } else if ret == -2 {
-                logger.Error("Expand volume%v once by another client, this client not need expand",*uuid)
-            } else if ret == 1 {
+		for range tic.C {
+			ret := cfs.ExpandVolRS(*uuid, *mountPoint)
+			if ret == -1 {
+				logger.Error("Expand volume%v once error", *uuid)
+			} else if ret == -2 {
+				logger.Error("Expand volume%v once by another client, this client not need expand", *uuid)
+			} else if ret == 1 {
 				logger.Debug("Expand volume%v once sucess", *uuid)
 			}
-        }
+		}
 	}()
 
 	err := mount(*uuid, *mountPoint, *isReadOnly)
@@ -764,12 +758,27 @@ func main() {
 	}
 }
 
+func closeConns(fs *cfs.CFS) {
+
+	if fs.Conn != nil {
+		fs.Conn.Close()
+	}
+	for _, v := range fs.DataConn {
+		if v != nil {
+			v.Close()
+		}
+	}
+
+}
+
 func mount(uuid, mountPoint string, isReadOnly int) error {
 
 	cfs := cfs.OpenFileSystem(uuid)
 	if cfs == nil {
 		return fuse.Errno(syscall.EIO)
 	}
+
+	defer closeConns(cfs)
 
 	if isReadOnly == 0 {
 		c, err := fuse.Mount(
