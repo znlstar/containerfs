@@ -320,7 +320,6 @@ func (s *MetaNodeServer) GetFileChunksDirect(ctx context.Context, in *mp.GetFile
 		var chunkInfoWithBG mp.ChunkInfoWithBG
 		chunkInfoWithBG.ChunkID = v.ChunkID
 		chunkInfoWithBG.ChunkSize = v.ChunkSize
-		chunkInfoWithBG.Status = v.Status
 
 		ok1, blockGroup := nameSpace.BlockGroupDBGet(v.BlockGroupID)
 		if !ok1 {
@@ -341,14 +340,12 @@ func (s *MetaNodeServer) GetFileChunksDirect(ctx context.Context, in *mp.GetFile
 func (s *MetaNodeServer) AllocateChunk(ctx context.Context, in *mp.AllocateChunkReq) (*mp.AllocateChunkAck, error) {
 	ack := mp.AllocateChunkAck{}
 
-	ack.SequenceID = in.SequenceID
-
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
 		ack.Ret = ret
 		return &ack, nil
 	}
-	ret, chunkInfo := nameSpace.AllocateChunk(in.ParentInodeID, in.Name)
+	ret, chunkInfo := nameSpace.AllocateChunk()
 	if ret != 0 {
 		ack.Ret = ret
 		return &ack, nil
@@ -379,18 +376,6 @@ func (s *MetaNodeServer) SyncChunk(ctx context.Context, in *mp.SyncChunkReq) (*m
 		return &ack, nil
 	}
 	ack.Ret = nameSpace.SyncChunk(in.ParentInodeID, in.Name, chunkinfo)
-	return &ack, nil
-}
-
-// UpdateChunkInfo ...
-func (s *MetaNodeServer) UpdateChunkInfo(ctx context.Context, in *mp.UpdateChunkInfoReq) (*mp.UpdateChunkInfoAck, error) {
-	ack := mp.UpdateChunkInfoAck{}
-	ret, nameSpace := ns.GetNameSpace(in.VolID)
-	if ret != 0 {
-		ack.Ret = ret
-		return &ack, nil
-	}
-	ack.Ret = nameSpace.UpdateChunkInfo(in)
 	return &ack, nil
 }
 

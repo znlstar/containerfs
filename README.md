@@ -13,6 +13,7 @@ a volume = a metadata table + multiple block groups
 
 # Guide
 
-[here](doc/guide.md)
+[startup](doc/guide.md)
+[with k8s](doc/k8sCfsPlugin.md)
 
 # User Case
