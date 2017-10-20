@@ -813,6 +813,7 @@ func mount(uuid, mountPoint string, isReadOnly int) error {
 	c, err := fuse.Mount(
 		mountPoint,
 		fuse.AllowOther(),
+		fuse.ReadOnly(),
 		fuse.MaxReadahead(128*1024),
 		fuse.AsyncRead(),
 		fuse.WritebackCache(),
