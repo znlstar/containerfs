@@ -240,7 +240,7 @@ func (d *dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 		}
 	*/
 
-	logger.Debug("Create file get locker ,  name %v parentino %v parentname %v", req.Name, d.inode, d.name)
+	//logger.Debug("Create file get locker ,  name %v parentino %v parentname %v", req.Name, d.inode, d.name)
 
 	ret, cfile := d.fs.cfs.CreateFileDirect(d.inode, req.Name, int(req.Flags))
 	if ret != 0 {
@@ -308,7 +308,7 @@ func (d *dir) Mkdir(ctx context.Context, req *fuse.MkdirRequest) (fs.Node, error
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	logger.Debug("Mkdir get locker ,  name %v parentino %v parentname %v", req.Name, d.inode, d.name)
+	//logger.Debug("Mkdir get locker ,  name %v parentino %v parentname %v", req.Name, d.inode, d.name)
 
 	ret, inode := d.fs.cfs.CreateDirDirect(d.inode, req.Name)
 	if ret == -1 {
@@ -341,7 +341,7 @@ func (d *dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	logger.Debug("Remove get locker , name %v parentino %v parentname %v", req.Name, d.inode, d.name)
+	//logger.Debug("Remove get locker , name %v parentino %v parentname %v", req.Name, d.inode, d.name)
 
 	if req.Dir {
 		ret := d.fs.cfs.DeleteDirDirect(d.inode, req.Name)
@@ -512,7 +512,7 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	logger.Debug("Open get locker : name %v inode %v Flags %v pinode %v pname %v", f.name, f.inode, req.Flags, f.parent.inode, f.parent.name)
+	//logger.Debug("Open get locker : name %v inode %v Flags %v pinode %v pname %v", f.name, f.inode, req.Flags, f.parent.inode, f.parent.name)
 
 	if int(req.Flags)&os.O_TRUNC != 0 {
 		return nil, fuse.Errno(syscall.EPERM)
@@ -559,13 +559,11 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	logger.Debug("Release get locker : name %v pinode %v pname %v", f.name, f.parent.inode, f.parent.name)
+	//logger.Debug("Release get locker : name %v pinode %v pname %v", f.name, f.parent.inode, f.parent.name)
 
 	f.handles--
 
 	if int(req.Flags)&os.O_WRONLY != 0 || int(req.Flags)&os.O_RDWR != 0 {
-		//f.cfile.Flush()
-		f.cfile.CloseConns()
 		f.writers--
 	}
 
@@ -619,11 +617,9 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 	if w != int32(len(req.Data)) {
 		if w == -1 {
 			logger.Error("Write Failed Err:ENOSPC")
-			f.cfile.CloseConns()
 			return fuse.Errno(syscall.ENOSPC)
 		}
 		logger.Error("Write Failed Err:EIO")
-		f.cfile.CloseConns()
 		return fuse.Errno(syscall.EIO)
 
 	}
@@ -637,19 +633,18 @@ var _ = fs.HandleFlusher(&File{})
 // Flush ...
 func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 
-	logger.Debug("Flush start : name %v ,inode %v, pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
+	//logger.Debug("Flush start : name %v ,inode %v, pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	logger.Debug("Flush get locker : name %v ,inode %v, pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
+	//logger.Debug("Flush get locker : name %v ,inode %v, pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
 
 	if ret := f.cfile.Flush(); ret != 0 {
 		logger.Error("Flush Flush err ...")
-		f.cfile.CloseConns()
 		return fuse.Errno(syscall.EIO)
 	}
-	logger.Debug("Flush end : name %v ,inode %v, pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
+	//logger.Debug("Flush end : name %v ,inode %v, pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
 
 	return nil
 }
@@ -664,11 +659,10 @@ func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	logger.Debug("Fsync get locker : name %v ,inode %v, pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
+	//logger.Debug("Fsync get locker : name %v ,inode %v, pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
 
 	if ret := f.cfile.Flush(); ret != 0 {
 		logger.Error("Fsync Flush err ...")
-		f.cfile.CloseConns()
 		return fuse.Errno(syscall.EIO)
 	}
 
@@ -744,18 +738,18 @@ func main() {
 	}()
 
 	//allocate volume blkgrp
-	tic := time.NewTicker(30*time.Second)
+	tic := time.NewTicker(30 * time.Second)
 	go func() {
-        for range tic.C {
-            ret := cfs.ExpandVolRS(*uuid, *mountPoint)
-            if ret == -1 {
-                logger.Error("Expand volume%v once error",*uuid)
-            } else if ret == -2 {
-                logger.Error("Expand volume%v once by another client, this client not need expand",*uuid)
-            } else if ret == 1 {
+		for range tic.C {
+			ret := cfs.ExpandVolRS(*uuid, *mountPoint)
+			if ret == -1 {
+				logger.Error("Expand volume%v once error", *uuid)
+			} else if ret == -2 {
+				logger.Error("Expand volume%v once by another client, this client not need expand", *uuid)
+			} else if ret == 1 {
 				logger.Debug("Expand volume%v once sucess", *uuid)
 			}
-        }
+		}
 	}()
 
 	err := mount(*uuid, *mountPoint, *isReadOnly)
@@ -764,13 +758,32 @@ func main() {
 	}
 }
 
+func closeConns(fs *cfs.CFS) {
+
+	if fs.Conn != nil {
+		fs.Conn.Close()
+	}
+	for _, v := range fs.DataConn {
+		if v != nil {
+			v.Close()
+		}
+	}
+
+}
+
 func mount(uuid, mountPoint string, isReadOnly int) error {
 
 	cfs := cfs.OpenFileSystem(uuid)
+	if cfs == nil {
+		return fuse.Errno(syscall.EIO)
+	}
+
+	defer closeConns(cfs)
 
 	if isReadOnly == 0 {
 		c, err := fuse.Mount(
 			mountPoint,
+			fuse.AllowOther(),
 			fuse.MaxReadahead(128*1024),
 			fuse.AsyncRead(),
 			fuse.WritebackCache(),
@@ -799,6 +812,8 @@ func mount(uuid, mountPoint string, isReadOnly int) error {
 
 	c, err := fuse.Mount(
 		mountPoint,
+		fuse.AllowOther(),
+		fuse.ReadOnly(),
 		fuse.MaxReadahead(128*1024),
 		fuse.AsyncRead(),
 		fuse.WritebackCache(),

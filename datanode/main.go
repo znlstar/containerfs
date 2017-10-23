@@ -277,16 +277,24 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 
 		totalsize += int64(n)
 
-		ack.Databuf = buf[:n]
-		if err := stream.Send(&ack); err != nil {
-			logger.Error("Send stream data to fuse error:%v", err)
-			return err
+		if totalsize >= readsize {
+
+			n = n - int((totalsize - readsize))
+			ack.Databuf = buf[:n]
+			if err := stream.Send(&ack); err != nil {
+				logger.Error("Send stream data to fuse error:%v", err)
+				return err
+			}
+			break
+
+		} else {
+			ack.Databuf = buf[:n]
+			if err := stream.Send(&ack); err != nil {
+				logger.Error("Send stream data to fuse error:%v", err)
+				return err
+			}
 		}
 
-		if totalsize == readsize {
-			logger.Debug("Request chunkFileName:%v size:%v equal real ret size:%v", chunkFileName, readsize, totalsize)
-			break
-		}
 	}
 
 	return nil

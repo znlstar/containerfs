@@ -30,7 +30,7 @@ func GetLeader(volumeID string) (string, error) {
 			continue
 		}
 		if pmGetMetaLeaderAck.Ret != 0 {
-			time.Sleep(time.Millisecond * 300)
+			//time.Sleep(time.Millisecond * 300)
 			continue
 		}
 		leader = pmGetMetaLeaderAck.Leader

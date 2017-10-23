@@ -41,10 +41,10 @@ var _ volume.ProvisionableVolumePlugin = &containerfsPlugin{}
 const (
 	containerfsPluginName         = "kubernetes.io/containerfs"
 
-	containerfsBinariesPath       = "/usr/libexec/kubernetes/kubelet-plugins/volume/containerfs/cfs-client_flag"
+	containerfsBinariesPath       = "/usr/libexec/kubernetes/kubelet-plugins/volume/containerfs/cfs-CLI"
 	containerfsCreateCommand      = "createvol"
 	containerfsDeleteCommand      = "deletevol"
-	containerfsMountBinariesPath  = "/usr/libexec/kubernetes/kubelet-plugins/volume/containerfs/cfs-fuseclient_flag"
+	containerfsMountBinariesPath  = "/usr/libexec/kubernetes/kubelet-plugins/volume/containerfs/cfs-fuseclient"
 
 	volumeAllocationUnit          = 10
 	volumeUUidLength              = 32
@@ -402,8 +402,8 @@ func (d *containerfsVolumeDeleter) Delete() error {
 	options := []string{}
 	options = append(options, "-volmgr=" + d.spec.Spec.Containerfs.Volmgr)
 	options = append(options, "-metanode=" + d.spec.Spec.Containerfs.Metanode)
-	options = append(options, "-opt=" + containerfsDeleteCommand)
-	options = append(options, "-uuid=" + volumeId)
+	options = append(options, "-action=" + containerfsDeleteCommand)
+	options = append(options, volumeId)
 	output, err := d.plugin.execCommand(containerfsBinariesPath, options)
 	if err != nil || dstrings.Contains(string(output), "failed") {
 		glog.Errorf("containerfs: error deleting volume %v:%s ", err, string(output))
@@ -424,9 +424,9 @@ func (p *containerfsVolumeProvisioner) CreateVolume() (r *v1.ContainerfsVolumeSo
 	options := []string{}
 	options = append(options, "-volmgr=" + p.volmgr)
 	options = append(options, "-metanode=" + p.metanode)
-	options = append(options, "-opt=" + containerfsCreateCommand)
-	options = append(options, "-volname=" + p.options.PVName)
-	options = append(options, "-capacity=" + strconv.Itoa(sizeGB))
+	options = append(options, "-action=" + containerfsCreateCommand)
+	options = append(options, p.options.PVName)
+	options = append(options, strconv.Itoa(sizeGB))
 	output, err := p.plugin.execCommand(containerfsBinariesPath, options)
 	uuid := dstrings.Trim(string(output), "\n")
 	if err != nil || dstrings.Contains(uuid, "failed") || len(uuid) != volumeUUidLength {
