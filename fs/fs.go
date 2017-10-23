@@ -147,7 +147,6 @@ func BlockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 		mpBlockInfo.BlockID = pVpBlockInfo.BlockID
 		mpBlockInfo.DataNodeIP = pVpBlockInfo.DataNodeIP
 		mpBlockInfo.DataNodePort = pVpBlockInfo.DataNodePort
-		mpBlockInfo.Status = pVpBlockInfo.Status
 
 		mpBlockInfos[i] = &mpBlockInfo
 
@@ -171,6 +170,7 @@ func ExpandVolRS(UUID string, MtPath string) int32 {
 	ok, ret := GetFSInfo(UUID)
 	if ok != 0 {
 		os.Remove(path)
+		logger.Error("ExpandVol once volume:%v failed, GetFSInfo error", UUID)
 		return -1
 	}
 
@@ -180,6 +180,8 @@ func ExpandVolRS(UUID string, MtPath string) int32 {
 		os.Remove(path)
 		return 0
 	}
+
+	logger.Debug("Need ExpandVol once volume:%v -- totalsize:%v -- freesize:%v", UUID, ret.TotalSpace, ret.FreeSpace)
 
 	conn, err := DialVolmgr(VolMgrAddr)
 	if err != nil {
@@ -207,22 +209,43 @@ func ExpandVolRS(UUID string, MtPath string) int32 {
 		os.Remove(path)
 		return -1
 	} else if pExpandVolRSAck.Ret == 0 {
-		logger.Error("ExpandVol volume:%v once failed, VolMgr return 0 because volume totalsize not enough expand:%v", UUID)
+		logger.Error("ExpandVol volume:%v once failed, VolMgr return 0 because volume totalsize not enough expand", UUID)
 		os.Remove(path)
 		return 0
 	}
 
+	out := UpdateMetaForExpandVol(UUID, pExpandVolRSAck)
+	if out != 0 {
+		logger.Error("ExpandVol volume:%v once volmgr success but update metanode fail, so rollback volmgr this expand resource", UUID)
+		pDelReq := &vp.DelVolRSForExpandReq{
+			VolID:       UUID,
+			BlockGroups: pExpandVolRSAck.BlockGroups,
+		}
+
+		pDelAck, err := vc.DelVolRSForExpand(ctx, pDelReq)
+		if err != nil || pDelAck.Ret != 0 {
+			logger.Error("ExpandVol once volume:%v volmgr success but update meta failed, then rollback volmgr error", UUID)
+		}
+		os.Remove(path)
+		return -1
+	}
+
+	os.Remove(path)
+	return 1
+}
+
+func UpdateMetaForExpandVol(UUID string, ack *vp.ExpandVolRSAck) int {
 	var mpBlockGroups []*mp.BlockGroup
-	for _, v := range pExpandVolRSAck.BlockGroups {
+	for _, v := range ack.BlockGroups {
 		mpBlockGroup := BlockGroupVp2Mp(v)
 		mpBlockGroups = append(mpBlockGroups, mpBlockGroup)
 	}
-	// Meta handle
 
+	// Meta handle
 	conn2, err := DialMeta(UUID)
 	if err != nil {
-		logger.Error("ExpandVol volume:%v once failed,Dial to metanode fail :%v", UUID, err)
-		os.Remove(path)
+		logger.Error("ExpandVol volume:%v once volmgr success but Dial to metanode fail :%v", UUID, err)
+		//os.Remove(path)
 		return -1
 	}
 	defer conn2.Close()
@@ -235,18 +258,17 @@ func ExpandVolRS(UUID string, MtPath string) int32 {
 	ctx2, _ := context.WithTimeout(context.Background(), 5*time.Second)
 	pmExpandNameSpaceAck, err := mc.ExpandNameSpace(ctx2, pmExpandNameSpaceReq)
 	if err != nil {
-		logger.Error("ExpandVol volume:%v once failed, MetaNode return error:%v", UUID, err)
-		os.Remove(path)
+		logger.Error("ExpandVol volume:%v once volmgr success but MetaNode return error:%v", UUID, err)
+		//os.Remove(path)
 		return -1
 	}
 	if pmExpandNameSpaceAck.Ret != 0 {
-		logger.Error("ExpandVol volume:%v once failed, MetaNode return not equal 0:%v", UUID)
-		os.Remove(path)
+		logger.Error("ExpandVol volume:%v once volmgr success but MetaNode return not equal 0:%v", UUID)
+		//os.Remove(path)
 		return -1
 	}
 
-	os.Remove(path)
-	return 1
+	return 0
 }
 
 // ExpandVol volume totalsize for CLI...
@@ -254,7 +276,7 @@ func ExpandVolTS(UUID string, expandQuota string) int32 {
 
 	conn, err := DialVolmgr(VolMgrAddr)
 	if err != nil {
-		logger.Error("ExpandVol failed,Dial to volmgr fail :%v\n", err)
+		logger.Error("ExpandVol failed,Dial to volmgr fail :%v", err)
 		return -1
 
 	}
@@ -280,12 +302,36 @@ func ExpandVolTS(UUID string, expandQuota string) int32 {
 
 }
 
+// Migrate bad DataNode blocks data to some Good DataNodes
+func Migrate(ip string, port string) int32 {
+	conn, err := DialVolmgr(VolMgrAddr)
+	if err != nil {
+		logger.Error("Migrate DataNode failed,Dial to volmgr fail :%v", err)
+		return -1
+	}
+	defer conn.Close()
+	vc := vp.NewVolMgrClient(conn)
+	dport, _ := strconv.Atoi(port)
+	pMigrateReq := &vp.MigrateReq{
+		DataNodeIP:   ip,
+		DataNodePort: int32(dport),
+	}
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	_, err = vc.Migrate(ctx, pMigrateReq)
+	if err != nil {
+		logger.Error("Migrate bad DataNode(%v:%v) all Blocks not finished err : %v", ip, port, err)
+		return -1
+	}
+
+	return 0
+}
+
 // GetVolInfo volume info
 func GetVolInfo(name string) (int32, *vp.GetVolInfoAck) {
 
 	conn, err := DialVolmgr(VolMgrAddr)
 	if err != nil {
-		logger.Error("GetVolInfo failed,Dial to volmgr fail :%v\n", err)
+		logger.Error("GetVolInfo failed,Dial to volmgr fail :%v", err)
 		return -1, nil
 	}
 	defer conn.Close()

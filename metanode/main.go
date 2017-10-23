@@ -379,6 +379,30 @@ func (s *MetaNodeServer) SyncChunk(ctx context.Context, in *mp.SyncChunkReq) (*m
 	return &ack, nil
 }
 
+// UpdateBlockGroup ...
+func (s *MetaNodeServer) UpdateBlockGroup(ctx context.Context, in *mp.UpdateBlockGroupReq) (*mp.UpdateBlockGroupAck, error) {
+	ack := mp.UpdateBlockGroupAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ack.Ret = nameSpace.UpdateBlockGroup(in.BlockInfos)
+	return &ack, nil
+}
+
+// MigrateBlockGroup ...
+func (s *MetaNodeServer) MigrateBlockGroup(ctx context.Context, in *mp.MigrateBlockGroupReq) (*mp.MigrateBlockGroupAck, error) {
+	ack := mp.MigrateBlockGroupAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ack.Ret = nameSpace.MigrateBlockGroup(in.BlockGroupID, in.OldBlockID, in.NewBlock)
+	return &ack, nil
+}
+
 func startMetaDataService(metaServer *MetaNodeServer) {
 
 	lis, err := net.Listen("tcp", metaServer.Addr.Grpc)

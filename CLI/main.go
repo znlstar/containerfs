@@ -24,6 +24,7 @@ func main() {
 	flag.StringVar(&cmd,"action","",`
 		createvol [volumename ] size
 		expandvol [volumeuuid ] size
+		migrate [datanodeIP] [datanodePort]
 		deletevol [volumeuuid ]
 		snapshootvol [volumeuuid ]
 		getvolleader [volumeuuid ]
@@ -73,6 +74,20 @@ func main() {
 		if ret != 0 {
 			fmt.Println("failed")
 		}
+
+	case "migrate":
+		argNum := flag.NArg()
+		if argNum != 2 {
+			fmt.Println("migrate [datanodeIP] [datanodePort]")
+			os.Exit(1)
+		}
+		ret := fs.Migrate(flag.Arg(0), flag.Arg(1))
+		if ret != 0 {
+			fmt.Println("Migrate failed")
+		} else {
+			fmt.Println("Migrate process on background")
+		}
+
 	case "deletevol":
 		argNum := flag.NArg()
 		if argNum != 1 {

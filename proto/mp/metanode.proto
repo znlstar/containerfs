@@ -27,9 +27,9 @@ service MetaNode {
 
     rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
     rpc SyncChunk(SyncChunkReq) returns (SyncChunkAck){};
-    //rpc UpdateChunkInfo(UpdateChunkInfoReq) returns (UpdateChunkInfoAck){};
 
-    //rpc UpdateBlockGroup(UpdateBlockGroupReq) returns (UpdateBlockGroupAck){};
+    rpc UpdateBlockGroup(UpdateBlockGroupReq) returns (UpdateBlockGroupAck){};
+    rpc MigrateBlockGroup(MigrateBlockGroupReq) returns (MigrateBlockGroupAck){};
 
 }
 
@@ -182,8 +182,6 @@ message GetFileChunksDirectAck {
     uint64 Inode = 3;
 }
 
-
-
 message AllocateChunkReq {
     string VolID = 1;
 }
@@ -191,10 +189,6 @@ message AllocateChunkAck {
     int32 Ret = 1;
     ChunkInfoWithBG ChunkInfo = 2; 
 }
-
-
-
-
 
 message SyncChunkReq {
     string VolID = 1;
@@ -207,26 +201,34 @@ message SyncChunkAck {
     int32 Ret = 1;
 }
 
-//message UpdateChunkInfoReq {
-//    string  VolID = 1;
-//    uint64   ChunkID = 2;
-//    int32   Position = 3;
-//    int32   Status = 4;
- //   uint64  Inode = 5;
-//}
 
-//message UpdateChunkInfoAck {
-//    int32 Ret = 1;
-//}
+message BlkInfo {
+    uint32 BgpID  = 1;
+    uint32 BlockID = 2;
+    int32 Status = 3;
+}
 
 message UpdateBlockGroupReq {
-    string  VolID = 1;
-    BlockGroup   BlockGroup = 2;
+    string     VolID = 1;
+    repeated   BlkInfo BlockInfos = 2;
 }
 
 message UpdateBlockGroupAck {
     int32 Ret = 1;
 }
+
+
+message MigrateBlockGroupReq {
+    string  VolID = 1;
+    uint32 BlockGroupID = 2;
+    uint32 OldBlockID = 3;
+    BlockInfo NewBlock = 4;
+}
+
+message MigrateBlockGroupAck {
+    int32 Ret = 1;
+}
+
 
 message InodeInfo{
     int64 ModifiTime = 1;
@@ -266,12 +268,10 @@ message ChunkInfo{
     uint64 ChunkID = 1;
     int32 ChunkSize = 2;
     uint32 BlockGroupID = 3;
-    //repeated int32 Status = 4;
 }
 
 message ChunkInfoWithBG{
     uint64 ChunkID = 1;
     int32 ChunkSize = 2;
     BlockGroup BlockGroup = 3;
-    repeated int32 Status = 4;
 }

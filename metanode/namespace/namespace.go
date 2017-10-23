@@ -69,7 +69,17 @@ func initNameSpace(rs *raft.RaftServer, nameSpace *nameSpace, UUID string) int32
 
 	time.Sleep(time.Second * 2)
 
-	if !rs.IsLeader(nameSpace.RaftGroupID) {
+	var flag bool
+	for i := 0; i < 3; i++ {
+		if !rs.IsLeader(nameSpace.RaftGroupID) {
+			time.Sleep(time.Second * 1)
+			continue
+		} else {
+			flag = true
+			break
+		}
+	}
+	if !flag {
 		return 0
 	}
 
@@ -82,15 +92,12 @@ func initNameSpace(rs *raft.RaftServer, nameSpace *nameSpace, UUID string) int32
 		return 0
 	}
 
-	var blockgroupIDs []uint32
 	for _, v := range tmpBlockGroups {
 		v.FreeSize = BlockGroupSize
-
 		err := nameSpace.BlockGroupDBSet(v.BlockGroupID, nameSpace.BlockGroupVp2Mp(v))
 		if err != nil {
 			continue
 		}
-		blockgroupIDs = append(blockgroupIDs, v.BlockGroupID)
 	}
 
 	tmpInodeInfo := mp.InodeInfo{
@@ -219,6 +226,8 @@ func (ns *nameSpace) GetFSInfo(volID string) mp.GetFSInfoAck {
 func (ns *nameSpace) ExpandNameSpace(blockGroups []*mp.BlockGroup) int32 {
 
 	defer catchPanic()
+
+	logger.Debug("ExpandNameSpace %v , blockgroups num %v", blockGroups, len(blockGroups))
 
 	for _, v := range blockGroups {
 		v.FreeSize = BlockGroupSize
@@ -591,6 +600,10 @@ func (ns *nameSpace) SyncChunk(pinode uint64, name string, chunkinfo *mp.ChunkIn
 
 	pTmpBlockGroup.FreeSize = pTmpBlockGroup.FreeSize - int64(blockGroupUsed)
 
+	if pTmpBlockGroup.FreeSize <= ChunkSize {
+		pTmpBlockGroup.Status = blockGroupFull
+	}
+
 	err = ns.BlockGroupDBSet(chunkinfo.BlockGroupID, pTmpBlockGroup)
 	if err != nil {
 		ns.Unlock()
@@ -623,7 +636,6 @@ func (ns *nameSpace) BlockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 		mpBlockInfo.BlockID = pVpBlockInfo.BlockID
 		mpBlockInfo.DataNodeIP = pVpBlockInfo.DataNodeIP
 		mpBlockInfo.DataNodePort = pVpBlockInfo.DataNodePort
-		mpBlockInfo.Status = pVpBlockInfo.Status
 
 		mpBlockInfos[i] = &mpBlockInfo
 
@@ -633,6 +645,11 @@ func (ns *nameSpace) BlockGroupVp2Mp(in *vp.BlockGroup) *mp.BlockGroup {
 	return &mpBlockGroup
 
 }
+
+const (
+	blockGroupFree = 0
+	blockGroupFull = 2
+)
 
 //ChooseBlockGroup ...
 func (ns *nameSpace) ChooseBlockGroup() (int32, uint32, *mp.BlockGroup) {
@@ -653,23 +670,30 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, uint32, *mp.BlockGroup) {
 			continue
 		}
 
-		if blockGroup.Status == 2 {
+		if blockGroup.Status == blockGroupFull {
 			continue
 		}
 
-		if blockGroup.FreeSize <= ChunkSize {
-			blockGroup.Status = 2
-		} else {
-			blockGroup.Status = 1
+		blksBadFlag := false
+		for _, v := range blockGroup.BlockInfos {
+			if v.Status != 0 {
+				blksBadFlag = true
+				break
+			}
 		}
+		if blksBadFlag {
+			continue
+		}
+
 		logger.Debug("find a blockgroup,blgid:%v\n", blockGroup.BlockGroupID)
 		flag = true
 		break
 	}
 
 	ns.RaftGroup.BlockGroupLocker.RUnlock()
+
 	if flag {
-		ns.BlockGroupDBSet(blockGroup.BlockGroupID, &blockGroup)
+		//ns.BlockGroupDBSet(blockGroup.BlockGroupID, &blockGroup)
 		return 0, blockGroup.BlockGroupID, &blockGroup
 	}
 	return 1, 0, nil
@@ -687,30 +711,82 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID uint32, chunSize int32) {
 		return
 	}
 
-	var status int32
 	blockGroup.FreeSize = blockGroup.FreeSize + int64(chunSize)
-	if blockGroup.FreeSize > BlockGroupSize {
-		blockGroup.FreeSize = BlockGroupSize
-	}
-	if blockGroup.FreeSize > int64(ChunkSize) {
-		status = 1
-		if blockGroup.Status != status && blockGroup.Status != 3 {
-			blockGroup.Status = 1
-			//ns.SetBlockGroupStatus(blockGroupID, blockGroup.Status)
-		}
 
-	}
-	if blockGroup.FreeSize == BlockGroupSize {
-		status = 0
-		if blockGroup.Status != status && blockGroup.Status != 3 {
-			blockGroup.Status = 0
-			//ns.SetBlockGroupStatus(blockGroupID, blockGroup.Status)
+	/*
+		if blockGroup.FreeSize > BlockGroupSize {
+			blockGroup.FreeSize = BlockGroupSize
+		}
+	*/
+
+	if blockGroup.FreeSize > int64(ChunkSize) {
+
+		if blockGroup.Status == blockGroupFull {
+			blockGroup.Status = blockGroupFree
 		}
 
 	}
 
 	ns.BlockGroupDBSet(blockGroupID, blockGroup)
 
+}
+
+func (ns *nameSpace) UpdateBlockGroup(blkinfo []*mp.BlkInfo) int32 {
+
+	ns.Lock()
+
+	logger.Debug("UpdateBlockGroup blkinfo :%v ", blkinfo)
+
+	for _, v := range blkinfo {
+		ok, blockGroup := ns.BlockGroupDBGet(v.BgpID)
+		if !ok {
+			continue
+		}
+		for i, vv := range blockGroup.BlockInfos {
+			if vv.BlockID == v.BlockID {
+				blockGroup.BlockInfos[i].Status = v.Status
+				break
+			}
+		}
+		ns.BlockGroupDBSet(v.BgpID, blockGroup)
+	}
+	ns.Unlock()
+
+	return 0
+
+}
+func (ns *nameSpace) MigrateBlockGroup(blockGroupID uint32, oldBlockID uint32, newBlock *mp.BlockInfo) int32 {
+
+	ns.Lock()
+	defer ns.Unlock()
+
+	logger.Debug("MigrateBlockGroup Start ...")
+
+	ok, blockGroup := ns.BlockGroupDBGet(blockGroupID)
+	if !ok {
+		return -1
+	}
+
+	logger.Debug("MigrateBlockGroup befor , blockgroup %v", blockGroup)
+
+	var newBlockInfos []*mp.BlockInfo
+
+	for _, v := range blockGroup.BlockInfos {
+		if v.BlockID == oldBlockID {
+			continue
+		} else {
+			newBlockInfos = append(newBlockInfos, v)
+		}
+	}
+	newBlockInfos = append(newBlockInfos, newBlock)
+
+	blockGroup.BlockInfos = newBlockInfos
+
+	logger.Debug("MigrateBlockGroup After , blockgroup %v", blockGroup)
+
+	ns.BlockGroupDBSet(blockGroupID, blockGroup)
+
+	return 0
 }
 
 //AllocateInodeID ...

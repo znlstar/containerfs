@@ -6,6 +6,8 @@ service VolMgr {
     rpc CreateVol(CreateVolReq) returns (CreateVolAck){};
     rpc ExpandVolRS(ExpandVolRSReq) returns (ExpandVolRSAck){};
     rpc ExpandVolTS(ExpandVolTSReq) returns (ExpandVolTSAck){};
+    rpc Migrate(MigrateReq) returns (MigrateAck){};
+    rpc DelVolRSForExpand(DelVolRSForExpandReq) returns (DelVolRSForExpandAck){};
 
     rpc GetVolInfo(GetVolInfoReq) returns (GetVolInfoAck){};
     rpc DeleteVol(DeleteVolReq) returns (DeleteVolAck){};
@@ -13,8 +15,6 @@ service VolMgr {
     //rpc ListVol(ListVolReq) returns (ListVolAck){};
     rpc DatanodeRegistry(DatanodeRegistryReq) returns (DatanodeRegistryAck){};
     rpc DatanodeHeartbeat(DatanodeHeartbeatReq) returns (DatanodeHeartbeatAck){};
-
-    rpc UpdateChunkInfo(UpdateChunkInfoReq) returns (UpdateChunkInfoAck){};
 
 }
 
@@ -44,6 +44,24 @@ message ExpandVolTSReq {
     int32  ExpandQuota = 2 ;
 }
 message ExpandVolTSAck {
+    int32 Ret = 1;
+}
+
+message MigrateReq {
+    string DataNodeIP = 1;
+    int32  DataNodePort = 2;
+}
+
+message MigrateAck {
+    int32 Ret = 1;
+}
+
+message DelVolRSForExpandReq {
+    string VolID = 1;
+    repeated BlockGroup BlockGroups = 2;
+}
+
+message DelVolRSForExpandAck {
     int32 Ret = 1;
 }
 
@@ -120,24 +138,6 @@ message DatanodeHeartbeatReq {
 
 message DatanodeHeartbeatAck {
 }
-
-
-message UpdateChunkInfoReq {
-    string   Ip = 1;
-    int32   Port = 2;
-    string  VolID = 3;
-    uint32   BlockGroupID = 4;
-    uint32   BlockID = 5;
-    uint64   ChunkID = 6;
-    uint64   Inode = 7;
-    int32   Position = 8;
-    int32   Status = 9;
-    
-}
-message UpdateChunkInfoAck {
-    int32 Ret = 1;
-}
-
 
 service MdcService {
   rpc FetchMeters (MdcRequest) returns (Meters) {}

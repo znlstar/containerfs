@@ -132,6 +132,7 @@ func (d *dir) Attr(ctx context.Context, a *fuse.Attr) error {
 
 	a.Mode = os.ModeDir | 0755
 	a.Inode = d.inode
+	a.Valid = time.Second
 	/*
 		if d.parent == nil {
 			a.Mode = os.ModeDir | 0755
@@ -496,7 +497,7 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.BlockSize = 4 * 1024 // this is for fuse attr quick update
 	a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
 	a.Mode = 0666
-	//a.Valid = 0
+	a.Valid = time.Second
 
 	return nil
 }
@@ -558,8 +559,6 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-
-	//logger.Debug("Release get locker : name %v pinode %v pname %v", f.name, f.parent.inode, f.parent.name)
 
 	f.handles--
 
@@ -638,13 +637,10 @@ func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	//logger.Debug("Flush get locker : name %v ,inode %v, pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
-
 	if ret := f.cfile.Flush(); ret != 0 {
 		logger.Error("Flush Flush err ...")
 		return fuse.Errno(syscall.EIO)
 	}
-	//logger.Debug("Flush end : name %v ,inode %v, pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
 
 	return nil
 }
@@ -658,8 +654,6 @@ func (f *File) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-
-	//logger.Debug("Fsync get locker : name %v ,inode %v, pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
 
 	if ret := f.cfile.Flush(); ret != 0 {
 		logger.Error("Fsync Flush err ...")
@@ -743,11 +737,11 @@ func main() {
 		for range tic.C {
 			ret := cfs.ExpandVolRS(*uuid, *mountPoint)
 			if ret == -1 {
-				logger.Error("Expand volume%v once error", *uuid)
+				logger.Error("Expand volume: %v one time error", *uuid)
 			} else if ret == -2 {
-				logger.Error("Expand volume%v once by another client, this client not need expand", *uuid)
+				logger.Error("Expand volume: %v by another client, so this client not need expand", *uuid)
 			} else if ret == 1 {
-				logger.Debug("Expand volume%v once sucess", *uuid)
+				logger.Debug("Expand volume: %v one time sucess", *uuid)
 			}
 		}
 	}()
@@ -812,8 +806,8 @@ func mount(uuid, mountPoint string, isReadOnly int) error {
 
 	c, err := fuse.Mount(
 		mountPoint,
-		fuse.AllowOther(),
 		fuse.ReadOnly(),
+		fuse.AllowOther(),
 		fuse.MaxReadahead(128*1024),
 		fuse.AsyncRead(),
 		fuse.WritebackCache(),
