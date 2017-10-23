@@ -7,6 +7,8 @@ service DataNode {
     rpc StreamReadChunk(StreamReadChunkReq) returns (stream StreamReadChunkAck){};
     rpc DeleteChunk(DeleteChunkReq) returns (DeleteChunkAck){};
     rpc DatanodeHealthCheck(DatanodeHealthCheckReq) returns (DatanodeHealthCheckAck){};
+    rpc RecvMigrateMsg(RecvMigrateReq) returns (RecvMigrateAck){};
+    rpc SendMigrateData(stream FInfo) returns (SendAck){};
 }
 
 message WriteChunkReq{
@@ -42,6 +44,30 @@ message DatanodeHealthCheckReq{
 }
 
 message DatanodeHealthCheckAck{
+    int32 Ret = 1;
+}
+
+message RecvMigrateReq{
+    uint32 SrcBlkID = 1;
+    string SrcMount = 2;
+    uint32 DstBlkID = 3;
+    string DstIP = 4;
+    int32  DstPort = 5;
+    string DstMount = 6;
+}
+
+message RecvMigrateAck{
+    int32 Ret = 1;
+}
+
+message FInfo{
+    uint32 DstBlkID = 1;
+    string DstMount = 2;
+    string FName = 3;
+    bytes DataBuf = 4;
+}
+
+message SendAck {
     int32 Ret = 1;
 }
 

@@ -25,7 +25,7 @@
 
 2、在 192.168.100.216 启动 volmgr： 
 
-	/home/cfs/cfs-volmgr -host 192.168.100.216 -port 10001 -sqlhost 192.168.100.216 -sqluser root -sqlpasswd 123456 
+	/home/cfs/cfs-volmgr -host 192.168.100.216 -port 10001 -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923 -sqlhost 192.168.100.216 -sqluser root -sqlpasswd 123456 
 
 3、在 192.168.100.216 192.168.100.17 192.168.100.19 启动 datanode：
 

@@ -2,11 +2,13 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/ipdcode/containerfs/logger"
 	dp "github.com/ipdcode/containerfs/proto/dp"
+	mp "github.com/ipdcode/containerfs/proto/mp"
 	vp "github.com/ipdcode/containerfs/proto/vp"
 	"github.com/ipdcode/containerfs/utils"
 	dr "github.com/ipdcode/containerfs/volmgr/driver"
@@ -29,11 +31,12 @@ type addr struct {
 	log  string
 }
 
+var Wg sync.WaitGroup
+
 // VolMgrServerAddr ...
 var VolMgrServerAddr addr
-
-// Wg ...
-var Wg sync.WaitGroup
+var MetaNodePeers []string
+var MetaNodeAddr string
 
 type mysqlc struct {
 	dbhost     string
@@ -99,7 +102,7 @@ func (s *VolMgrServer) DatanodeHeartbeat(ctx context.Context, in *vp.DatanodeHea
 		logger.Error("The disk(%s:%d) heartbeat update to db error", ip, in.Port)
 	}
 
-	checkandupdatediskstatu(ip, int(in.Port), int(in.Status))
+	//checkAndUpdateDiskStatus(ip, int(in.Port), int(in.Status))
 	return &ack, nil
 }
 
@@ -224,14 +227,24 @@ func (s *VolMgrServer) ExpandVolRS(ctx context.Context, in *vp.ExpandVolRSReq) (
 	ts := r[0].(Volume)
 	trs, _ := strconv.Atoi(ts.TSize)
 
-	bgNums := urs/OneExpandSize + 1
-	volsize := uint64(trs)*1024*1024*1024 - bgNums*OneExpandSize
+	// the volume have allocated blockgroup numbers
+	var bgNums uint64
+	if urs%BlkSize == 0 {
+		bgNums = urs / BlkSize
+	} else {
+		bgNums = urs/BlkSize + 1
+	}
+
+	volsize := uint64(trs)*1024*1024*1024 - bgNums*BlkSize
+
+	logger.Debug("ExpandVolRS volumeID %v , trs %v , urs %v , bgNums %v , volsize %v ", voluuid, trs, urs, bgNums, volsize)
+
 	if volsize <= 0 {
 		ack.Ret = 0
 		return &ack, nil
 	}
 
-	//the volume need block group total numbers
+	//the volume need allocate blockgroup numbers
 	var blkgrpnum uint64
 
 	if volsize%BlkSize == 0 {
@@ -357,6 +370,19 @@ func (s *VolMgrServer) ExpandVolTS(ctx context.Context, in *vp.ExpandVolTSReq) (
 	return &ack, nil
 }
 
+func (s *VolMgrServer) DelVolRSForExpand(ctx context.Context, in *vp.DelVolRSForExpandReq) (*vp.DelVolRSForExpandAck, error) {
+	ack := vp.DelVolRSForExpandAck{}
+	ok := cleanBlk("", in.BlockGroups)
+	if ok != 0 {
+		logger.Error("Rollback BlockInfo and BlockGroup info for haveExpand volume:%v error", in.VolID)
+		ack.Ret = -1
+	} else {
+		ack.Ret = 0
+	}
+
+	return &ack, nil
+}
+
 func updateBlkOnDiskFreeSize(blkid uint32) int {
 	sql := "select hostip, hostport from blk where blkid=?"
 	dNode := DNode{"hostip", "hostport"}
@@ -464,6 +490,251 @@ func cleanRS(volid string) int {
 	return 0
 }
 
+// Migrate for Bad DataNode
+type MigInfo struct {
+	BlkID    string
+	VolID    string
+	BlkGrpID string
+	Blks     string
+}
+type BlkInfo struct {
+	Ip    string
+	Port  string
+	Mount string
+	Statu string
+}
+
+type Blk struct {
+	id    uint32
+	ip    string
+	port  int
+	mount string
+	statu int
+}
+
+func (s *VolMgrServer) Migrate(ctx context.Context, in *vp.MigrateReq) (*vp.MigrateAck, error) {
+
+	ack := vp.MigrateAck{}
+
+	go func() {
+		dnIP := in.DataNodeIP
+		dnPort := in.DataNodePort
+		sql := "select blkid,volid, blkgrpid,blks from blk inner join blkgrp on find_in_set(blk.blkid,blkgrp.blks) where blk.hostip=? and blk.hostport=?"
+		pMigInfo := MigInfo{"blkid", "volid", "blkgrpid", "blks"}
+		args := utils.ConvertValueToArgs(dnIP, dnPort)
+		result, err := dr.Select(sql, &pMigInfo, args...)
+		if err != nil || len(result) == 0 {
+			logger.Error("Get from blk table for need Migrate blkds in this node error or Not need Migrate blocks")
+			return
+		}
+
+		totalNum := len(result)
+
+		var successNum int
+		var failedNum int
+
+		logger.Debug("Migrating DataNode(%v:%v) Blocks Start ---------->>>>>>>>>>>>>>> Total nums:%v", dnIP, dnPort, totalNum)
+
+		for i, v := range result {
+			tMigInfo := v.(MigInfo)
+			blkgrpid, _ := strconv.Atoi(tMigInfo.BlkGrpID)
+			blkid, _ := strconv.Atoi(tMigInfo.BlkID)
+
+			ret := BeginMigrate(uint32(blkgrpid), uint32(blkid), tMigInfo.Blks, tMigInfo.VolID)
+			if ret != 0 {
+				failedNum++
+				logger.Error("Migrating DataNode(%v:%v) Block:%v failed ----->>>>>  Total num:%v , cur index:%v", dnIP, dnPort, blkid, totalNum, i)
+			} else {
+				successNum++
+				logger.Debug("Migrating DataNode(%v:%v) Block:%v success ----->>>>>  Total num:%v , cur index:%v", dnIP, dnPort, blkid, totalNum, i)
+			}
+		}
+
+		logger.Debug("Migrating DataNode(%v:%v) Blocks Done ----------<<<<<<<<<<<<<<<<< Total num:%v , Success num:%v , Failed num:%v", dnIP, dnPort, totalNum, successNum, failedNum)
+
+	}()
+
+	ack.Ret = 0
+	return &ack, nil
+}
+
+func BeginMigrate(blkgrpid uint32, blkid uint32, blks string, volid string) int {
+	pBlk := []*Blk{}
+	blkids := strings.Split(blks, ",")
+	pBlkInfo := BlkInfo{"ip", "port", "mount", "statu"}
+	for _, v := range blkids {
+		id, _ := strconv.Atoi(v)
+		if id == 0 || uint32(id) == blkid {
+			continue
+		}
+
+		sql := "select ip,port,mount,statu from disks where ip = (select hostip from blk where blkid = ?)"
+		//sql := "select ip,port,mount,statu from disks where port = (select hostport from blk where blkid = ?)"
+		args := utils.ConvertValueToArgs(id)
+		result, err := dr.Select(sql, &pBlkInfo, args...)
+		if err != nil || len(result) == 0 {
+			logger.Error("Get backup blk:%d on which host error or statu is bad for Migrate blk:%v", id, blkid)
+			continue
+		}
+
+		tBlk := Blk{}
+		tBlkInfo := result[0].(BlkInfo)
+
+		tBlk.id = uint32(id)
+		tBlk.ip = tBlkInfo.Ip
+		tBlk.port, _ = strconv.Atoi(tBlkInfo.Port)
+		tBlk.mount = tBlkInfo.Mount
+		tBlk.statu, _ = strconv.Atoi(tBlkInfo.Statu)
+		pBlk = append(pBlk, &tBlk)
+	}
+
+	if len(pBlk) != 2 {
+		logger.Error("Need Migrate Block:%v but the Backup BlockNum:%v not equal 2, so stop this Block Migrate", blkid, len(pBlk))
+		return -1
+	}
+
+	sql := "select ip,port,mount,statu from disks where ip <> ? and ip <> ? and statu = 0 and free > total*0.1 order by rand() limit 1 for update"
+	//sql := "select ip,port,mount,statu from disks where port <> ? and port <> ? and statu = 0 and free > total*0.1 order by rand() limit 1 for update"
+	args := utils.ConvertValueToArgs(pBlk[0].ip, pBlk[1].ip)
+	//args := utils.ConvertValueToArgs(pBlk[0].port, pBlk[1].port)
+	result, err := dr.Select(sql, &pBlkInfo, args...)
+	if err != nil || len(result) == 0 {
+		logger.Error("Find newblk error or not enough newblk for Migrate blockk:%v", blkid)
+		return -1
+	}
+
+	tBlkInfo := result[0].(BlkInfo)
+	sql = "insert into blk(hostip, hostport, disabled, volid) values(?, ?, 0, ?)"
+	newport, _ := strconv.Atoi(tBlkInfo.Port)
+	args = utils.ConvertValueToArgs(tBlkInfo.Ip, newport, volid)
+	ret, newblkid := dr.Exec(sql, args...)
+	if ret != 0 {
+		logger.Error("Migrate insert newblk table error:%s", err)
+		return -1
+	}
+
+	var okflag int
+	for _, v := range pBlk {
+		if v.statu != 0 {
+			continue
+		}
+		logger.Debug("Migrate Block:%v copydata from BackBlock:%v - ip:%v - port:%v - mount:%v to NewBlock:%v", blkid, v.id, v.ip, v.port, v.mount, newblkid)
+		ret := beginMigrateBlk(v.id, v.ip, v.port, v.mount, uint32(newblkid), tBlkInfo.Ip, newport, tBlkInfo.Mount)
+		if ret == 0 {
+			//logger.Debug("Migrate from OldBlk:%v to NewBlk:%v Copy Data from BackupBlk:%v Success!", blkid, newblkid, v.id)
+			metaret := migrateUpdateMeta(volid, blkgrpid, blkid, uint32(newblkid), tBlkInfo.Ip, newport)
+			if metaret == 0 {
+				dbret := migrateUpdateDb(blkgrpid, blkid, blks, uint32(newblkid))
+				if dbret == 0 {
+					logger.Debug("Migrate OldBlock:%v to NewBlock:%v Copydata from BackBlock:%v Success -- migrateUpdateMeta Success -- migrateUpdateDb Success!", blkid, newblkid, v.id)
+					okflag = 1
+				} else {
+					logger.Debug("Migrate OldBlock:%v to NewBlock:%v Copydata from BackBlock:%v Success --  migrateUpdateMeta Success -- migrateUpdateDb Failed!", blkid, newblkid, v.id)
+				}
+				break
+			} else {
+				logger.Debug("Migrate OldBlock:%v to NewBlock:%v Copydata from BackBlock:%v Success but migrateUpdateMeta Failed!", blkid, newblkid, v.id)
+				break
+			}
+
+		} else {
+			logger.Error("Migrate OldBlk:%v to NewBlk:%v Copydata from BackupBlk:%v Failed", blkid, newblkid, v.id)
+			break
+		}
+	}
+	if okflag == 1 {
+		return 0
+	} else {
+                return -1
+	}
+}
+
+func beginMigrateBlk(sid uint32, sip string, sport int, smount string, did uint32, dip string, dport int, dmount string) int32 {
+	sDnAddr := sip + ":" + strconv.Itoa(sport)
+	conn, err := grpc.Dial(sDnAddr, grpc.WithInsecure())
+	if err != nil {
+		logger.Error("Migrate failed : Dial to DestDataNode:%v failed:%v !", sDnAddr, err)
+		return -1
+	}
+	defer conn.Close()
+	dc := dp.NewDataNodeClient(conn)
+	tRecvMigrateReq := &dp.RecvMigrateReq{
+		SrcBlkID: sid,
+		SrcMount: smount,
+		DstIP:    dip,
+		DstPort:  int32(dport),
+		DstBlkID: did,
+		DstMount: dmount,
+	}
+	tRecvMigrateAck, err := dc.RecvMigrateMsg(context.Background(), tRecvMigrateReq)
+	if err != nil {
+		logger.Error("Migrate failed : DestDataNode:%v exec RecvMigrate function failed:%v !", sDnAddr, err)
+		return -1
+	}
+
+	return tRecvMigrateAck.Ret
+}
+
+/*
+message MigrateBlockGroupReq {
+    string  VolID = 1;
+    uint32 BlockGroupID = 2;
+    uint32 OldBlockID = 3;
+    BlockInfo NewBlock = 4;
+}
+*/
+
+func migrateUpdateMeta(volid string, blkgrpid uint32, oldblkid uint32, newblkid uint32, newblkip string, newblkport int) int {
+
+	var blockInfo mp.BlockInfo
+
+	blockInfo.BlockID = newblkid
+	blockInfo.DataNodeIP = utils.InetAton(net.ParseIP(newblkip))
+	blockInfo.DataNodePort = int32(newblkport)
+
+	conn, err := DialMeta(volid)
+	if err != nil {
+		logger.Error("migrateUpdateMeta: Dail Meta Failed err:%v", err)
+		return -1
+	}
+	defer conn.Close()
+	mc := mp.NewMetaNodeClient(conn)
+	migrateBlockGroupReq := &mp.MigrateBlockGroupReq{
+		VolID:        volid,
+		BlockGroupID: blkgrpid,
+		OldBlockID:   oldblkid,
+		NewBlock:     &blockInfo,
+	}
+	_, err = mc.MigrateBlockGroup(context.Background(), migrateBlockGroupReq)
+	if err != nil {
+		logger.Error("migrateUpdateMeta: rpc MigrateBlockGroup failed err:%v", err)
+		return -1
+	}
+
+	return 0
+}
+
+func migrateUpdateDb(blkgrpid uint32, oldblkid uint32, blks string, newblkid uint32) int {
+	oldstr := strconv.FormatInt(int64(oldblkid), 10)
+	newstr := strconv.FormatInt(int64(newblkid), 10)
+	newblks := strings.Replace(blks, oldstr, newstr, -1)
+
+	sql := "update blkgrp set blks=? where blkgrpid=?"
+	args := utils.ConvertValueToArgs(newblks, blkgrpid)
+	if ret, _ := dr.Exec(sql, args...); ret != 0 {
+		logger.Error("Update blkgrp db table from oldblks:%v to newblks:%v where blkgrpid:%v error for MigrateUpdateDb", blks, newblks, blkgrpid)
+		return -1
+	}
+
+	sql = "delete from blk where blkid=?"
+	args = utils.ConvertValueToArgs(oldblkid)
+	if ret, _ := dr.Exec(sql, args...); ret != 0 {
+		logger.Error("delete blk db table have migrate success block:%v error for MigrateUpdateDb", oldblkid)
+		return -1
+	}
+	return 0
+}
+
 //DeleteVol : Delete a Volume for User
 func (s *VolMgrServer) DeleteVol(ctx context.Context, in *vp.DeleteVolReq) (*vp.DeleteVolAck, error) {
 	ack := vp.DeleteVolAck{}
@@ -480,22 +751,6 @@ func (s *VolMgrServer) DeleteVol(ctx context.Context, in *vp.DeleteVolReq) (*vp.
 	return &ack, nil
 }
 
-//UpdateChunkInfo : Meta send need repair chunk, if the chunk have repair complete, ack to Meta
-func (s *VolMgrServer) UpdateChunkInfo(ctx context.Context, in *vp.UpdateChunkInfoReq) (*vp.UpdateChunkInfoAck, error) {
-	ack := vp.UpdateChunkInfoAck{}
-
-	sql := "insert into repair(volid,blkgrpid,blkid,blkip,blkport,chkid,status,position,inode) values(?, ?, ?, ?, ?, ?, ?, ?,?)"
-	args := utils.ConvertValueToArgs(in.VolID, in.BlockGroupID, in.BlockID, in.Ip, in.Port, in.ChunkID, in.Status, in.Position, in.Inode)
-	if ret, _ := dr.Exec(sql, args...); ret != 0 {
-		logger.Error("insert need repair volid:%v - blk:%v - chunk:%v to repair table error!", in.VolID, in.BlockID, in.ChunkID)
-		ack.Ret = -1
-		return &ack, nil
-	}
-
-	ack.Ret = 0
-	return &ack, nil
-}
-
 //GetVolInfo : Get a Volume Info for User
 type VolInfo struct {
 	Name       string
@@ -508,7 +763,7 @@ type BlkGrpInfo struct {
 	Blks   string
 }
 
-type BlkInfo struct {
+type Blkinfo struct {
 	Ip   string
 	Port string
 }
@@ -559,14 +814,14 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 			blkid, _ := strconv.Atoi(ele)
 			blk_sql := "select hostip, hostport from blk where blkid = ?"
 			arg := utils.ConvertValueToArgs(blkid)
-			tBlkInfo := BlkInfo{"hostip", "hostport"}
-			ret, err := dr.Select(blk_sql, &tBlkInfo, arg...)
+			tBlkinfo := Blkinfo{"hostip", "hostport"}
+			ret, err := dr.Select(blk_sql, &tBlkinfo, arg...)
 			if err != nil || len(ret) != 1 {
 				logger.Error("Get each blk:%d on which host error:%s for volume(%s)", blkid, err, voluuid)
 				ack.Ret = 1
 				return &ack, nil
 			}
-			tblkinfo := ret[0].(BlkInfo)
+			tblkinfo := ret[0].(Blkinfo)
 
 			tmpBlockInfo := vp.BlockInfo{}
 			tmpBlockInfo.BlockID = uint32(blkid)
@@ -626,7 +881,7 @@ type Disk struct {
 	Status string
 }
 
-func checkandupdatediskstatu(ip string, port int, statu int) {
+func checkAndUpdateDiskStatus(ip string, port int, statu int) {
 	sql := "select statu from disks where ip=? and port=?"
 	args := utils.ConvertValueToArgs(ip, port)
 	tDisk := Disk{"statu"}
@@ -639,9 +894,9 @@ func checkandupdatediskstatu(ip string, port int, statu int) {
 	dbstatu, _ := strconv.Atoi(tdisk.Status)
 
 	if dbstatu == 0 && statu == 2 {
-		updateDataNodeStatu(ip, port, 2)
+		updateDataNodeStatus(ip, port, 2)
 	} else if dbstatu == 2 && statu == 0 {
-		updateDataNodeStatu(ip, port, 0)
+		updateDataNodeStatus(ip, port, 0)
 	} else {
 		return
 	}
@@ -653,9 +908,8 @@ func detectdatanode(ip string, port int, statu int) {
 	if err != nil {
 		logger.Error("Detect DataNode:%v failed : Dial to datanode failed !", dnAddr)
 		if statu == 0 {
-			updateDataNodeStatu(ip, port, 1)
+			updateDataNodeStatus(ip, port, 1)
 		}
-		Wg.Add(-1)
 		return
 	}
 	defer conn.Close()
@@ -664,19 +918,17 @@ func detectdatanode(ip string, port int, statu int) {
 	pDatanodeHealthCheckAck, err := c.DatanodeHealthCheck(context.Background(), &DatanodeHealthCheckReq)
 	if err != nil {
 		if statu == 0 {
-			updateDataNodeStatu(ip, port, 1)
+			updateDataNodeStatus(ip, port, 1)
 		}
-		Wg.Add(-1)
 		return
 	}
 	if pDatanodeHealthCheckAck.Ret == 1 && statu == 1 {
-		updateDataNodeStatu(ip, port, 0)
-		Wg.Add(-1)
+		updateDataNodeStatus(ip, port, 0)
 		return
 	}
 }
 
-func updateDataNodeStatu(ip string, port int, statu int) {
+func updateDataNodeStatus(ip string, port int, statu int) {
 	sql := "update disks set statu=? where ip=? and port=?"
 	args := utils.ConvertValueToArgs(statu, ip, port)
 	if ret, _ := dr.Exec(sql, args...); ret != 0 {
@@ -700,7 +952,64 @@ func updateDataNodeStatu(ip string, port int, statu int) {
 		}
 		logger.Debug("The disk(%s:%d) recovy,so update from 1 to 0, make it all blks is able", ip, port, statu)
 	}
+
+	if ok := updateMeta(ip, port, statu); ok != 0 {
+		logger.Error("Datanode:(%v:%v) statu have change:%v so update metanode but update failed", ip, port, statu)
+	}
 	return
+}
+
+type BGPS struct {
+	VolID   string
+	BgpID   string
+	BlockID string
+}
+
+func updateMeta(ip string, port int, statu int) int {
+	sql := "select volid, blkgrpid , blkid from blk inner join blkgrp on find_in_set(blk.blkid,blkgrp.blks) where blk.hostip=? and blk.hostport=?"
+	args := utils.ConvertValueToArgs(ip, port)
+	tBGPS := BGPS{"volid", "blkgrpid", "blkid"}
+	result, err := dr.Select(sql, &tBGPS, args...)
+	if err != nil {
+		logger.Error("Datanode(%v:%v) status have change but Update Meta error:%v", ip, port, err)
+		return -1
+	}
+
+	vv := make(map[string][]*mp.BlkInfo)
+	for _, v := range result {
+		tbgps := v.(BGPS)
+
+		var blkinfo mp.BlkInfo
+		bgid, _ := strconv.Atoi(tbgps.BgpID)
+		blkinfo.BgpID = uint32(bgid)
+		bldid, _ := strconv.Atoi(tbgps.BlockID)
+		blkinfo.BlockID = uint32(bldid)
+
+		blkinfo.Status = int32(statu)
+
+		vv[tbgps.VolID] = append(vv[tbgps.VolID], &blkinfo)
+	}
+
+	for k, v := range vv {
+		conn, err := DialMeta(k)
+		if err != nil {
+			logger.Error("Datanode statu have change so update metanode, but Dial to metanode fail:%v for volume:%v", err, k)
+			continue
+		}
+		defer conn.Close()
+		mc := mp.NewMetaNodeClient(conn)
+		pmUpdateBlockGroupReq := &mp.UpdateBlockGroupReq{
+			VolID:      k,
+			BlockInfos: v,
+		}
+		_, err = mc.UpdateBlockGroup(context.Background(), pmUpdateBlockGroupReq)
+		if err != nil {
+			logger.Error("Datanode statu have change so update metanode, but Metanode return err:%v for volume:%v", err, k)
+			continue
+		}
+
+	}
+	return 0
 }
 
 type Disks struct {
@@ -722,9 +1031,61 @@ func detectDataNodes() {
 		tdisks := v.(Disks)
 		port, _ := strconv.Atoi(tdisks.Port)
 		statu, _ := strconv.Atoi(tdisks.Status)
-		Wg.Add(1)
 		go detectdatanode(tdisks.Ip, port, statu)
 	}
+}
+
+// GetLeader Get Metadata Leader Node
+func GetLeader(volumeID string) (string, error) {
+	var leader string
+	var flag bool
+	for _, ip := range MetaNodePeers {
+		conn, err := grpc.Dial(ip, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
+		if err != nil {
+			continue
+		}
+		defer conn.Close()
+		mc := mp.NewMetaNodeClient(conn)
+		pmGetMetaLeaderReq := &mp.GetMetaLeaderReq{
+			VolID: volumeID,
+		}
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		pmGetMetaLeaderAck, err1 := mc.GetMetaLeader(ctx, pmGetMetaLeaderReq)
+		if err1 != nil {
+			continue
+		}
+		if pmGetMetaLeaderAck.Ret != 0 {
+			continue
+		}
+		leader = pmGetMetaLeaderAck.Leader
+		flag = true
+		break
+	}
+	if !flag {
+		return "", errors.New("Get leader failed")
+	}
+	return leader, nil
+
+}
+
+// DialMeta ...
+func DialMeta(volumeID string) (*grpc.ClientConn, error) {
+	var conn *grpc.ClientConn
+	var err error
+
+	MetaNodeAddr, _ = GetLeader(volumeID)
+	conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+	if err != nil {
+		time.Sleep(500 * time.Millisecond)
+		MetaNodeAddr, _ = GetLeader(volumeID)
+		conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+		if err != nil {
+			time.Sleep(500 * time.Millisecond)
+			MetaNodeAddr, _ = GetLeader(volumeID)
+			conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+		}
+	}
+	return conn, err
 }
 
 // StartVolMgrService ...
@@ -788,8 +1149,10 @@ func init() {
 	flag.StringVar(&mysqlConf.dbusername, "sqluser", "root", "ContainerFS DBUSER")
 	flag.StringVar(&mysqlConf.dbpassword, "sqlpasswd", "root", "ContainerFS DBPASSWD")
 	flag.StringVar(&mysqlConf.dbname, "sqldb", "containerfs", "ContainerFS DB")
+	addr := flag.String("metanode", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS metanode hosts")
 
 	flag.Parse()
+	MetaNodePeers = strings.Split(*addr, ",")
 
 	os.MkdirAll(VolMgrServerAddr.log, 0777)
 
@@ -831,7 +1194,6 @@ func main() {
 			detectDataNodes()
 		}
 	}()
-	Wg.Wait()
 	defer dr.DB.Close()
 	go StartVolMgrService()
 	go StarMdcService()

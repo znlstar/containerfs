@@ -73,29 +73,6 @@ CREATE TABLE `disks` (
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 
---
--- Table structure for table `repair`
---
-
-DROP TABLE IF EXISTS `repair`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `repair` (
-  `id` bigint(32) NOT NULL AUTO_INCREMENT,
-  `volid` varchar(32) NOT NULL,
-  `blkgrpid` bigint(32) NOT NULL,
-  `blkid` bigint(32) NOT NULL,
-  `blkip` varchar(32) NOT NULL,
-  `blkport` int(16) NOT NULL,
-  `chkid` bigint(32) NOT NULL,
-  `inode` bigint(32) NOT NULL,
-  `position` tinyint(8) NOT NULL,
-  `status` tinyint(8) NOT NULL,
-  `createdTime` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
 
 --
 -- Table structure for table `volumes`
