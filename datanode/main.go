@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"runtime"
@@ -176,74 +177,6 @@ func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (
 	return &ack, nil
 }
 
-/*rpc WriteChunkStream(stream WriteChunkReq) returns (WriteChunkAck){}; */
-/*
-func (s *DataNodeServer) WriteChunkStream(stream dp.DataNode_WriteChunkStreamServer) error {
-
-	var f *os.File
-	var err error
-	//fmt.Println("writechunking in datanode ...")
-	ack := dp.WriteChunkAck{}
-	if err != nil {
-		ack.Ret = -1
-		return stream.SendAndClose(&ack)
-	}
-	for {
-		in, err := stream.Recv()
-		if err == io.EOF {
-			ack.Ret = 0
-			return stream.SendAndClose(&ack)
-		}
-		if err != nil {
-			ack.Ret = 1
-			return stream.SendAndClose(&ack)
-		}
-		chunkID := in.ChunkID
-		blockID := in.BlockID
-		chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
-		f, err = os.OpenFile(chunkFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
-		f.WriteString(in.Databuf)
-		f.Close()
-	}
-}
-*/
-/*
-func (s *DataNodeServer) ReadChunk(ctx context.Context, in *dp.ReadChunkReq) (*dp.ReadChunkAck, error) {
-	ack := dp.ReadChunkAck{}
-	chunkID := in.ChunkID
-	blockID := in.BlockID
-	readsize := in.Readlen
-	offset := in.Offset
-
-	chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
-	f, err := os.Open(chunkFileName)
-	defer f.Close()
-	if err != nil {
-		ack.Ret = -1
-		return &ack, nil
-	}
-	_, err = f.Seek(offset, 0)
-	if err != nil {
-		ack.Ret = -1
-		return &ack, nil
-	}
-
-	buf := make([]byte, readsize)
-	bfRd := bufio.NewReader(f)
-	for {
-		n, err := bfRd.Read(buf)
-		if err != nil {
-			ack.Ret = -1
-			return &ack, nil
-		}
-		ack.Databuf = utils.B2S(buf)
-		ack.Ret = 1
-		ack.Readsize = int64(n)
-		return &ack, nil
-	}
-}
-*/
-
 // StreamReadChunk ...
 func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.DataNode_StreamReadChunkServer) error {
 	chunkID := in.ChunkID
@@ -298,6 +231,137 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 	}
 
 	return nil
+}
+
+func (s *DataNodeServer) RecvMigrateMsg(ctx context.Context, in *dp.RecvMigrateReq) (*dp.RecvMigrateAck, error) {
+	ack := dp.RecvMigrateAck{}
+	sid := in.SrcBlkID
+	smount := in.SrcMount
+	did := in.DstBlkID
+	dip := in.DstIP
+	dport := in.DstPort
+	dmount := in.DstMount
+
+	dDnAddr := dip + ":" + strconv.Itoa(int(dport))
+	conn, err := grpc.Dial(dDnAddr, grpc.WithInsecure())
+	if err != nil {
+		logger.Error("Migrate failed : Dial to DestDataNode:%v failed:%v !", dDnAddr, err)
+		ack.Ret = -1
+		return &ack, err
+	}
+	defer conn.Close()
+	dc := dp.NewDataNodeClient(conn)
+	stream, err := dc.SendMigrateData(context.Background())
+	if err != nil {
+		logger.Error("SendMigrate to DestDataNode:%v err:%v", dDnAddr, err)
+		ack.Ret = -1
+		return &ack, err
+	}
+
+	blkpath := smount + "block-" + strconv.Itoa(int(sid))
+	if ok, err := utils.LocalPathExists(blkpath); !ok && err == nil {
+		logger.Debug("The Block:%v no chunkdata, so dont need copydata for Migrate", sid)
+		ack.Ret = 0
+		return &ack, nil
+	}
+	dirs, err := ioutil.ReadDir(blkpath)
+	if err != nil {
+		logger.Error("List SrcBlk:%v failed:%v for Migrate", blkpath, err)
+		ack.Ret = -1
+		return &ack, err
+	}
+
+	for _, v := range dirs {
+		if v.IsDir() {
+			continue
+		}
+		fInfo := dp.FInfo{}
+		fInfo.FName = v.Name()
+		fInfo.DstBlkID = did
+		fInfo.DstMount = dmount
+		fPath := blkpath + "/" + v.Name()
+
+		fd, err := os.Open(fPath)
+		if err != nil {
+			logger.Error("Open SrcBlkFile:%v failed:%v for Migrate", fPath, err)
+			ack.Ret = -1
+			return &ack, err
+		}
+		buf := make([]byte, 2*1024*1024)
+		r := bufio.NewReader(fd)
+
+		for {
+			n, err := r.Read(buf)
+			if err != nil && err != io.EOF {
+				logger.Error("Read SrcBlkFile:%v failed:%v for Migrate", fPath, err)
+				ack.Ret = -1
+				fd.Close()
+				return &ack, err
+			}
+
+			if n == 0 {
+				break
+			}
+			fInfo.DataBuf = buf[:n]
+			err = stream.Send(&fInfo)
+			if err == io.EOF {
+				logger.Debug("Send SrcBlkFile:%v to DstBlk success for Migrate because chunkdata IoEOF", fPath)
+				continue
+			}
+			if err != nil {
+				logger.Error("Send SrcBlkFile:%v to DstBlk failed:%v for Migrate", fPath, err)
+				ack.Ret = -1
+				fd.Close()
+				return &ack, err
+			}
+		}
+		fd.Close()
+	}
+
+	_, err = stream.CloseAndRecv()
+	if err != nil {
+		logger.Error("CloseAndRecv SrcBlkPath:%v to DstBlk failed:%v for Migrate", blkpath, err)
+		ack.Ret = -1
+		return &ack, err
+	}
+
+	ack.Ret = 0
+	return &ack, nil
+}
+
+func (s *DataNodeServer) SendMigrateData(stream dp.DataNode_SendMigrateDataServer) error {
+	for {
+		finfo, err := stream.Recv()
+		if err == io.EOF {
+			return stream.SendAndClose(&dp.SendAck{Ret: 0})
+		}
+		if err != nil {
+			logger.Error("Recv from SrcBlk for Migrate Blk err:%v", err)
+			return err
+		}
+
+		path := finfo.DstMount + "block-" + strconv.Itoa(int(finfo.DstBlkID))
+		if ok, err := utils.LocalPathExists(path); !ok && err == nil {
+			os.MkdirAll(path, 0777)
+		}
+
+		chunkFileName := path + "/" + finfo.FName
+		f, err := os.OpenFile(chunkFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0660)
+		defer f.Close()
+		if err != nil {
+			return err
+		}
+		w := bufio.NewWriter(f)
+		_, err = w.Write(finfo.DataBuf)
+		if err != nil {
+			return err
+		}
+		err = w.Flush()
+		if err != nil {
+			return err
+		}
+		logger.Debug("Write Blk:%v One ChunkFile:%v for Migrate BLK Success!", finfo.DstBlkID, chunkFileName)
+	}
 }
 
 //DeleteChunk rpc DeleteChunks(eleteChunksReq) returns (eleteChunksAck){};
@@ -378,7 +442,7 @@ func main() {
 	}()
 
 	heartbeatToVolMgr()
-	ticker := time.NewTicker(time.Second * 60)
+	ticker := time.NewTicker(time.Second * 30)
 	go func() {
 		for range ticker.C {
 			heartbeatToVolMgr()
