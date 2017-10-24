@@ -258,7 +258,7 @@ func (s *DataNodeServer) RecvMigrateMsg(ctx context.Context, in *dp.RecvMigrateR
 		return &ack, err
 	}
 
-	blkpath := smount + "block-" + strconv.Itoa(int(sid))
+	blkpath := smount + "/block-" + strconv.Itoa(int(sid))
 	if ok, err := utils.LocalPathExists(blkpath); !ok && err == nil {
 		logger.Debug("The Block:%v no chunkdata, so dont need copydata for Migrate", sid)
 		ack.Ret = 0
@@ -340,7 +340,7 @@ func (s *DataNodeServer) SendMigrateData(stream dp.DataNode_SendMigrateDataServe
 			return err
 		}
 
-		path := finfo.DstMount + "block-" + strconv.Itoa(int(finfo.DstBlkID))
+		path := finfo.DstMount + "/block-" + strconv.Itoa(int(finfo.DstBlkID))
 		if ok, err := utils.LocalPathExists(path); !ok && err == nil {
 			os.MkdirAll(path, 0777)
 		}
