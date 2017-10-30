@@ -85,6 +85,7 @@ func (s *VolMgrServer) DatanodeRegistry(ctx context.Context, in *vp.DatanodeRegi
 		ack.Ret = 0
 		return &ack, nil
 	}
+
 }
 
 // DatanodeHeartbeat : each datanode heartbeat to db
@@ -645,7 +646,7 @@ func BeginMigrate(blkgrpid uint32, blkid uint32, blks string, volid string) int 
 	if okflag == 1 {
 		return 0
 	} else {
-                return -1
+		return -1
 	}
 }
 
