@@ -1590,10 +1590,12 @@ func (cfile *CFile) writeChunk(addr string, conn *grpc.ClientConn, req *dp.Write
 		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
 		ret, err := dc.WriteChunk(ctx, req)
 		if err != nil {
-			logger.Error("WriteChunk err %v", err)
+			logger.Error("WriteChunk func err %v", err)
 			cfile.cfs.DelDataConn(addr)
 		} else {
 			if ret.Ret != 0 {
+				logger.Error("WriteChunk Ret err %v", ret.Ret)
+				cfile.cfs.DelDataConn(addr)
 			} else {
 				atomic.AddUint64(copies, 1)
 			}

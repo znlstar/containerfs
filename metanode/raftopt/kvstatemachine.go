@@ -1,17 +1,18 @@
 package raftopt
 
 import (
-	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"sync"
 
 	pbproto "github.com/golang/protobuf/proto"
+	btree "github.com/ipdcode/containerfs/metanode/raftopt/BTree"
 	kvp "github.com/ipdcode/containerfs/proto/kvp"
 	"github.com/ipdcode/raft"
 	"github.com/ipdcode/raft/proto"
+	"strconv"
+
 	"sync/atomic"
 )
 
@@ -42,14 +43,13 @@ type KvStateMachine struct {
 	applied uint64
 	raft    *raft.RaftServer
 
-	DentryLocker sync.RWMutex
-	dentryData   map[string][]byte
+	dentryItem btree.DentryKV
+	inodeItem  btree.InodeKV
+	bgItem     btree.BGKV
 
-	inodeLocker sync.RWMutex
-	inodeData   map[string][]byte
-
-	BlockGroupLocker sync.RWMutex
-	blockGroupData   map[string][]byte
+	dentryData     *btree.BTree
+	inodeData      *btree.BTree
+	blockGroupData *btree.BTree
 
 	chunkIDLocker sync.Mutex
 	chunkID       uint64
@@ -62,9 +62,9 @@ func newKvStatemachine(id uint64, raft *raft.RaftServer) *KvStateMachine {
 	return &KvStateMachine{
 		id:             id,
 		raft:           raft,
-		dentryData:     make(map[string][]byte),
-		inodeData:      make(map[string][]byte),
-		blockGroupData: make(map[string][]byte),
+		dentryData:     btree.New(32),
+		inodeData:      btree.New(32),
+		blockGroupData: btree.New(32),
 	}
 }
 
@@ -83,26 +83,26 @@ func (ms *KvStateMachine) Apply(data []byte, index uint64) (interface{}, error) 
 	case OPT_ALLOCATE_CHUNKID: // allockChunkID
 		atomic.AddUint64(&ms.chunkID, 1)
 	case OPT_SET_DENTRY: // set dentryData
-		ms.DentryLocker.Lock()
-		ms.dentryData[kv.K] = kv.V
-		ms.DentryLocker.Unlock()
+		ms.dentryItem.K = kv.K
+		ms.dentryItem.V = kv.V
+		ms.dentryData.ReplaceOrInsert(ms.dentryItem)
 	case OPT_DEL_DENTRY: // del dentryData
-		ms.DentryLocker.Lock()
-		delete(ms.dentryData, kv.K)
-		ms.DentryLocker.Unlock()
+		ms.dentryItem.K = kv.K
+		ms.dentryData.Delete(ms.dentryItem)
 	case OPT_SET_INODE: // set inodeData
-		ms.inodeLocker.Lock()
-		ms.inodeData[kv.K] = kv.V
-		ms.inodeLocker.Unlock()
+		key, _ := strconv.ParseInt(kv.K, 10, 64)
+		ms.inodeItem.K = uint64(key)
+		ms.inodeItem.V = kv.V
+		ms.inodeData.ReplaceOrInsert(ms.inodeItem)
 	case OPT_DEL_INODE: // del inodeData
-		ms.inodeLocker.Lock()
-		delete(ms.inodeData, kv.K)
-		ms.inodeLocker.Unlock()
+		key, _ := strconv.ParseInt(kv.K, 10, 64)
+		ms.inodeItem.K = uint64(key)
+		ms.inodeData.Delete(ms.inodeItem)
 	case OPT_SET_BG: // set OPT_SET_BG
-		ms.BlockGroupLocker.Lock()
-		ms.blockGroupData[kv.K] = kv.V
-		ms.BlockGroupLocker.Unlock()
-
+		key, _ := strconv.Atoi(kv.K)
+		ms.bgItem.K = uint32(key)
+		ms.bgItem.V = kv.V
+		ms.blockGroupData.ReplaceOrInsert(ms.bgItem)
 	}
 
 	ms.applied = index
@@ -117,58 +117,62 @@ func (ms *KvStateMachine) ApplyMemberChange(confChange *proto.ConfChange, index 
 //Snapshot ...
 func (ms *KvStateMachine) Snapshot() (proto.Snapshot, error) {
 
-	var dentrydata []byte
-	var inodedata []byte
-	var bgdata []byte
 	var bigdata []byte
 
-	var err error
+	/*
+		var dentrydata []byte
+		var inodedata []byte
+		var bgdata []byte
+		var bigdata []byte
 
-	ms.DentryLocker.RLock()
-	if dentrydata, err = json.Marshal(ms.dentryData); err != nil {
+		var err error
+
+		ms.DentryLocker.RLock()
+		if dentrydata, err = json.Marshal(ms.dentryData); err != nil {
+			ms.DentryLocker.RUnlock()
+			return nil, err
+		}
 		ms.DentryLocker.RUnlock()
-		return nil, err
-	}
-	ms.DentryLocker.RUnlock()
 
-	ms.inodeLocker.RLock()
-	if inodedata, err = json.Marshal(ms.inodeData); err != nil {
+		ms.inodeLocker.RLock()
+		if inodedata, err = json.Marshal(ms.inodeData); err != nil {
+			ms.inodeLocker.RUnlock()
+			return nil, err
+		}
 		ms.inodeLocker.RUnlock()
-		return nil, err
-	}
-	ms.inodeLocker.RUnlock()
 
-	ms.BlockGroupLocker.RLock()
-	if bgdata, err = json.Marshal(ms.blockGroupData); err != nil {
+		ms.BlockGroupLocker.RLock()
+		if bgdata, err = json.Marshal(ms.blockGroupData); err != nil {
+			ms.BlockGroupLocker.RUnlock()
+			return nil, err
+		}
 		ms.BlockGroupLocker.RUnlock()
-		return nil, err
-	}
-	ms.BlockGroupLocker.RUnlock()
 
-	a := make([]byte, 8)
-	binary.BigEndian.PutUint64(a, uint64(len(dentrydata)))
-	bigdata = append(make([]byte, 8), a...)
-	bigdata = append(bigdata, dentrydata...)
+		a := make([]byte, 8)
+		binary.BigEndian.PutUint64(a, uint64(len(dentrydata)))
+		bigdata = append(make([]byte, 8), a...)
+		bigdata = append(bigdata, dentrydata...)
 
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, uint64(len(inodedata)))
-	bigdata = append(bigdata, b...)
-	bigdata = append(bigdata, inodedata...)
+		b := make([]byte, 8)
+		binary.BigEndian.PutUint64(b, uint64(len(inodedata)))
+		bigdata = append(bigdata, b...)
+		bigdata = append(bigdata, inodedata...)
 
-	c := make([]byte, 8)
-	binary.BigEndian.PutUint64(c, uint64(len(bgdata)))
-	bigdata = append(bigdata, c...)
-	bigdata = append(bigdata, bgdata...)
+		c := make([]byte, 8)
+		binary.BigEndian.PutUint64(c, uint64(len(bgdata)))
+		bigdata = append(bigdata, c...)
+		bigdata = append(bigdata, bgdata...)
 
-	binary.BigEndian.PutUint64(bigdata, ms.applied)
+		binary.BigEndian.PutUint64(bigdata, ms.applied)
 
-	d := make([]byte, 8)
-	binary.BigEndian.PutUint64(d, ms.chunkID)
-	bigdata = append(bigdata, d...)
+		d := make([]byte, 8)
+		binary.BigEndian.PutUint64(d, ms.chunkID)
+		bigdata = append(bigdata, d...)
 
-	e := make([]byte, 8)
-	binary.BigEndian.PutUint64(e, ms.inodeID)
-	bigdata = append(bigdata, e...)
+		e := make([]byte, 8)
+		binary.BigEndian.PutUint64(e, ms.inodeID)
+		bigdata = append(bigdata, e...)
+	*/
 
 	return &kvSnapshot{
 		applied: ms.applied,
@@ -180,49 +184,49 @@ func (ms *KvStateMachine) Snapshot() (proto.Snapshot, error) {
 //ApplySnapshot ...
 func (ms *KvStateMachine) ApplySnapshot(peers []proto.Peer, iter proto.SnapIterator) error {
 
-	var (
-		bigdata []byte
-		block   []byte
-		err     error
-	)
-	for err == nil {
-		if block, err = iter.Next(); len(block) > 0 {
-			bigdata = append(bigdata, block...)
+	/*
+		var (
+			bigdata []byte
+			block   []byte
+			err     error
+		)
+		for err == nil {
+			if block, err = iter.Next(); len(block) > 0 {
+				bigdata = append(bigdata, block...)
+			}
 		}
-	}
-	if err != nil && err != io.EOF {
-		return err
-	}
+		if err != nil && err != io.EOF {
+			return err
+		}
 
-	ms.applied = binary.BigEndian.Uint64(bigdata)
+		ms.applied = binary.BigEndian.Uint64(bigdata)
 
-	ms.DentryLocker.Lock()
-	dentryLen := binary.BigEndian.Uint64(bigdata[8:16])
-	if err = json.Unmarshal(bigdata[16:16+dentryLen], &ms.dentryData); err != nil {
+		ms.DentryLocker.Lock()
+		dentryLen := binary.BigEndian.Uint64(bigdata[8:16])
+		if err = json.Unmarshal(bigdata[16:16+dentryLen], &ms.dentryData); err != nil {
+			ms.DentryLocker.Unlock()
+			return err
+		}
 		ms.DentryLocker.Unlock()
-		return err
-	}
-	ms.DentryLocker.Unlock()
-
-	ms.inodeLocker.Lock()
-	inodeLen := binary.BigEndian.Uint64(bigdata[16+dentryLen : 16+dentryLen+8])
-	if err = json.Unmarshal(bigdata[16+dentryLen+8:16+dentryLen+8+inodeLen], &ms.inodeData); err != nil {
+		ms.inodeLocker.Lock()
+		inodeLen := binary.BigEndian.Uint64(bigdata[16+dentryLen : 16+dentryLen+8])
+		if err = json.Unmarshal(bigdata[16+dentryLen+8:16+dentryLen+8+inodeLen], &ms.inodeData); err != nil {
+			ms.inodeLocker.Unlock()
+			return err
+		}
 		ms.inodeLocker.Unlock()
-		return err
-	}
-	ms.inodeLocker.Unlock()
 
-	ms.BlockGroupLocker.Lock()
-	bgLen := binary.BigEndian.Uint64(bigdata[16+dentryLen+8+inodeLen : 16+dentryLen+8+inodeLen+8])
-	if err = json.Unmarshal(bigdata[16+dentryLen+8+inodeLen+8:16+dentryLen+8+inodeLen+8+bgLen], &ms.blockGroupData); err != nil {
+		ms.BlockGroupLocker.Lock()
+		bgLen := binary.BigEndian.Uint64(bigdata[16+dentryLen+8+inodeLen : 16+dentryLen+8+inodeLen+8])
+		if err = json.Unmarshal(bigdata[16+dentryLen+8+inodeLen+8:16+dentryLen+8+inodeLen+8+bgLen], &ms.blockGroupData); err != nil {
+			ms.BlockGroupLocker.Unlock()
+			return err
+		}
 		ms.BlockGroupLocker.Unlock()
-		return err
-	}
-	ms.BlockGroupLocker.Unlock()
 
-	ms.chunkID = binary.BigEndian.Uint64(bigdata[16+dentryLen+8+inodeLen+8+bgLen : 16+dentryLen+8+inodeLen+8+bgLen+8])
-	ms.inodeID = binary.BigEndian.Uint64(bigdata[16+dentryLen+8+inodeLen+8+bgLen+8:])
-
+		ms.chunkID = binary.BigEndian.Uint64(bigdata[16+dentryLen+8+inodeLen+8+bgLen : 16+dentryLen+8+inodeLen+8+bgLen+8])
+		ms.inodeID = binary.BigEndian.Uint64(bigdata[16+dentryLen+8+inodeLen+8+bgLen+8:])
+	*/
 	return nil
 }
 
@@ -237,22 +241,46 @@ func (ms *KvStateMachine) DentryGet(raftGroupID uint64, key string) ([]byte, err
 		return nil, errors.New("not leader")
 	}
 
-	ms.DentryLocker.RLock()
-	if v, ok := ms.dentryData[key]; ok {
-		ms.DentryLocker.RUnlock()
-		return v, nil
+	var item btree.DentryKV
+	item.K = key
+	newItem := ms.dentryData.Get(item)
+
+	if newItem != nil {
+		return newItem.(btree.DentryKV).V, nil
 	}
-	ms.DentryLocker.RUnlock()
 	return []byte{}, errNotExists
 
 }
 
+/*
 //DentryGetAll ...
 func (ms *KvStateMachine) DentryGetAll(raftGroupID uint64) (*map[string][]byte, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
 	}
 	return &ms.dentryData, nil
+}
+*/
+
+func (ms *KvStateMachine) DentryGetRange(raftGroupID uint64, minKey string, maxKey string) ([]btree.DentryKV, error) {
+	if !ms.raft.IsLeader(raftGroupID) {
+		return nil, errors.New("not leader")
+	}
+
+	var v []btree.DentryKV
+
+	var itemMin btree.DentryKV
+	itemMin.K = minKey
+
+	var itemMax btree.DentryKV
+	itemMax.K = maxKey
+
+	ms.dentryData.AscendRange(itemMin, itemMax, func(a btree.Item) bool {
+		v = append(v, a.(btree.DentryKV))
+		return true
+	})
+
+	return v, nil
 }
 
 //DentrySet ...
@@ -300,22 +328,25 @@ func (ms *KvStateMachine) DentryDel(raftGroupID uint64, key string) error {
 }
 
 //InodeGet ...
-func (ms *KvStateMachine) InodeGet(raftGroupID uint64, key string) ([]byte, error) {
+func (ms *KvStateMachine) InodeGet(raftGroupID uint64, key uint64) ([]byte, error) {
+
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
 	}
-	ms.inodeLocker.RLock()
-	if v, ok := ms.inodeData[key]; ok {
-		ms.inodeLocker.RUnlock()
-		return v, nil
+
+	var item btree.InodeKV
+	item.K = key
+	newItem := ms.inodeData.Get(item)
+
+	if newItem != nil {
+		return newItem.(btree.InodeKV).V, nil
 	}
-	ms.inodeLocker.RUnlock()
 	return []byte{}, errNotExists
 
 }
 
 //InodeSet ...
-func (ms *KvStateMachine) InodeSet(raftGroupID uint64, key string, value []byte) error {
+func (ms *KvStateMachine) InodeSet(raftGroupID uint64, key uint64, value []byte) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
 	}
@@ -323,7 +354,7 @@ func (ms *KvStateMachine) InodeSet(raftGroupID uint64, key string, value []byte)
 	var data []byte
 	var err error
 
-	kv := &kvp.Kv{Opt: OPT_SET_INODE, K: key, V: value}
+	kv := &kvp.Kv{Opt: OPT_SET_INODE, K: strconv.FormatUint(key, 10), V: value}
 
 	if data, err = pbproto.Marshal(kv); err != nil {
 		return err
@@ -338,7 +369,7 @@ func (ms *KvStateMachine) InodeSet(raftGroupID uint64, key string, value []byte)
 }
 
 //InodeDel ...
-func (ms *KvStateMachine) InodeDel(raftGroupID uint64, key string) error {
+func (ms *KvStateMachine) InodeDel(raftGroupID uint64, key uint64) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
 	}
@@ -346,7 +377,7 @@ func (ms *KvStateMachine) InodeDel(raftGroupID uint64, key string) error {
 	var data []byte
 	var err error
 
-	kv := &kvp.Kv{Opt: OPT_DEL_INODE, K: key}
+	kv := &kvp.Kv{Opt: OPT_DEL_INODE, K: strconv.FormatUint(key, 10)}
 
 	if data, err = pbproto.Marshal(kv); err != nil {
 		return err
@@ -361,23 +392,24 @@ func (ms *KvStateMachine) InodeDel(raftGroupID uint64, key string) error {
 }
 
 //BGGet ...
-func (ms *KvStateMachine) BGGet(raftGroupID uint64, key string) ([]byte, error) {
+func (ms *KvStateMachine) BGGet(raftGroupID uint64, key uint32) ([]byte, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
 	}
 
-	ms.BlockGroupLocker.RLock()
-	if v, ok := ms.blockGroupData[key]; ok {
-		ms.BlockGroupLocker.RUnlock()
-		return v, nil
+	var item btree.BGKV
+	item.K = key
+	newItem := ms.blockGroupData.Get(item)
+
+	if newItem != nil {
+		return newItem.(btree.BGKV).V, nil
 	}
-	ms.BlockGroupLocker.RUnlock()
 	return []byte{}, errNotExists
 
 }
 
 //BGSet ...
-func (ms *KvStateMachine) BGSet(raftGroupID uint64, key string, value []byte) error {
+func (ms *KvStateMachine) BGSet(raftGroupID uint64, key uint32, value []byte) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
 	}
@@ -385,7 +417,7 @@ func (ms *KvStateMachine) BGSet(raftGroupID uint64, key string, value []byte) er
 	var data []byte
 	var err error
 
-	kv := &kvp.Kv{Opt: OPT_SET_BG, K: key, V: value}
+	kv := &kvp.Kv{Opt: OPT_SET_BG, K: strconv.Itoa(int(key)), V: value}
 
 	if data, err = pbproto.Marshal(kv); err != nil {
 		return err
@@ -400,11 +432,19 @@ func (ms *KvStateMachine) BGSet(raftGroupID uint64, key string, value []byte) er
 }
 
 //BGGetAll ...
-func (ms *KvStateMachine) BGGetAll(raftGroupID uint64) (*map[string][]byte, error) {
+func (ms *KvStateMachine) BGGetAll(raftGroupID uint64) ([]btree.BGKV, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
 	}
-	return &ms.blockGroupData, nil
+
+	var v []btree.BGKV
+
+	ms.blockGroupData.AscendGreaterOrEqual(ms.blockGroupData.Min(), func(a btree.Item) bool {
+		v = append(v, a.(btree.BGKV))
+		return true
+	})
+
+	return v, nil
 }
 
 //ChunkIDGET ...

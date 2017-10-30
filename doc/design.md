@@ -53,14 +53,20 @@ Linux kernel
 &nbsp;	id      uint64
 &nbsp;	applied uint64
 &nbsp;	raft    *raft.RaftServer
-&nbsp;	DentryLocker sync.RWMutex
-&nbsp;	dentryData   map[string][]byte
-&nbsp;	inodeLocker  sync.RWMutex
-&nbsp;	inodeData    map[string][]byte
-&nbsp;	BlockGroupLocker sync.RWMutex
-&nbsp;	blockGroupData   map[string][]byte
-&nbsp;	chunkID uint64
-&nbsp;	inodeID uint64
+&nbsp;
+&nbsp;	dentryItem btree.DentryKV
+&nbsp;	inodeItem  btree.InodeKV
+&nbsp;	bgItem     btree.BGKV
+&nbsp;
+&nbsp;	dentryData     *btree.BTree
+&nbsp;	inodeData      *btree.BTree
+&nbsp;	blockGroupData *btree.BTree
+&nbsp;
+&nbsp;	chunkIDLocker sync.Mutex
+&nbsp;	chunkID       uint64
+&nbsp;
+&nbsp;	inodeIDLocker sync.Mutex
+&nbsp;	inodeID       uint64
 &nbsp;}
 </pre>
 

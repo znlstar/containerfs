@@ -132,7 +132,7 @@ func (d *dir) Attr(ctx context.Context, a *fuse.Attr) error {
 
 	a.Mode = os.ModeDir | 0755
 	a.Inode = d.inode
-	a.Valid = time.Second
+	a.Valid = time.Minute
 	/*
 		if d.parent == nil {
 			a.Mode = os.ModeDir | 0755
@@ -481,10 +481,13 @@ func (f *File) setParentInode(pdir *dir) {
 // Attr ...
 func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 
+	logger.Debug("File Attr")
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
 	ret, inode, inodeInfo := f.parent.fs.cfs.GetInodeInfoDirect(f.parent.inode, f.name)
-	if ret != 0 {
+	if ret != 0 || inodeInfo == nil {
 		return nil
 	}
 
@@ -494,10 +497,10 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Size = uint64(inodeInfo.FileSize)
 	a.Inode = uint64(inode)
 
-	a.BlockSize = 4 * 1024 // this is for fuse attr quick update
+	a.BlockSize = 4 * 1024
 	a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
 	a.Mode = 0666
-	a.Valid = time.Second
+	a.Valid = time.Minute
 
 	return nil
 }
