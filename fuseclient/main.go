@@ -132,7 +132,7 @@ func (d *dir) Attr(ctx context.Context, a *fuse.Attr) error {
 
 	a.Mode = os.ModeDir | 0755
 	a.Inode = d.inode
-	a.Valid = time.Minute
+	a.Valid = time.Second
 	/*
 		if d.parent == nil {
 			a.Mode = os.ModeDir | 0755
@@ -500,7 +500,7 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.BlockSize = 4 * 1024
 	a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
 	a.Mode = 0666
-	a.Valid = time.Minute
+	a.Valid = time.Second
 
 	return nil
 }
