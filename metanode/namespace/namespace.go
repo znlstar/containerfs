@@ -15,7 +15,6 @@ import (
 	"math/rand"
 	"path"
 	"runtime/debug"
-	"strings"
 	"sync"
 	"time"
 )
@@ -153,7 +152,7 @@ func SnapShootNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
 	if ret != 0 {
 		return ret
 	}
-	raftopt.TakeKvSnapShoot(nameSpace.RaftGroup, nameSpace.RaftStorage, path.Join(dir, UUID, "wal", "snap"))
+	go raftopt.TakeKvSnapShoot(nameSpace.RaftGroup, nameSpace.RaftStorage, path.Join(dir, UUID, "wal", "snap"))
 	return 0
 }
 
