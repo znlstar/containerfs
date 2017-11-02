@@ -100,26 +100,33 @@ func CreateVol(name string, capacity string) int32 {
 	}
 
 	// send to metadata to registry a new map
-
-	conn2, err := grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
-	if err != nil {
-		logger.Error("CreateVol failed,Dial to metanode fail :%v\n", err)
-		return -1
+	var flag bool
+	for _, metaNodeIp := range MetaNodePeers {
+		conn2, err := grpc.Dial(metaNodeIp, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
+		if err != nil {
+			logger.Error("CreateVol failed,Dial to metanode fail, try another metanode :%v\n", err)
+			continue
+		}
+		defer conn2.Close()
+		mc := mp.NewMetaNodeClient(conn2)
+		pmCreateNameSpaceReq := &mp.CreateNameSpaceReq{
+			VolID:       pCreateVolAck.UUID,
+			RaftGroupID: pCreateVolAck.RaftGroupID,
+			Type:        0,
+		}
+		ctx2, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		pmCreateNameSpaceAck, err := mc.CreateNameSpace(ctx2, pmCreateNameSpaceReq)
+		if err != nil {
+			continue
+		}
+		if pmCreateNameSpaceAck.Ret != 0 {
+			logger.Error("CreateNameSpace with metanode %s failed, try another metanode :%v\n", metaNodeIp, pmCreateNameSpaceAck.Ret)
+			continue
+		}
+		flag = true
+		break
 	}
-	defer conn2.Close()
-	mc := mp.NewMetaNodeClient(conn2)
-	pmCreateNameSpaceReq := &mp.CreateNameSpaceReq{
-		VolID:       pCreateVolAck.UUID,
-		RaftGroupID: pCreateVolAck.RaftGroupID,
-		Type:        0,
-	}
-	ctx2, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	pmCreateNameSpaceAck, err := mc.CreateNameSpace(ctx2, pmCreateNameSpaceReq)
-	if err != nil {
-		return -1
-	}
-	if pmCreateNameSpaceAck.Ret != 0 {
-		logger.Error("CreateNameSpace failed :%v\n", pmCreateNameSpaceAck.Ret)
+	if !flag {
 		return -1
 	}
 
