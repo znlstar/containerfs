@@ -2,14 +2,16 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/ipdcode/containerfs/logger"
 	dp "github.com/ipdcode/containerfs/proto/dp"
-	vp "github.com/ipdcode/containerfs/proto/vp"
+	mp "github.com/ipdcode/containerfs/proto/mp"
 	"github.com/ipdcode/containerfs/utils"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	//"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 	"io"
 	"io/ioutil"
@@ -18,6 +20,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -35,9 +38,10 @@ type addr struct {
 	Path  string
 	Flag  string
 	Log   string
-
-	VolMgrHost string
 }
+
+var MetaNodePeers []string
+var MetaNodeAddr string
 
 // DataNodeServerAddr ...
 var DataNodeServerAddr addr
@@ -56,84 +60,61 @@ func startDataService() {
 	}
 }
 
-func registryToVolMgr() {
-	conn, err := grpc.Dial(DataNodeServerAddr.VolMgrHost, grpc.WithInsecure())
+func registryToMeta() {
+	conn, err := DialMeta("Cluster")
 	if err != nil {
-		logger.Debug("data node statup failed : Dial to volmgr failed !")
+		logger.Error("registryToMeta: Dail Meta Failed err:%v", err)
 		os.Exit(1)
 	}
 	defer conn.Close()
-	c := vp.NewVolMgrClient(conn)
+	mc := mp.NewMetaNodeClient(conn)
 
-	var datanodeRegistryReq vp.DatanodeRegistryReq
-	datanodeRegistryReq.Ip = DataNodeServerAddr.IPInt
+	dnIP := utils.InetNtoa(DataNodeServerAddr.IPInt)
+
+	var datanodeRegistryReq mp.Datanode
+	datanodeRegistryReq.Ip = dnIP.String()
 	datanodeRegistryReq.Port = DataNodeServerAddr.Port
 	diskInfo := utils.DiskUsage(DataNodeServerAddr.Path)
-	capacity := int32(float64(diskInfo.All) / float64(1024*1024*1024))
-	datanodeRegistryReq.Capacity = capacity
+	datanodeRegistryReq.Capacity = int32(float64(diskInfo.All) / float64(1024*1024*1024))
+	datanodeRegistryReq.Free = int32(float64(diskInfo.Free) / float64(1024*1024*1024))
+	datanodeRegistryReq.Used = int32(float64(diskInfo.Used) / float64(1024*1024*1024))
 	datanodeRegistryReq.MountPoint = DataNodeServerAddr.Path
+	datanodeRegistryReq.Status = 0
 
-	_, err = os.Stat(datanodeRegistryReq.MountPoint)
+	ack, err := mc.DatanodeRegistry(context.Background(), &datanodeRegistryReq)
 	if err != nil {
-		logger.Error("data node statup failed : DataNodeServerAddr.Path not exist !")
+		logger.Debug("datanode statup failed : registry to metanode failed ! err %v", err)
 		os.Exit(1)
 	}
-
-	pDatanodeRegistryAck, _ := c.DatanodeRegistry(context.Background(), &datanodeRegistryReq)
-	if pDatanodeRegistryAck.Ret == 0 {
-		logger.Debug("registry success!")
+	if ack.Ret == 0 {
+		logger.Debug("registry this datanode to metanode success!")
 		os.Create(DataNodeServerAddr.Flag)
 	} else {
-		logger.Debug("data node statup failed : registry to volmgr failed !")
+		logger.Debug("datanode statup failed : registry to metanode failed !")
 		os.Exit(1)
 	}
 
 	return
-
-}
-
-func heartbeatToVolMgr() {
-
-	conn, err := grpc.Dial(DataNodeServerAddr.VolMgrHost, grpc.WithInsecure())
-	if err != nil {
-		logger.Debug("HearBeat failed : Dial to volmgr failed !")
-	}
-	defer conn.Close()
-	c := vp.NewVolMgrClient(conn)
-
-	diskInfo := utils.DiskUsage(DataNodeServerAddr.Path)
-	free := int32(float64(diskInfo.Free) / float64(1024*1024*1024))
-	used := int32(float64(diskInfo.Used) / float64(1024*1024*1024))
-
-	var datanodeHeartbeatReq vp.DatanodeHeartbeatReq
-	datanodeHeartbeatReq.Ip = DataNodeServerAddr.IPInt
-	datanodeHeartbeatReq.Port = DataNodeServerAddr.Port
-	datanodeHeartbeatReq.Free = free
-	datanodeHeartbeatReq.Used = used
-	//datanodeHeartbeatReq.Status = 0
-
-	f, err := os.OpenFile(DataNodeServerAddr.Path+"/health", os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0666)
-	if err != nil {
-		logger.Error("Open datanode check health file error:%v", err)
-		datanodeHeartbeatReq.Status = 2
-	}
-	defer f.Close()
-
-	_, err = f.WriteString("ok")
-	if err != nil {
-		logger.Error("Write datanode check health file error:%v", err)
-		datanodeHeartbeatReq.Status = 2
-	} else {
-		datanodeHeartbeatReq.Status = 0
-	}
-
-	c.DatanodeHeartbeat(context.Background(), &datanodeHeartbeatReq)
 }
 
 // DatanodeHealthCheck rpc GetChunks(GetChunksReq) returns (GetChunksAck){};
 func (s *DataNodeServer) DatanodeHealthCheck(ctx context.Context, in *dp.DatanodeHealthCheckReq) (*dp.DatanodeHealthCheckAck, error) {
 	ack := dp.DatanodeHealthCheckAck{}
-	ack.Ret = 1
+	f, err := os.OpenFile(DataNodeServerAddr.Path+"/health", os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0666)
+	if err != nil {
+		logger.Error("Open datanode check health file error:%v", err)
+		ack.Status = 2
+	} else {
+		_, err = f.WriteString("ok")
+		if err != nil {
+			logger.Error("Write datanode check health file error:%v", err)
+			ack.Status = 2
+		}
+	}
+
+	diskInfo := utils.DiskUsage(DataNodeServerAddr.Path)
+	ack.Used = int32(float64(diskInfo.Used) / float64(1024*1024*1024))
+	ack.Ret = 0
 	return &ack, nil
 }
 
@@ -242,7 +223,12 @@ func (s *DataNodeServer) RecvMigrateMsg(ctx context.Context, in *dp.RecvMigrateR
 	dport := in.DstPort
 	dmount := in.DstMount
 
-	dDnAddr := dip + ":" + strconv.Itoa(int(dport))
+	dDnAddr := dip + fmt.Sprintf(":%d", dport)
+	/*
+		conn, err := grpc.Dial(dDnAddr, grpc.WithInsecure(), grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Timeout: 5 * time.Minute,
+		}))
+	*/
 	conn, err := grpc.Dial(dDnAddr, grpc.WithInsecure())
 	if err != nil {
 		logger.Error("Migrate failed : Dial to DestDataNode:%v failed:%v !", dDnAddr, err)
@@ -251,14 +237,17 @@ func (s *DataNodeServer) RecvMigrateMsg(ctx context.Context, in *dp.RecvMigrateR
 	}
 	defer conn.Close()
 	dc := dp.NewDataNodeClient(conn)
-	stream, err := dc.SendMigrateData(context.Background())
+
+	ctxtmp, _ := context.WithTimeout(context.Background(), 5*time.Minute)
+
+	stream, err := dc.SendMigrateData(ctxtmp)
 	if err != nil {
 		logger.Error("SendMigrate to DestDataNode:%v err:%v", dDnAddr, err)
 		ack.Ret = -1
 		return &ack, err
 	}
 
-	blkpath := smount + "/block-" + strconv.Itoa(int(sid))
+	blkpath := smount + fmt.Sprintf("/block-%d", sid)
 	if ok, err := utils.LocalPathExists(blkpath); !ok && err == nil {
 		logger.Debug("The Block:%v no chunkdata, so dont need copydata for Migrate", sid)
 		ack.Ret = 0
@@ -340,7 +329,7 @@ func (s *DataNodeServer) SendMigrateData(stream dp.DataNode_SendMigrateDataServe
 			return err
 		}
 
-		path := finfo.DstMount + "/block-" + strconv.Itoa(int(finfo.DstBlkID))
+		path := finfo.DstMount + fmt.Sprintf("/block-%d", finfo.DstBlkID)
 		if ok, err := utils.LocalPathExists(path); !ok && err == nil {
 			os.MkdirAll(path, 0777)
 		}
@@ -384,6 +373,59 @@ func (s *DataNodeServer) DeleteChunk(ctx context.Context, in *dp.DeleteChunkReq)
 	return &ack, nil
 }
 
+// GetLeader Get Cluster Metadata Leader Node
+func GetLeader(volumeID string) (string, error) {
+	var leader string
+	var flag bool
+	for _, ip := range MetaNodePeers {
+		conn, err := grpc.Dial(ip, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
+		if err != nil {
+			continue
+		}
+		defer conn.Close()
+		mc := mp.NewMetaNodeClient(conn)
+		pmGetMetaLeaderReq := &mp.GetMetaLeaderReq{
+			VolID: volumeID,
+		}
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		pmGetMetaLeaderAck, err1 := mc.GetMetaLeader(ctx, pmGetMetaLeaderReq)
+		if err1 != nil {
+			continue
+		}
+		if pmGetMetaLeaderAck.Ret != 0 {
+			continue
+		}
+		leader = pmGetMetaLeaderAck.Leader
+		flag = true
+		break
+	}
+	if !flag {
+		return "", errors.New("Get leader failed")
+	}
+	return leader, nil
+
+}
+
+// DialMeta ...
+func DialMeta(volumeID string) (*grpc.ClientConn, error) {
+	var conn *grpc.ClientConn
+	var err error
+
+	MetaNodeAddr, _ = GetLeader("Cluster")
+	conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+	if err != nil {
+		time.Sleep(500 * time.Millisecond)
+		MetaNodeAddr, _ = GetLeader(volumeID)
+		conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+		if err != nil {
+			time.Sleep(500 * time.Millisecond)
+			MetaNodeAddr, _ = GetLeader(volumeID)
+			conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
+		}
+	}
+	return conn, err
+}
+
 func init() {
 
 	var loglevel string
@@ -392,11 +434,12 @@ func init() {
 	flag.StringVar(&DataNodeServerAddr.IPStr, "host", "127.0.0.1", "ContainerFS DataNode Host")
 	flag.IntVar(&port, "port", 8000, "ContainerFS DataNode Port")
 	flag.StringVar(&DataNodeServerAddr.Path, "datapath", "", "ContainerFS DataNode Data Path")
-	flag.StringVar(&DataNodeServerAddr.VolMgrHost, "volmgr", "127.0.0.1:7000", "ContainerFS VolMgr Host")
 	flag.StringVar(&DataNodeServerAddr.Log, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Log Path")
 	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS Log Level")
+	addr := flag.String("metanode", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS metanode hosts")
 
 	flag.Parse()
+	MetaNodePeers = strings.Split(*addr, ",")
 
 	DataNodeServerAddr.Port = int32(port)
 	ipnr := net.ParseIP(DataNodeServerAddr.IPStr)
@@ -419,10 +462,15 @@ func init() {
 		logger.SetLevel(logger.ERROR)
 	}
 
+	_, err := os.Stat(DataNodeServerAddr.Path)
+	if err != nil {
+		logger.Error("data node statup failed : DataNodeServerAddr.Path not exist !")
+		os.Exit(1)
+	}
+
 	if ok, _ := utils.LocalPathExists(DataNodeServerAddr.Flag); !ok {
-		logger.Debug("Start registry to volmgr ...")
-		registryToVolMgr()
-		logger.Debug("registry to volmgr success")
+		registryToMeta()
+		logger.Debug("registry to metanode success")
 	} else {
 		logger.Debug("already registied")
 	}
@@ -441,12 +489,5 @@ func main() {
 		}
 	}()
 
-	heartbeatToVolMgr()
-	ticker := time.NewTicker(time.Second * 30)
-	go func() {
-		for range ticker.C {
-			heartbeatToVolMgr()
-		}
-	}()
 	startDataService()
 }

@@ -4,6 +4,20 @@ package mp;
 
 service MetaNode {
 
+    // cluster info
+    rpc DatanodeRegistry(Datanode) returns (DatanodeRegistryAck){};
+    //rpc DatanodeHeartbeat(DatanodeHeartbeatReq) returns (DatanodeHeartbeatAck){};
+    rpc GetAllDatanode(GetAllDatanodeReq) returns (GetAllDatanodeAck){};
+    rpc	DelDatanode(DelDatanodeReq) returns (DelDatanodeAck){};
+    rpc CreateVol(CreateVolReq) returns (CreateVolAck){};
+    rpc ExpandVolTS(ExpandVolTSReq) returns (ExpandVolTSAck){};
+    rpc ExpandVolRS(ExpandVolRSReq) returns (ExpandVolRSAck){};
+    rpc DelVolRSForExpand(DelVolRSForExpandReq) returns (DelVolRSForExpandAck){};
+    rpc DeleteVol(DeleteVolReq) returns (DeleteVolAck){};
+    rpc GetVolInfo(GetVolInfoReq) returns (GetVolInfoAck){};
+    //rpc UpdateBlkDB(Block) returns (UpdateBlkDBAck){};
+    rpc Migrate(MigrateReq) returns (MigrateAck){};
+
     rpc GetMetaLeader(GetMetaLeaderReq) returns (GetMetaLeaderAck){};
 
     rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
@@ -28,12 +42,129 @@ service MetaNode {
     rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
     rpc SyncChunk(SyncChunkReq) returns (SyncChunkAck){};
 
-    rpc UpdateBlockGroup(UpdateBlockGroupReq) returns (UpdateBlockGroupAck){};
-    rpc MigrateBlockGroup(MigrateBlockGroupReq) returns (MigrateBlockGroupAck){};
+    //rpc UpdateBlockGroup(UpdateBlockGroupReq) returns (UpdateBlockGroupAck){};
+    //rpc MigrateBlockGroup(MigrateBlockGroupReq) returns (MigrateBlockGroupAck){};
 
 }
 
 message NULL{
+}
+
+message Datanode {
+    string Ip = 1;
+    int32 Port = 2;
+    string MountPoint = 3 ;
+    int32 Capacity = 4; //GB
+    int32 Used = 5;
+    int32 Free = 6;
+    int32 Status = 7;
+}
+
+message DatanodeRegistryAck {
+    int32 Ret = 1;
+}
+
+message UpdateBlkDBAck {
+    int32 Ret = 1;
+}
+
+message GetAllDatanodeReq {
+}
+message GetAllDatanodeAck {
+    int32 Ret = 1;
+    repeated Datanode Datanodes = 2;
+}
+message DelDatanodeReq {
+    string Ip = 1;
+    string Port = 2;
+}
+message DelDatanodeAck {
+    int32 Ret = 1;
+}
+
+message Volume {
+	string UUID = 1;
+	string Name = 2;
+	int32  TotalSize = 3;
+	int32  AllocatedSize = 4;
+	uint64 RGID = 5;
+}
+
+message Vols {
+	repeated Volume Volumes=1;
+}
+
+message Block {
+    uint64 BlkID = 1;
+    string Ip = 2;
+    int32 Port = 3;
+    string Path = 4;
+    int32 Status = 5;
+    uint64 BGID = 6;
+    string VolID = 7;
+}
+
+message BGP {
+    repeated Block Blocks = 1;
+}
+
+message CreateVolReq {
+    string VolName = 1 ;
+    int32  SpaceQuota = 2 ;
+}
+message CreateVolAck {
+    int32 Ret = 1;
+    string UUID = 2;
+    uint64 RaftGroupID = 3;
+}
+
+message ExpandVolTSReq {
+    string VolID = 1 ;
+    int32  ExpandQuota = 2 ;
+}
+message ExpandVolTSAck {
+    int32 Ret = 1;
+}
+
+message ExpandVolRSReq {
+    string VolID = 1 ;
+}
+message ExpandVolRSAck {
+    int32 Ret = 1;
+    repeated BGP BGPS = 2;
+}
+
+message DelVolRSForExpandReq {
+    string UUID=1;
+    repeated BGP BGPS = 2;
+}
+message DelVolRSForExpandAck {
+    int32 Ret=1;
+}
+message DeleteVolReq {
+    string UUID = 1 ;
+}
+message DeleteVolAck {
+    int32 Ret = 1;
+}
+
+message GetVolInfoReq {
+    string UUID = 1 ;
+}
+
+message GetVolInfoAck {
+    int32 Ret = 1;
+    Volume VolInfo=2;
+    repeated BGP BGPS = 3;
+}
+
+message MigrateReq {
+    string DataNodeIP = 1;
+    int32  DataNodePort = 2;
+}
+
+message MigrateAck {
+    int32 Ret = 1;
 }
 
 message GetMetaLeaderReq{
@@ -203,30 +334,9 @@ message SyncChunkAck {
 
 
 message BlkInfo {
-    uint32 BgpID  = 1;
-    uint32 BlockID = 2;
+    uint64 BgpID  = 1;
+    uint64 BlockID = 2;
     int32 Status = 3;
-}
-
-message UpdateBlockGroupReq {
-    string     VolID = 1;
-    repeated   BlkInfo BlockInfos = 2;
-}
-
-message UpdateBlockGroupAck {
-    int32 Ret = 1;
-}
-
-
-message MigrateBlockGroupReq {
-    string  VolID = 1;
-    uint32 BlockGroupID = 2;
-    uint32 OldBlockID = 3;
-    BlockInfo NewBlock = 4;
-}
-
-message MigrateBlockGroupAck {
-    int32 Ret = 1;
 }
 
 
@@ -251,27 +361,20 @@ message DirentN{
 
 
 message BlockGroup{
-    uint32 BlockGroupID = 1;
+    uint64 BlockGroupID = 1;
     int64 FreeSize = 2;
     int32 Status = 3;
-    repeated BlockInfo BlockInfos = 4;
-}
-
-message BlockInfo{
-    uint32 BlockID = 1;
-    int32 DataNodeIP = 2;
-    int32 DataNodePort = 3;
-    int32 Status = 4;
 }
 
 message ChunkInfo{
     uint64 ChunkID = 1;
     int32 ChunkSize = 2;
-    uint32 BlockGroupID = 3;
+    uint64 BlockGroupID = 3;
 }
 
 message ChunkInfoWithBG{
     uint64 ChunkID = 1;
     int32 ChunkSize = 2;
-    BlockGroup BlockGroup = 3;
+    BGP BGP = 3;
 }
+
