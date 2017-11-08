@@ -807,10 +807,48 @@ func (a InodeKV) Less(b Item) bool {
 }
 
 type BGKV struct {
-	K uint32
+	K uint64
 	V []byte
 }
 
 func (a BGKV) Less(b Item) bool {
 	return a.K < b.(BGKV).K
+}
+
+// -------- Cluster Btrees ---------------
+
+type DataNodeKV struct {
+	K string
+	V []byte
+}
+
+func (a DataNodeKV) Less(b Item) bool {
+	return a.K < b.(DataNodeKV).K
+}
+
+type BlockKV struct {
+	K string
+	V []byte
+}
+
+func (a BlockKV) Less(b Item) bool {
+	return a.K < b.(BlockKV).K
+}
+
+type BGPKV struct {
+	K string
+	V []byte
+}
+
+func (a BGPKV) Less(b Item) bool {
+	return a.K < b.(BGPKV).K
+}
+
+type VOLKV struct {
+	K string
+	V []byte
+}
+
+func (a VOLKV) Less(b Item) bool {
+	return a.K < b.(VOLKV).K
 }

@@ -11,42 +11,33 @@
 二、集群搭建
 
 
-
 0、组件分配：
 
-	mysql    : 192.168.100.216 
-	volmgr   : 192.168.100.216 
 	metanode : 192.168.100.216 192.168.100.17 192.168.100.19 
 	datanode : 192.168.100.216 192.168.100.17 192.168.100.19 
 
-1、在 192.168.100.216 安装 Mysql： 
 
-	创建 containerfs 库，并导入 volmgr/ 下的 volmgr.sql 
+1、在 192.168.100.216 192.168.100.17 192.168.100.19 启动 metanode： 
 
-2、在 192.168.100.216 启动 volmgr： 
+	/home/cfs/cfs-metanode -metanode 192.168.100.216 -nodeid 1 -nodepeer 1,2,3 -nodeips 192.168.100.216,192.168.100.17,192.168.100.19 -wal /home/containerfs/metanode/data 
+	/home/cfs/cfs-metanode -metanode 192.168.100.17 -nodeid 2 -nodepeer 1,2,3 -nodeips 192.168.100.216,192.168.100.17,192.168.100.19  -wal /home/containerfs/metanode/data 
+	/home/cfs/cfs-metanode -metanode 192.168.100.19 -nodeid 3 -nodepeer 1,2,3 -nodeips 192.168.100.216,192.168.100.17,192.168.100.19  -wal /home/containerfs/metanode/data 
 
-	/home/cfs/cfs-volmgr -host 192.168.100.216 -port 10001 -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923 -sqlhost 192.168.100.216 -sqluser root -sqlpasswd 123456 
 
-3、在 192.168.100.216 192.168.100.17 192.168.100.19 启动 datanode：
+2、在 192.168.100.216 192.168.100.17 192.168.100.19 启动 datanode：
 
-	/home/cfs/cfs-datanode -host 192.168.100.216 -port 8801 -volmgr 192.168.100.216:10001 -datapath /home/containerfs/datanode1/data 
-	/home/cfs/cfs-datanode -host 192.168.100.17 -port 8801 -volmgr 192.168.100.216:10001 -datapath /home/containerfs/datanode1/data 
-	/home/cfs/cfs-datanode -host 192.168.100.19 -port 8801 -volmgr 192.168.100.216:10001 -datapath /home/containerfs/datanode1/data 
+	/home/cfs/cfs-datanode -host 192.168.100.216 -port 8801 -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923 -datapath /home/containerfs/datanode1/data 
+	/home/cfs/cfs-datanode -host 192.168.100.17 -port 8801 -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923 -datapath /home/containerfs/datanode1/data 
+	/home/cfs/cfs-datanode -host 192.168.100.19 -port 8801 -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923 -datapath /home/containerfs/datanode1/data 
 
-4、在 192.168.100.216 192.168.100.17 192.168.100.19 启动 metanode： 
+3、在某台机器，使用命令行工具，创建一个 volume： 
 
-	/home/cfs/cfs-metanode -metanode 192.168.100.216 -nodeid 1 -nodepeer 1,2,3 -nodeips 192.168.100.216,192.168.100.17,192.168.100.19 -volmgr 192.168.100.216:10001 -wal /home/containerfs/metanode/data 
-	/home/cfs/cfs-metanode -metanode 192.168.100.17 -nodeid 2 -nodepeer 1,2,3 -nodeips 192.168.100.216,192.168.100.17,192.168.100.19 -volmgr 192.168.100.216:10001 -wal /home/containerfs/metanode/data 
-	/home/cfs/cfs-metanode -metanode 192.168.100.19 -nodeid 3 -nodepeer 1,2,3 -nodeips 192.168.100.216,192.168.100.17,192.168.100.19 -volmgr 192.168.100.216:10001 -wal /home/containerfs/metanode/data 
-
-5、在某台机器，使用命令行工具，创建一个 volume： 
-
-	/home/cfs/cfs-CLI -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923 -volmgr 192.168.100.216:10001 -action createvol test 10
+	/home/cfs/cfs-CLI -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923  -action createvol test 10
 	101d18db4043fa26808fce9dc93a6d9f 
 
-6、在某客户机，安装 fuse (yum install fuse -y) ,然后挂载步骤5创建的volume：
+4、在某客户机，安装 fuse (yum install fuse -y) ,然后挂载步骤5创建的volume：
 
-	/home/cfs/cfs-fuseclient -uuid 101d18db4043fa26808fce9dc93a6d9f -buffertype 1 -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923 -mountpoint /mnt/mytest -readonly 0 -volmgr 192.168.100.216:10001 
+	/home/cfs/cfs-fuseclient -uuid 101d18db4043fa26808fce9dc93a6d9f -buffertype 1 -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923 -mountpoint /mnt/mytest -readonly 0
 
 	[root@node-219 ~]# df -h
 	Filesystem                                    Size  Used Avail Use% Mounted on
