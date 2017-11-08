@@ -2,11 +2,9 @@
 
 一、本系统有三个组件：
 
-1、volume manager 简称 volmgr:主要负责 volume 、blockgroup 、block 的分配管理 
+1、meta data node 简称 metanode:主要负责文件系统元数据管理 
 
-2、meta data node 简称 metanode:主要负责文件系统元数据管理 
-
-3、datanode:主要负责接收实体数据的读写删除 
+2、datanode:主要负责接收实体数据的读写删除 
 
 二、集群搭建
 
