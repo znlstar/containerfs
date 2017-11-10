@@ -5,7 +5,7 @@ language: go
 go:
   - 1.8
 
-go_import_path: github.com/ipdcode/containerfs
+go_import_path: github.com/tigcode/containerfs
 
 before_install:
   - wget https://github.com/google/protobuf/releases/download/v3.2.0/protoc-3.2.0-linux-x86_64.zip
@@ -13,7 +13,7 @@ before_install:
   - sudo chmod +x /usr/bin/protoc
   - go get -u github.com/golang/protobuf/{proto,protoc-gen-go}
   - go get -u github.com/go-sql-driver/mysql
-  - go get -u github.com/ipdcode/raft
+  - go get -u github.com/tigcode/raft
   - go get -u bazil.org/fuse
   - go get -u github.com/lxmgo/config
   - go get -u golang.org/x/net/context
