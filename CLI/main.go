@@ -3,8 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
-	fs "github.com/ipdcode/containerfs/fs"
-	"github.com/ipdcode/containerfs/logger"
+	fs "github.com/tigcode/containerfs/fs"
+	"github.com/tigcode/containerfs/logger"
 	"os"
 	"strconv"
 	"strings"
