@@ -1,6 +1,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/ipdcode/containerfs)](https://goreportcard.com/report/github.com/ipdcode/containerfs)
 [![Build Status](https://travis-ci.org/ipdcode/containerfs.svg?branch=master)](https://travis-ci.org/ipdcode/containerfs)
-# ![image](doc/logo.png)ContainerFS
+# ContainerFS
+![image](doc/logo.png)
 a cluster filesystem for the containers
 
 # Concepts
