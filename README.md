@@ -2,6 +2,7 @@
 [![Build Status](https://travis-ci.org/ipdcode/containerfs.svg?branch=master)](https://travis-ci.org/ipdcode/containerfs)
 # ContainerFS
 ![image](doc/logo.png) 
+
 A cluster filesystem for the containers
 
 # Concepts
