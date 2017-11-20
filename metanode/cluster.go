@@ -142,7 +142,7 @@ func (s *MetaNodeServer) CreateVol(ctx context.Context, in *mp.CreateVolReq) (*m
 
 	// pass bad status and free not enough datanodes
 	for _, v := range vv {
-		if v.Status != 0 || v.Free < 30 {
+		if v.Status != 0 || v.Free < 30 || v.Tier != in.Tier {
 			continue
 		}
 		k := v.Ip
@@ -154,7 +154,7 @@ func (s *MetaNodeServer) CreateVol(ctx context.Context, in *mp.CreateVolReq) (*m
 	}
 
 	if len(allip) < 3 {
-		logger.Error("Create Volume:%v but datanode nums:%v less than 3, so forbid CreateVol", voluuid, len(allip))
+		logger.Error("Create Volume:%v Tier:%v but datanode nums:%v less than 3, so forbid CreateVol", voluuid, in.Tier, len(allip))
 		ack.Ret = -1
 		return &ack, nil
 	}
@@ -215,12 +215,13 @@ func (s *MetaNodeServer) CreateVol(ctx context.Context, in *mp.CreateVolReq) (*m
 			logger.Error("Create Volume:%v Set blockgroup:%v blocks:%v failed:%v", voluuid, bgID, bg, err)
 			return &ack, err
 		}
-		logger.Debug("Create Volume:%v Set one blockgroup:%v blocks:%v to Cluster Map success", voluuid, bgID, bg)
+		logger.Debug("Create Volume:%v Tier:%v Set one blockgroup:%v blocks:%v to Cluster Map success", voluuid, in.Tier, bgID, bg)
 	}
 
 	vol := &mp.Volume{
 		UUID:          voluuid,
 		Name:          in.VolName,
+		Tier:          in.Tier,
 		TotalSize:     in.SpaceQuota,
 		AllocatedSize: blkgrpnum * 5,
 		RGID:          rgID,
@@ -339,6 +340,7 @@ func (s *MetaNodeServer) ExpandVolRS(ctx context.Context, in *mp.ExpandVolRSReq)
 		ack.Ret = 0
 		return &ack, nil
 	}
+	tier := volume.Tier
 
 	var blkgrpnum int32
 	if needExpandSize%BlkSizeG == 0 {
@@ -362,7 +364,7 @@ func (s *MetaNodeServer) ExpandVolRS(ctx context.Context, in *mp.ExpandVolRSReq)
 
 	// pass bad status and free not enough datanodes
 	for _, v := range vv {
-		if v.Status != 0 || v.Free < 30 {
+		if v.Status != 0 || v.Free < 30 || v.Tier != tier {
 			continue
 		}
 		k := v.Ip
@@ -374,7 +376,7 @@ func (s *MetaNodeServer) ExpandVolRS(ctx context.Context, in *mp.ExpandVolRSReq)
 	}
 
 	if len(allip) < 3 {
-		logger.Error("Expand Volume:%v but datanode nums:%v less than 3, so forbid ExpandVol", in.VolID, len(allip))
+		logger.Error("Expand Volume:%v Tier:%v but datanode nums:%v less than 3, so forbid ExpandVol", in.VolID, tier, len(allip))
 		ack.Ret = -1
 		return &ack, nil
 	}
@@ -609,6 +611,19 @@ func (s *MetaNodeServer) Migrate(ctx context.Context, in *mp.MigrateReq) (*mp.Mi
 		}
 
 		minKey := dnIP + fmt.Sprintf(":%d", dnPort)
+
+		v, err := nameSpace.RaftGroup.DatanodeGet(1, minKey)
+		if err != nil {
+			logger.Error("Get Datanode Tier info for ExpandVolRS failed, err:%v", err)
+			return
+		}
+		datanode := mp.Datanode{}
+		err = pbproto.Unmarshal(v, &datanode)
+		if err != nil {
+			return
+		}
+		tier := datanode.Tier
+
 		result, err := nameSpace.RaftGroup.BlockGetRange(1, minKey)
 		if err != nil {
 			logger.Error("Get Datanode %v Need Migrate Blocks failed, err:%v", minKey, err)
@@ -628,7 +643,7 @@ func (s *MetaNodeServer) Migrate(ctx context.Context, in *mp.MigrateReq) (*mp.Mi
 				continue
 			}
 
-			ret := s.BeginMigrate(tBlk)
+			ret := s.BeginMigrate(tBlk, tier)
 			if ret != 0 {
 				failedNum++
 				logger.Error("Migrating DataNode(%v:%v) Block:%v failed ----->>>>>  Total num:%v , cur index:%v", dnIP, dnPort, tBlk, totalNum, i)
@@ -646,7 +661,7 @@ func (s *MetaNodeServer) Migrate(ctx context.Context, in *mp.MigrateReq) (*mp.Mi
 	return &ack, nil
 }
 
-func (s *MetaNodeServer) BeginMigrate(in *mp.Block) int {
+func (s *MetaNodeServer) BeginMigrate(in *mp.Block, tier string) int {
 
 	s.Lock()
 	defer s.Unlock()
@@ -693,7 +708,7 @@ func (s *MetaNodeServer) BeginMigrate(in *mp.Block) int {
 
 	// pass bad status and free not enough datanodes
 	for _, v := range datanodes {
-		if v.Status != 0 || v.Free < 10 || v.Ip == blks[0].Ip {
+		if v.Status != 0 || v.Free < 10 || v.Tier != tier || v.Ip == blks[0].Ip {
 			continue
 		}
 		k := v.Ip
