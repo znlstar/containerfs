@@ -2,7 +2,7 @@ package cfs
 
 import (
 	"errors"
-	mp "github.com/ipdcode/containerfs/proto/mp"
+	mp "github.com/tigcode/containerfs/proto/mp"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"time"
@@ -75,22 +75,6 @@ func DialMeta(volumeID string) (*grpc.ClientConn, error) {
 
 // DialData ...
 func DialData(host string) (*grpc.ClientConn, error) {
-	var conn *grpc.ClientConn
-	var err error
-	conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
-	if err != nil {
-		time.Sleep(300 * time.Millisecond)
-		conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
-		if err != nil {
-			time.Sleep(300 * time.Millisecond)
-			conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
-		}
-	}
-	return conn, err
-}
-
-// DialVolmgr  ...
-func DialVolmgr(host string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
 	conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))

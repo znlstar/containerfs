@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/ipdcode/containerfs/logger"
-	ns "github.com/ipdcode/containerfs/metanode/namespace"
-	"github.com/ipdcode/containerfs/metanode/raftopt"
-	mp "github.com/ipdcode/containerfs/proto/mp"
-	"github.com/ipdcode/raft"
-	"github.com/ipdcode/raft/proto"
+	pbproto "github.com/golang/protobuf/proto"
+	"github.com/tigcode/containerfs/logger"
+	ns "github.com/tigcode/containerfs/metanode/namespace"
+	"github.com/tigcode/containerfs/metanode/raftopt"
+	mp "github.com/tigcode/containerfs/proto/mp"
+	"github.com/tigcode/raft"
+	"github.com/tigcode/raft/proto"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -19,6 +20,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -31,6 +33,12 @@ type addr struct {
 	log    string
 }
 
+const (
+	BlkSizeG      = 5
+	BlkSize       = 5 * 1024 * 1024 * 1024  /*one blksize 5G*/
+	OneExpandSize = 30 * 1024 * 1024 * 1024 /*allocated volumesize 30G for each time*/
+)
+
 // MetaNodeServerAddr ...
 var MetaNodeServerAddr addr
 
@@ -40,6 +48,7 @@ type MetaNodeServer struct {
 	Addr       *raftopt.Address
 	Resolver   *raftopt.Resolver
 	RaftServer *raft.RaftServer
+	sync.Mutex
 }
 
 // GetMetaLeader ...
@@ -64,35 +73,6 @@ func (s *MetaNodeServer) GetMetaLeader(ctx context.Context, in *mp.GetMetaLeader
 func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameSpaceReq) (*mp.CreateNameSpaceAck, error) {
 	ack := mp.CreateNameSpaceAck{}
 	ack.Ret = ns.CreateNameSpace(s.RaftServer, MetaNodeServerAddr.peers, MetaNodeServerAddr.nodeID, MetaNodeServerAddr.waldir, in.VolID, in.RaftGroupID, false)
-	// send to follower metadatas to create
-	if in.Type == 0 {
-		for _, addr := range raftopt.AddrDatabase {
-			if addr.Grpc == s.Addr.Grpc {
-				continue
-			}
-			conn2, err2 := grpc.Dial(addr.Grpc, grpc.WithInsecure())
-			if err2 != nil {
-				logger.Error("told peers to  create NameSpace Failed ...")
-				continue
-			}
-			defer conn2.Close()
-			mc := mp.NewMetaNodeClient(conn2)
-			pmCreateNameSpaceReq := &mp.CreateNameSpaceReq{
-				VolID:       in.VolID,
-				RaftGroupID: in.RaftGroupID,
-				Type:        1,
-			}
-			pmCreateNameSpaceAck, ret := mc.CreateNameSpace(context.Background(), pmCreateNameSpaceReq)
-			if ret != nil {
-				logger.Error("told peers to  create NameSpace Failed ...")
-				continue
-			}
-			if pmCreateNameSpaceAck.Ret != 0 {
-				logger.Error("told peers to create NameSpace Failed ...")
-				continue
-			}
-		}
-	}
 	return &ack, nil
 }
 
@@ -316,16 +296,33 @@ func (s *MetaNodeServer) GetFileChunksDirect(ctx context.Context, in *mp.GetFile
 		return &ack, nil
 	}
 
+	ret, nameSpace = ns.GetNameSpace("Cluster")
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
 	for _, v := range chunkInfos {
 		var chunkInfoWithBG mp.ChunkInfoWithBG
 		chunkInfoWithBG.ChunkID = v.ChunkID
 		chunkInfoWithBG.ChunkSize = v.ChunkSize
 
-		ok1, blockGroup := nameSpace.BlockGroupDBGet(v.BlockGroupID)
-		if !ok1 {
-			continue
+		bgKey := in.VolID + fmt.Sprintf("-%d", v.BlockGroupID)
+
+		blockGroup, err := nameSpace.RaftGroup.BGPGet(1, bgKey)
+		if err != nil {
+			ack.Ret = 1
+			return &ack, nil
 		}
-		chunkInfoWithBG.BlockGroup = blockGroup
+
+		bgp := &mp.BGP{}
+
+		err = pbproto.Unmarshal(blockGroup, bgp)
+		if err != nil {
+			ack.Ret = 1
+			return &ack, nil
+		}
+
+		chunkInfoWithBG.BGP = bgp
 		ack.ChunkInfos = append(ack.ChunkInfos, &chunkInfoWithBG)
 
 	}
@@ -351,18 +348,7 @@ func (s *MetaNodeServer) AllocateChunk(ctx context.Context, in *mp.AllocateChunk
 		return &ack, nil
 	}
 
-	ok1, blockGroup := nameSpace.BlockGroupDBGet(chunkInfo.BlockGroupID)
-	if !ok1 {
-		ack.Ret = 1
-		return &ack, nil
-	}
-
-	var tmpChunkInfo mp.ChunkInfoWithBG
-	tmpChunkInfo.ChunkID = chunkInfo.ChunkID
-	tmpChunkInfo.ChunkSize = chunkInfo.ChunkSize
-	tmpChunkInfo.BlockGroup = blockGroup
-
-	ack.ChunkInfo = &tmpChunkInfo
+	ack.ChunkInfo = chunkInfo
 	return &ack, nil
 }
 
@@ -376,30 +362,6 @@ func (s *MetaNodeServer) SyncChunk(ctx context.Context, in *mp.SyncChunkReq) (*m
 		return &ack, nil
 	}
 	ack.Ret = nameSpace.SyncChunk(in.ParentInodeID, in.Name, chunkinfo)
-	return &ack, nil
-}
-
-// UpdateBlockGroup ...
-func (s *MetaNodeServer) UpdateBlockGroup(ctx context.Context, in *mp.UpdateBlockGroupReq) (*mp.UpdateBlockGroupAck, error) {
-	ack := mp.UpdateBlockGroupAck{}
-	ret, nameSpace := ns.GetNameSpace(in.VolID)
-	if ret != 0 {
-		ack.Ret = ret
-		return &ack, nil
-	}
-	ack.Ret = nameSpace.UpdateBlockGroup(in.BlockInfos)
-	return &ack, nil
-}
-
-// MigrateBlockGroup ...
-func (s *MetaNodeServer) MigrateBlockGroup(ctx context.Context, in *mp.MigrateBlockGroupReq) (*mp.MigrateBlockGroupAck, error) {
-	ack := mp.MigrateBlockGroupAck{}
-	ret, nameSpace := ns.GetNameSpace(in.VolID)
-	if ret != 0 {
-		ack.Ret = ret
-		return &ack, nil
-	}
-	ack.Ret = nameSpace.MigrateBlockGroup(in.BlockGroupID, in.OldBlockID, in.NewBlock)
 	return &ack, nil
 }
 
@@ -420,6 +382,9 @@ func startMetaDataService(metaServer *MetaNodeServer) {
 
 func loadMetaData(rs *raft.RaftServer) int32 {
 	ns.CreateGNameSpace()
+
+	ns.CreateClusterNameSpace(rs, MetaNodeServerAddr.peers, MetaNodeServerAddr.nodeID, MetaNodeServerAddr.waldir)
+
 	ret, vols := ns.GetVolList()
 	if ret != 0 {
 		logger.Error("loadMetaData,GetVolList failed,ret:%v", ret)
@@ -427,14 +392,13 @@ func loadMetaData(rs *raft.RaftServer) int32 {
 	}
 	for _, v := range vols {
 		logger.Debug("loadMetaData,Vol:%v", v)
-		ns.CreateNameSpace(rs, MetaNodeServerAddr.peers, MetaNodeServerAddr.nodeID, MetaNodeServerAddr.waldir, v.UUID, v.RaftGroupID, true)
+		ns.CreateNameSpace(rs, MetaNodeServerAddr.peers, MetaNodeServerAddr.nodeID, MetaNodeServerAddr.waldir, v.UUID, v.RGID, true)
 	}
 	return 0
 }
 
 func init() {
 
-	flag.StringVar(&ns.VolMgrAddress, "volmgr", "127.0.0.1:10001", "ContainerFS VolMgr Host")
 	flag.StringVar(&MetaNodeServerAddr.host, "metanode", "127.0.0.1", "ContainerFS Metanode Host")
 	nodeid := flag.Int64("nodeid", 1, "ContainerFS Metanode ID")
 	peers := flag.String("nodepeer", "1,2,3", "ContainerFS metanode peers")
@@ -547,15 +511,25 @@ func main() {
 	}
 
 	go func() {
-		http.ListenAndServe("127.0.0.1:10000", nil)
+		http.ListenAndServe(":10000", nil)
 	}()
 
 	ticker := time.NewTicker(time.Second * 10)
 	go func() {
 		for range ticker.C {
-			//showLeaders(&metaServer)
+			showLeaders(&metaServer)
+		}
+	}()
+
+	t := time.NewTicker(time.Second * 30)
+	go func() {
+		for range t.C {
+			if metaServer.RaftServer.IsLeader(1) {
+				DetectDataNodes(&metaServer)
+			}
 		}
 	}()
 
 	startMetaDataService(&metaServer)
+
 }

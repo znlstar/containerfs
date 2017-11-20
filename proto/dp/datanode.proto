@@ -9,11 +9,13 @@ service DataNode {
     rpc DatanodeHealthCheck(DatanodeHealthCheckReq) returns (DatanodeHealthCheckAck){};
     rpc RecvMigrateMsg(RecvMigrateReq) returns (RecvMigrateAck){};
     rpc SendMigrateData(stream FInfo) returns (SendAck){};
+
+    rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
 }
 
 message WriteChunkReq{
     uint64 ChunkID = 1;
-    uint32 BlockID = 2;
+    uint64 BlockID = 2;
     bytes Databuf = 3;
 }
 message WriteChunkAck{
@@ -22,7 +24,7 @@ message WriteChunkAck{
 
 message StreamReadChunkReq{
     uint64 ChunkID = 1;
-    uint32 BlockID = 2;
+    uint64 BlockID = 2;
     int64 Offset = 3;
     int64 Readsize = 4;
 }
@@ -34,7 +36,7 @@ message StreamReadChunkAck{
 
 message DeleteChunkReq{
     uint64 ChunkID = 1;
-    uint32 BlockID = 2;
+    uint64 BlockID = 2;
 }
 message DeleteChunkAck{
     int32 Ret = 1;
@@ -45,12 +47,14 @@ message DatanodeHealthCheckReq{
 
 message DatanodeHealthCheckAck{
     int32 Ret = 1;
+    int32 Used = 2;
+    int32 Status = 3;   
 }
 
 message RecvMigrateReq{
-    uint32 SrcBlkID = 1;
+    uint64 SrcBlkID = 1;
     string SrcMount = 2;
-    uint32 DstBlkID = 3;
+    uint64 DstBlkID = 3;
     string DstIP = 4;
     int32  DstPort = 5;
     string DstMount = 6;
@@ -61,7 +65,7 @@ message RecvMigrateAck{
 }
 
 message FInfo{
-    uint32 DstBlkID = 1;
+    uint64 DstBlkID = 1;
     string DstMount = 2;
     string FName = 3;
     bytes DataBuf = 4;
@@ -71,16 +75,46 @@ message SendAck {
     int32 Ret = 1;
 }
 
-message BlockGroup{
-    uint32 BlockGroupID = 1;
-    int32 FreeCnt = 2;
-    int32 Status = 3;
-    repeated BlockInfo BlockInfos = 4;
+
+// web -> the datanode
+message NodeMonitorReq {
+}
+message NodeMonitorAck {
+    int32 Ret = 1;
+    NodeInfo NodeInfo = 2;
+}
+message NodeInfo {
+    double CpuUsage = 1;
+    double CpuLoad = 2;
+    uint64 FreeMem = 3;
+    uint64 TotalMem = 4;
+    double  MemUsedPercent = 5;
+    uint64  PathTotal = 6;
+    uint64  PathFree = 7;
+    double  PathUsedPercent = 8;
+    repeated DiskIO DiskIOs = 9;
+    repeated NetIO NetIOs = 10;
 }
 
+message DiskIO {
+    uint64 ReadCount = 1;
+    uint64 WriteCount = 2;
+    uint64 ReadBytes = 3;
+    uint64 WriteBytes = 4;
+    uint64 IopsInProgress = 5;
+    uint64 IoTime = 6;
+    uint64 WeightedIO = 7;
+    string Name = 8;
+}
 
-message BlockInfo{
-    uint32 BlockID = 1;
-    int32 DataNodeIP = 2;
-    int32 DataNodePort = 3;
+message NetIO {
+    uint64 BytesSent = 1;
+    uint64 BytesRecv = 2;
+    uint64 PacketsSent = 3;
+    uint64 PacketsRecv = 4;
+    uint64 Errin = 5;
+    uint64 Errout = 6;
+    uint64 Dropin = 7;
+    uint64 Dropout = 8;
+    string Name = 9;
 }

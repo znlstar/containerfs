@@ -5,8 +5,8 @@ import (
 	"bazil.org/fuse/fs"
 	"flag"
 	"fmt"
-	cfs "github.com/ipdcode/containerfs/fs"
-	"github.com/ipdcode/containerfs/logger"
+	cfs "github.com/tigcode/containerfs/fs"
+	"github.com/tigcode/containerfs/logger"
 	"golang.org/x/net/context"
 	"math"
 	"os"
@@ -130,9 +130,11 @@ func (d *dir) setParentInode(pdir *dir) {
 // Attr ...
 func (d *dir) Attr(ctx context.Context, a *fuse.Attr) error {
 
+	logger.Debug("Dir Attr")
+
 	a.Mode = os.ModeDir | 0755
 	a.Inode = d.inode
-	a.Valid = time.Second
+	a.Valid = time.Minute
 	/*
 		if d.parent == nil {
 			a.Mode = os.ModeDir | 0755
@@ -156,6 +158,8 @@ func (d *dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	logger.Debug("Dir Lookup")
 
 	if a, ok := d.active[name]; ok {
 		return a.node, nil
@@ -202,6 +206,8 @@ func (d *dir) reviveNode(inodeType bool, inode uint64, name string) (node, error
 func (d *dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+
+	logger.Debug("Dir ReadDirAll")
 
 	var res []fuse.Dirent
 	ret, dirents := d.fs.cfs.ListDirect(d.inode)
@@ -481,10 +487,13 @@ func (f *File) setParentInode(pdir *dir) {
 // Attr ...
 func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 
+	logger.Debug("File Attr")
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
 	ret, inode, inodeInfo := f.parent.fs.cfs.GetInodeInfoDirect(f.parent.inode, f.name)
-	if ret != 0 {
+	if ret != 0 || inodeInfo == nil {
 		return nil
 	}
 
@@ -494,10 +503,10 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Size = uint64(inodeInfo.FileSize)
 	a.Inode = uint64(inode)
 
-	a.BlockSize = 4 * 1024 // this is for fuse attr quick update
+	a.BlockSize = 4 * 1024
 	a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
 	a.Mode = 0666
-	a.Valid = time.Second
+	a.Valid = time.Minute
 
 	return nil
 }
@@ -674,7 +683,6 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 
 func main() {
 
-	addr1 := flag.String("volmgr", "127.0.0.1:10001", "ContainerFS volmgr host")
 	addr2 := flag.String("metanode", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS metanode hosts")
 	buffertype := flag.Int("buffertype", 0, "ContainerFS per file buffertype : 0 512KB 1 256KB 2 128KB")
 	uuid := flag.String("uuid", "xxx", "ContainerFS Volume UUID")
@@ -685,7 +693,6 @@ func main() {
 
 	flag.Parse()
 
-	cfs.VolMgrAddr = *addr1
 	cfs.MetaNodePeers = strings.Split(*addr2, ",")
 
 	switch *buffertype {
@@ -735,12 +742,22 @@ func main() {
 	tic := time.NewTicker(30 * time.Second)
 	go func() {
 		for range tic.C {
-			ret := cfs.ExpandVolRS(*uuid, *mountPoint)
-			if ret == -1 {
+			ok, ret := cfs.GetFSInfo(*uuid)
+			if ok != 0 {
+				logger.Error("ExpandVol once volume:%v failed, GetFSInfo error", *uuid)
+				continue
+			}
+			if float64(ret.FreeSpace)/float64(ret.TotalSpace) > 0.1 {
+				continue
+			}
+
+			logger.Debug("Need ExpandVol once volume:%v -- totalsize:%v -- freesize:%v", *uuid, ret.TotalSpace, ret.FreeSpace)
+			ok = cfs.ExpandVolRS(*uuid, *mountPoint)
+			if ok == -1 {
 				logger.Error("Expand volume: %v one time error", *uuid)
-			} else if ret == -2 {
+			} else if ok == -2 {
 				logger.Error("Expand volume: %v by another client, so this client not need expand", *uuid)
-			} else if ret == 1 {
+			} else if ok == 1 {
 				logger.Debug("Expand volume: %v one time sucess", *uuid)
 			}
 		}

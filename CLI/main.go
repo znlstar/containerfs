@@ -3,8 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
-	fs "github.com/ipdcode/containerfs/fs"
-	"github.com/ipdcode/containerfs/logger"
+	fs "github.com/tigcode/containerfs/fs"
+	"github.com/tigcode/containerfs/logger"
 	"os"
 	"strconv"
 	"strings"
@@ -17,11 +17,10 @@ func main() {
 	var peers string
 	var cmd string
 
-	flag.StringVar(&fs.VolMgrAddr, "volmgr", "127.0.0.1:10001", "ContainerFS VolMgr Host")
 	flag.StringVar(&peers, "metanode", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS MetaNode Host")
 	flag.StringVar(&logpath, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Log Path")
 	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS Log Level")
-	flag.StringVar(&cmd,"action","",`
+	flag.StringVar(&cmd, "action", "", `
 		createvol [volumename ] size
 		expandvol [volumeuuid ] size
 		migrate [datanodeIP] [datanodePort]
@@ -29,7 +28,9 @@ func main() {
 		snapshootvol [volumeuuid ]
 		getvolleader [volumeuuid ]
 		getvolinfo [volumeuuid ]
-		getinodeinfo [volumeuuid ] parentinodeid name`)	
+		getinodeinfo [volumeuuid ] parentinodeid name
+		getdatanodes
+		deldatanode ip port`)
 
 	flag.Parse()
 
@@ -59,7 +60,8 @@ func main() {
 			fmt.Println("createvol [volname] [space GB]")
 			os.Exit(1)
 		}
-		ret := fs.CreateVol(flag.Arg(0), flag.Arg(1))
+		//ret := fs.CreateVol(flag.Arg(0), flag.Arg(1))
+		ret := fs.CreateVolbyMeta(flag.Arg(0), flag.Arg(1))
 		if ret != 0 {
 			fmt.Println("failed")
 		}
@@ -135,6 +137,11 @@ func main() {
 			os.Exit(1)
 		}
 		cfs := fs.OpenFileSystem(flag.Arg(0))
+		if cfs == nil {
+			fmt.Println("no such volume")
+			os.Exit(1)
+		}
+
 		pinode, err := strconv.ParseUint(flag.Arg(1), 10, 64)
 		if err == nil {
 			ret, inode, inodeinfo := cfs.GetInodeInfoDirect(pinode, flag.Arg(2))
@@ -153,7 +160,31 @@ func main() {
 		} else {
 			fmt.Println("err parent inode", err)
 		}
+	case "getdatanodes":
+		argNum := flag.NArg()
+		if argNum != 0 {
+			fmt.Println("getdatanodes")
+			os.Exit(1)
+		}
+		ret, vi := fs.GetAllDatanode()
+		if ret == 0 {
+			fmt.Println(vi)
+		} else {
+			fmt.Printf("get all datanodes info failed , ret :%d", ret)
+		}
 
+	case "deldatanode":
+		argNum := flag.NArg()
+		if argNum != 2 {
+			fmt.Println("deldatanode ip port")
+			os.Exit(1)
+		}
+		ret := fs.DelDatanode(flag.Arg(0), flag.Arg(1))
+		if ret == 0 {
+			fmt.Printf("del success")
+		} else {
+			fmt.Printf("del failed , ret :%d", ret)
+		}
 	default:
 		fmt.Println("wrong action operation")
 	}

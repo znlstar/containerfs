@@ -2,12 +2,13 @@ package raftopt
 
 import (
 	"bufio"
-	"encoding/binary"
 	"encoding/json"
-	log "github.com/ipdcode/containerfs/logger"
-	"github.com/ipdcode/raft"
-	"github.com/ipdcode/raft/proto"
-	"github.com/ipdcode/raft/storage/wal"
+	log "github.com/tigcode/containerfs/logger"
+	btree "github.com/tigcode/containerfs/metanode/raftopt/BTree"
+	"github.com/tigcode/raft"
+	"github.com/tigcode/raft/proto"
+	"github.com/tigcode/raft/storage/wal"
+	"io"
 	"io/ioutil"
 	"os"
 	"path"
@@ -46,9 +47,13 @@ func CreateKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64
 	// state machine
 	kvsm := newKvStatemachine(nodeID, rs)
 
-	index, err := LoadKvSnapShoot(kvsm, path.Join(dir, UUID, "wal", "snap"))
-	if err != nil {
-		return nil, nil, err
+	var index uint64
+
+	if UUID != "Cluster" {
+		index, err = LoadKvSnapShoot(kvsm, path.Join(dir, UUID, "wal", "snap"))
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	log.Debug("CreateKvStateMachine Success index : %v", index)
@@ -74,79 +79,110 @@ func CreateKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64
 //TakeKvSnapShoot ...
 func TakeKvSnapShoot(ms *KvStateMachine, rsg *wal.Storage, path string) error {
 
-	var bigdata []byte
-
-	ms.DentryLocker.RLock()
-	dentrydata, err := json.Marshal(ms.dentryData)
-	if err != nil {
-		ms.DentryLocker.RUnlock()
-		return err
+	_, err := os.Stat(path)
+	if err == nil {
+		t := time.Now()
+		os.Rename(path, path+"-backup"+"-"+t.String())
 	}
-	ms.DentryLocker.RUnlock()
+	os.MkdirAll(path, 0777)
 
-	ms.inodeLocker.RLock()
-	inodedata, err := json.Marshal(ms.inodeData)
-	if err != nil {
-		ms.inodeLocker.RUnlock()
-		return err
-	}
-	ms.inodeLocker.RUnlock()
-
-	ms.BlockGroupLocker.RLock()
-	bgdata, err := json.Marshal(ms.blockGroupData)
-	if err != nil {
-		ms.BlockGroupLocker.RUnlock()
-		return err
-	}
-	ms.BlockGroupLocker.RUnlock()
-
-	a := make([]byte, 8)
-	binary.BigEndian.PutUint64(a, uint64(len(dentrydata)))
-	bigdata = append(make([]byte, 8), a...)
-	bigdata = append(bigdata, dentrydata...)
-
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, uint64(len(inodedata)))
-	bigdata = append(bigdata, b...)
-	bigdata = append(bigdata, inodedata...)
-
-	c := make([]byte, 8)
-	binary.BigEndian.PutUint64(c, uint64(len(bgdata)))
-	bigdata = append(bigdata, c...)
-	bigdata = append(bigdata, bgdata...)
-
-	binary.BigEndian.PutUint64(bigdata, ms.applied)
-
-	d := make([]byte, 8)
-	binary.BigEndian.PutUint64(d, ms.chunkID)
-	bigdata = append(bigdata, d...)
-
-	e := make([]byte, 8)
-	binary.BigEndian.PutUint64(e, ms.inodeID)
-	bigdata = append(bigdata, e...)
-
-	var appliedStr = strconv.FormatInt(int64(ms.applied), 10)
-
-	f, err := os.OpenFile(path+"-"+appliedStr, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
+	f, err := os.OpenFile(path+"/applied", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		f.Close()
 		return err
 	}
 	w := bufio.NewWriter(f)
 
-	w.Write(bigdata)
+	w.Write([]byte(strconv.FormatUint(ms.applied, 10)))
 	w.Flush()
 	f.Close()
 
-	_, err = os.Stat(path)
-	if err == nil {
-		t := time.Now()
-		os.Rename(path, path+"-backup"+"-"+t.String())
-		os.Rename(path+"-"+appliedStr, path)
-	} else {
-		os.Rename(path+"-"+appliedStr, path)
+	f, err = os.OpenFile(path+"/chunkid", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		f.Close()
+		return err
 	}
+	w = bufio.NewWriter(f)
 
+	w.Write([]byte(strconv.FormatUint(ms.chunkID, 10)))
+	w.Flush()
+	f.Close()
+
+	f, err = os.OpenFile(path+"/inodeid", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		f.Close()
+		return err
+	}
+	w = bufio.NewWriter(f)
+
+	w.Write([]byte(strconv.FormatUint(ms.inodeID, 10)))
+	w.Flush()
+	f.Close()
+
+	f, err = os.OpenFile(path+"/dentrydata", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		f.Close()
+		return err
+	}
+	w = bufio.NewWriter(f)
+
+	var data []byte
+
+	ms.dentryData.Ascend(func(a btree.Item) bool {
+
+		if data, err = json.Marshal(a.(btree.DentryKV)); err != nil {
+			return false
+		}
+
+		w.Write(data)
+		w.Write([]byte("\n"))
+		w.Flush()
+		return true
+	})
+
+	f.Close()
+
+	f, err = os.OpenFile(path+"/inodedata", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		f.Close()
+		return err
+	}
+	w = bufio.NewWriter(f)
+
+	ms.inodeData.Ascend(func(a btree.Item) bool {
+
+		if data, err = json.Marshal(a.(btree.InodeKV)); err != nil {
+			return false
+		}
+
+		w.Write(data)
+		w.Write([]byte("\n"))
+		w.Flush()
+		return true
+	})
+
+	f.Close()
+
+	f, err = os.OpenFile(path+"/bgdata", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		f.Close()
+		return err
+	}
+	w = bufio.NewWriter(f)
+
+	ms.blockGroupData.Ascend(func(a btree.Item) bool {
+
+		if data, err = json.Marshal(a.(btree.BGKV)); err != nil {
+			return false
+		}
+
+		w.Write(data)
+		w.WriteByte('\n')
+		w.Flush()
+		return true
+	})
+
+	f.Close()
 	err = rsg.Truncate(ms.applied)
 	if err != nil {
 		log.Error("TakeKvSnapShoot Truncate failed index : %v , err :%v", ms.applied, err)
@@ -159,42 +195,116 @@ func TakeKvSnapShoot(ms *KvStateMachine, rsg *wal.Storage, path string) error {
 
 //LoadKvSnapShoot ...
 func LoadKvSnapShoot(ms *KvStateMachine, path string) (uint64, error) {
-
-	fi, err := os.Open(path)
+	fi, err := os.Open(path + "/applied")
 	if err != nil {
 		return 0, nil
 	}
-	defer fi.Close()
-	bigdata, err := ioutil.ReadAll(fi)
+	data, err := ioutil.ReadAll(fi)
+	ms.applied, err = strconv.ParseUint(string(data), 10, 64)
+	log.Debug("ms.applied %v", ms.applied)
+	fi.Close()
 
-	ms.applied = binary.BigEndian.Uint64(bigdata)
+	fi, err = os.Open(path + "/chunkid")
+	if err != nil {
+		return 0, nil
+	}
+	data, err = ioutil.ReadAll(fi)
+	ms.chunkID, err = strconv.ParseUint(string(data), 10, 64)
+	log.Debug("ms.chunkID %v", ms.chunkID)
+	fi.Close()
 
-	ms.DentryLocker.Lock()
-	dentryLen := binary.BigEndian.Uint64(bigdata[8:16])
-	if err = json.Unmarshal(bigdata[16:16+dentryLen], &ms.dentryData); err != nil {
-		ms.DentryLocker.Unlock()
+	fi, err = os.Open(path + "/inodeid")
+	if err != nil {
+		return 0, nil
+	}
+	data, err = ioutil.ReadAll(fi)
+	ms.inodeID, err = strconv.ParseUint(string(data), 10, 64)
+	log.Debug("ms.inodeID %v", ms.inodeID)
+	fi.Close()
+
+	fi, err = os.Open(path + "/dentrydata")
+	if err != nil {
 		return 0, err
 	}
-	ms.DentryLocker.Unlock()
+	buf := bufio.NewReader(fi)
+	var dentry btree.DentryKV
 
-	ms.inodeLocker.Lock()
-	inodeLen := binary.BigEndian.Uint64(bigdata[16+dentryLen : 16+dentryLen+8])
-	if err = json.Unmarshal(bigdata[16+dentryLen+8:16+dentryLen+8+inodeLen], &ms.inodeData); err != nil {
-		ms.inodeLocker.Unlock()
+	for {
+		line, err := buf.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			fi.Close()
+			return 0, err
+		}
+		err = json.Unmarshal(line, &dentry)
+		if err != nil {
+			fi.Close()
+			return 0, err
+		}
+		log.Debug("dentry %v", dentry)
+
+		ms.dentryData.ReplaceOrInsert(dentry)
+	}
+	fi.Close()
+
+	fi, err = os.Open(path + "/inodedata")
+	if err != nil {
 		return 0, err
 	}
-	ms.inodeLocker.Unlock()
+	buf = bufio.NewReader(fi)
+	var inode btree.InodeKV
 
-	ms.BlockGroupLocker.Lock()
-	bgLen := binary.BigEndian.Uint64(bigdata[16+dentryLen+8+inodeLen : 16+dentryLen+8+inodeLen+8])
-	if err = json.Unmarshal(bigdata[16+dentryLen+8+inodeLen+8:16+dentryLen+8+inodeLen+8+bgLen], &ms.blockGroupData); err != nil {
-		ms.BlockGroupLocker.Unlock()
+	for {
+		line, err := buf.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			fi.Close()
+			return 0, err
+		}
+		err = json.Unmarshal(line, &inode)
+		if err != nil {
+			fi.Close()
+			return 0, err
+		}
+		log.Debug("inode %v", inode)
+
+		ms.inodeData.ReplaceOrInsert(inode)
+	}
+	fi.Close()
+
+	fi, err = os.Open(path + "/bgdata")
+	if err != nil {
 		return 0, err
 	}
-	ms.BlockGroupLocker.Unlock()
+	buf = bufio.NewReader(fi)
+	var bg btree.BGKV
 
-	ms.chunkID = binary.BigEndian.Uint64(bigdata[16+dentryLen+8+inodeLen+8+bgLen : 16+dentryLen+8+inodeLen+8+bgLen+8])
-	ms.inodeID = binary.BigEndian.Uint64(bigdata[16+dentryLen+8+inodeLen+8+bgLen+8:])
+	for {
+		line, err := buf.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			fi.Close()
+			return 0, err
+		}
+		err = json.Unmarshal(line, &bg)
+		if err != nil {
+			fi.Close()
+			return 0, err
+		}
+		log.Debug("bg %v", bg)
+
+		ms.blockGroupData.ReplaceOrInsert(bg)
+	}
+	fi.Close()
+
+	log.Debug("ms.applied end %v", ms.applied)
 
 	return ms.applied, nil
+
 }

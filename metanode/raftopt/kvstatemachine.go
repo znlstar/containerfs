@@ -1,17 +1,18 @@
 package raftopt
 
 import (
-	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"sync"
-
 	pbproto "github.com/golang/protobuf/proto"
-	kvp "github.com/ipdcode/containerfs/proto/kvp"
-	"github.com/ipdcode/raft"
-	"github.com/ipdcode/raft/proto"
+	"github.com/tigcode/containerfs/logger"
+	btree "github.com/tigcode/containerfs/metanode/raftopt/BTree"
+	kvp "github.com/tigcode/containerfs/proto/kvp"
+	"github.com/tigcode/raft"
+	"github.com/tigcode/raft/proto"
+	"io"
+	"strconv"
+	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -34,6 +35,22 @@ const (
 	OPT_SET_BG = 7
 	// OPT_DEL_BG ...
 	OPT_DEL_BG = 8
+
+	// for Cluster
+	OPT_ALLOCATE_RGID    = 9
+	OPT_ALLOCATE_BLOCKID = 10
+	OPT_ALLOCATE_BGID    = 11
+	OPT_SET_DATANODE     = 12
+	OPT_DEL_DATANODE     = 13
+	OPT_SET_BLOCK        = 14
+	OPT_DEL_BLOCK        = 15
+	OPT_SET_BGP          = 16
+	OPT_DEL_BGP          = 17
+	OPT_SET_VOL          = 18
+	OPT_DEL_VOL          = 19
+
+	// OPT_APPLIED ...
+	OPT_APPLIED = 20
 )
 
 //KvStateMachine ...
@@ -42,29 +59,54 @@ type KvStateMachine struct {
 	applied uint64
 	raft    *raft.RaftServer
 
-	DentryLocker sync.RWMutex
-	dentryData   map[string][]byte
+	dentryItem btree.DentryKV
+	inodeItem  btree.InodeKV
+	bgItem     btree.BGKV
 
-	inodeLocker sync.RWMutex
-	inodeData   map[string][]byte
-
-	BlockGroupLocker sync.RWMutex
-	blockGroupData   map[string][]byte
+	dentryData     *btree.BTree
+	inodeData      *btree.BTree
+	blockGroupData *btree.BTree
 
 	chunkIDLocker sync.Mutex
 	chunkID       uint64
 
 	inodeIDLocker sync.Mutex
 	inodeID       uint64
+
+	rgIDLocker sync.Mutex
+	rgID       uint64
+
+	blockIDLocker sync.Mutex
+	blockID       uint64
+
+	bgIDLocker sync.Mutex
+	bgID       uint64
+
+	dataNodeItem btree.DataNodeKV
+	dataNodeData *btree.BTree
+
+	blockItem btree.BlockKV
+	blockData *btree.BTree
+
+	bgpItem btree.BGPKV
+	bgpData *btree.BTree
+
+	volItem btree.VOLKV
+	volData *btree.BTree
 }
 
 func newKvStatemachine(id uint64, raft *raft.RaftServer) *KvStateMachine {
 	return &KvStateMachine{
 		id:             id,
 		raft:           raft,
-		dentryData:     make(map[string][]byte),
-		inodeData:      make(map[string][]byte),
-		blockGroupData: make(map[string][]byte),
+		dentryData:     btree.New(32),
+		inodeData:      btree.New(32),
+		blockGroupData: btree.New(8),
+		dataNodeData:   btree.New(8),
+		blockData:      btree.New(8),
+		bgpData:        btree.New(8),
+		volData:        btree.New(8),
+		rgID:           1,
 	}
 }
 
@@ -83,152 +125,68 @@ func (ms *KvStateMachine) Apply(data []byte, index uint64) (interface{}, error) 
 	case OPT_ALLOCATE_CHUNKID: // allockChunkID
 		atomic.AddUint64(&ms.chunkID, 1)
 	case OPT_SET_DENTRY: // set dentryData
-		ms.DentryLocker.Lock()
-		ms.dentryData[kv.K] = kv.V
-		ms.DentryLocker.Unlock()
+		ms.dentryItem.K = kv.K
+		ms.dentryItem.V = kv.V
+		ms.dentryData.ReplaceOrInsert(ms.dentryItem)
 	case OPT_DEL_DENTRY: // del dentryData
-		ms.DentryLocker.Lock()
-		delete(ms.dentryData, kv.K)
-		ms.DentryLocker.Unlock()
+		ms.dentryItem.K = kv.K
+		ms.dentryData.Delete(ms.dentryItem)
 	case OPT_SET_INODE: // set inodeData
-		ms.inodeLocker.Lock()
-		ms.inodeData[kv.K] = kv.V
-		ms.inodeLocker.Unlock()
+		key, _ := strconv.ParseUint(kv.K, 10, 64)
+		ms.inodeItem.K = key
+		ms.inodeItem.V = kv.V
+		ms.inodeData.ReplaceOrInsert(ms.inodeItem)
 	case OPT_DEL_INODE: // del inodeData
-		ms.inodeLocker.Lock()
-		delete(ms.inodeData, kv.K)
-		ms.inodeLocker.Unlock()
+		key, _ := strconv.ParseUint(kv.K, 10, 64)
+		ms.inodeItem.K = key
+		ms.inodeData.Delete(ms.inodeItem)
 	case OPT_SET_BG: // set OPT_SET_BG
-		ms.BlockGroupLocker.Lock()
-		ms.blockGroupData[kv.K] = kv.V
-		ms.BlockGroupLocker.Unlock()
+		key, _ := strconv.ParseUint(kv.K, 10, 64)
+		ms.bgItem.K = key
+		ms.bgItem.V = kv.V
+		ms.blockGroupData.ReplaceOrInsert(ms.bgItem)
 
+	case OPT_ALLOCATE_RGID:
+		atomic.AddUint64(&ms.rgID, 1)
+	case OPT_ALLOCATE_BLOCKID: // allockChunkID
+		atomic.AddUint64(&ms.blockID, 1)
+	case OPT_ALLOCATE_BGID: // allockChunkID
+		atomic.AddUint64(&ms.bgID, 1)
+	case OPT_SET_DATANODE: // set OPT_SET_BLOCK
+		ms.dataNodeItem.K = kv.K
+		ms.dataNodeItem.V = kv.V
+		ms.dataNodeData.ReplaceOrInsert(ms.dataNodeItem)
+	case OPT_DEL_DATANODE: // del OPT_DEL_BLOCK
+		ms.dataNodeItem.K = kv.K
+		ms.dataNodeData.Delete(ms.dataNodeItem)
+
+	case OPT_SET_BLOCK: // set OPT_SET_BLOCK
+		ms.blockItem.K = kv.K
+		ms.blockItem.V = kv.V
+		ms.blockData.ReplaceOrInsert(ms.blockItem)
+	case OPT_DEL_BLOCK: // del OPT_DEL_BLOCK
+		ms.blockItem.K = kv.K
+		ms.blockData.Delete(ms.blockItem)
+
+	case OPT_SET_BGP: // set OPT_SET_BGP
+		ms.bgpItem.K = kv.K
+		ms.bgpItem.V = kv.V
+		ms.bgpData.ReplaceOrInsert(ms.bgpItem)
+	case OPT_DEL_BGP: // del OPT_DEL_BGP
+		ms.bgpItem.K = kv.K
+		ms.bgpData.Delete(ms.bgpItem)
+
+	case OPT_SET_VOL: // set OPT_SET_VOL
+		ms.volItem.K = kv.K
+		ms.volItem.V = kv.V
+		ms.volData.ReplaceOrInsert(ms.volItem)
+	case OPT_DEL_VOL: // del OPT_DEL_VOL
+		ms.volItem.K = kv.K
+		ms.volData.Delete(ms.volItem)
 	}
 
 	ms.applied = index
 	return nil, nil
-}
-
-//ApplyMemberChange ...
-func (ms *KvStateMachine) ApplyMemberChange(confChange *proto.ConfChange, index uint64) (interface{}, error) {
-	return nil, nil
-}
-
-//Snapshot ...
-func (ms *KvStateMachine) Snapshot() (proto.Snapshot, error) {
-
-	var dentrydata []byte
-	var inodedata []byte
-	var bgdata []byte
-	var bigdata []byte
-
-	var err error
-
-	ms.DentryLocker.RLock()
-	if dentrydata, err = json.Marshal(ms.dentryData); err != nil {
-		ms.DentryLocker.RUnlock()
-		return nil, err
-	}
-	ms.DentryLocker.RUnlock()
-
-	ms.inodeLocker.RLock()
-	if inodedata, err = json.Marshal(ms.inodeData); err != nil {
-		ms.inodeLocker.RUnlock()
-		return nil, err
-	}
-	ms.inodeLocker.RUnlock()
-
-	ms.BlockGroupLocker.RLock()
-	if bgdata, err = json.Marshal(ms.blockGroupData); err != nil {
-		ms.BlockGroupLocker.RUnlock()
-		return nil, err
-	}
-	ms.BlockGroupLocker.RUnlock()
-
-	a := make([]byte, 8)
-	binary.BigEndian.PutUint64(a, uint64(len(dentrydata)))
-	bigdata = append(make([]byte, 8), a...)
-	bigdata = append(bigdata, dentrydata...)
-
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, uint64(len(inodedata)))
-	bigdata = append(bigdata, b...)
-	bigdata = append(bigdata, inodedata...)
-
-	c := make([]byte, 8)
-	binary.BigEndian.PutUint64(c, uint64(len(bgdata)))
-	bigdata = append(bigdata, c...)
-	bigdata = append(bigdata, bgdata...)
-
-	binary.BigEndian.PutUint64(bigdata, ms.applied)
-
-	d := make([]byte, 8)
-	binary.BigEndian.PutUint64(d, ms.chunkID)
-	bigdata = append(bigdata, d...)
-
-	e := make([]byte, 8)
-	binary.BigEndian.PutUint64(e, ms.inodeID)
-	bigdata = append(bigdata, e...)
-
-	return &kvSnapshot{
-		applied: ms.applied,
-		data:    bigdata,
-	}, nil
-
-}
-
-//ApplySnapshot ...
-func (ms *KvStateMachine) ApplySnapshot(peers []proto.Peer, iter proto.SnapIterator) error {
-
-	var (
-		bigdata []byte
-		block   []byte
-		err     error
-	)
-	for err == nil {
-		if block, err = iter.Next(); len(block) > 0 {
-			bigdata = append(bigdata, block...)
-		}
-	}
-	if err != nil && err != io.EOF {
-		return err
-	}
-
-	ms.applied = binary.BigEndian.Uint64(bigdata)
-
-	ms.DentryLocker.Lock()
-	dentryLen := binary.BigEndian.Uint64(bigdata[8:16])
-	if err = json.Unmarshal(bigdata[16:16+dentryLen], &ms.dentryData); err != nil {
-		ms.DentryLocker.Unlock()
-		return err
-	}
-	ms.DentryLocker.Unlock()
-
-	ms.inodeLocker.Lock()
-	inodeLen := binary.BigEndian.Uint64(bigdata[16+dentryLen : 16+dentryLen+8])
-	if err = json.Unmarshal(bigdata[16+dentryLen+8:16+dentryLen+8+inodeLen], &ms.inodeData); err != nil {
-		ms.inodeLocker.Unlock()
-		return err
-	}
-	ms.inodeLocker.Unlock()
-
-	ms.BlockGroupLocker.Lock()
-	bgLen := binary.BigEndian.Uint64(bigdata[16+dentryLen+8+inodeLen : 16+dentryLen+8+inodeLen+8])
-	if err = json.Unmarshal(bigdata[16+dentryLen+8+inodeLen+8:16+dentryLen+8+inodeLen+8+bgLen], &ms.blockGroupData); err != nil {
-		ms.BlockGroupLocker.Unlock()
-		return err
-	}
-	ms.BlockGroupLocker.Unlock()
-
-	ms.chunkID = binary.BigEndian.Uint64(bigdata[16+dentryLen+8+inodeLen+8+bgLen : 16+dentryLen+8+inodeLen+8+bgLen+8])
-	ms.inodeID = binary.BigEndian.Uint64(bigdata[16+dentryLen+8+inodeLen+8+bgLen+8:])
-
-	return nil
-}
-
-//HandleFatalEvent ...
-func (ms *KvStateMachine) HandleFatalEvent(err *raft.FatalError) {
-	panic(err.Err)
 }
 
 //DentryGet ...
@@ -237,22 +195,46 @@ func (ms *KvStateMachine) DentryGet(raftGroupID uint64, key string) ([]byte, err
 		return nil, errors.New("not leader")
 	}
 
-	ms.DentryLocker.RLock()
-	if v, ok := ms.dentryData[key]; ok {
-		ms.DentryLocker.RUnlock()
-		return v, nil
+	var item btree.DentryKV
+	item.K = key
+	newItem := ms.dentryData.Get(item)
+
+	if newItem != nil {
+		return newItem.(btree.DentryKV).V, nil
 	}
-	ms.DentryLocker.RUnlock()
 	return []byte{}, errNotExists
 
 }
 
+/*
 //DentryGetAll ...
 func (ms *KvStateMachine) DentryGetAll(raftGroupID uint64) (*map[string][]byte, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
 	}
 	return &ms.dentryData, nil
+}
+*/
+
+func (ms *KvStateMachine) DentryGetRange(raftGroupID uint64, minKey string, maxKey string) ([]btree.DentryKV, error) {
+	if !ms.raft.IsLeader(raftGroupID) {
+		return nil, errors.New("not leader")
+	}
+
+	var v []btree.DentryKV
+
+	var itemMin btree.DentryKV
+	itemMin.K = minKey
+
+	var itemMax btree.DentryKV
+	itemMax.K = maxKey
+
+	ms.dentryData.AscendRange(itemMin, itemMax, func(a btree.Item) bool {
+		v = append(v, a.(btree.DentryKV))
+		return true
+	})
+
+	return v, nil
 }
 
 //DentrySet ...
@@ -300,22 +282,25 @@ func (ms *KvStateMachine) DentryDel(raftGroupID uint64, key string) error {
 }
 
 //InodeGet ...
-func (ms *KvStateMachine) InodeGet(raftGroupID uint64, key string) ([]byte, error) {
+func (ms *KvStateMachine) InodeGet(raftGroupID uint64, key uint64) ([]byte, error) {
+
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
 	}
-	ms.inodeLocker.RLock()
-	if v, ok := ms.inodeData[key]; ok {
-		ms.inodeLocker.RUnlock()
-		return v, nil
+
+	var item btree.InodeKV
+	item.K = key
+	newItem := ms.inodeData.Get(item)
+
+	if newItem != nil {
+		return newItem.(btree.InodeKV).V, nil
 	}
-	ms.inodeLocker.RUnlock()
 	return []byte{}, errNotExists
 
 }
 
 //InodeSet ...
-func (ms *KvStateMachine) InodeSet(raftGroupID uint64, key string, value []byte) error {
+func (ms *KvStateMachine) InodeSet(raftGroupID uint64, key uint64, value []byte) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
 	}
@@ -323,7 +308,7 @@ func (ms *KvStateMachine) InodeSet(raftGroupID uint64, key string, value []byte)
 	var data []byte
 	var err error
 
-	kv := &kvp.Kv{Opt: OPT_SET_INODE, K: key, V: value}
+	kv := &kvp.Kv{Opt: OPT_SET_INODE, K: strconv.FormatUint(key, 10), V: value}
 
 	if data, err = pbproto.Marshal(kv); err != nil {
 		return err
@@ -338,7 +323,7 @@ func (ms *KvStateMachine) InodeSet(raftGroupID uint64, key string, value []byte)
 }
 
 //InodeDel ...
-func (ms *KvStateMachine) InodeDel(raftGroupID uint64, key string) error {
+func (ms *KvStateMachine) InodeDel(raftGroupID uint64, key uint64) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
 	}
@@ -346,7 +331,7 @@ func (ms *KvStateMachine) InodeDel(raftGroupID uint64, key string) error {
 	var data []byte
 	var err error
 
-	kv := &kvp.Kv{Opt: OPT_DEL_INODE, K: key}
+	kv := &kvp.Kv{Opt: OPT_DEL_INODE, K: strconv.FormatUint(key, 10)}
 
 	if data, err = pbproto.Marshal(kv); err != nil {
 		return err
@@ -361,23 +346,24 @@ func (ms *KvStateMachine) InodeDel(raftGroupID uint64, key string) error {
 }
 
 //BGGet ...
-func (ms *KvStateMachine) BGGet(raftGroupID uint64, key string) ([]byte, error) {
+func (ms *KvStateMachine) BGGet(raftGroupID uint64, key uint64) ([]byte, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
 	}
 
-	ms.BlockGroupLocker.RLock()
-	if v, ok := ms.blockGroupData[key]; ok {
-		ms.BlockGroupLocker.RUnlock()
-		return v, nil
+	var item btree.BGKV
+	item.K = key
+	newItem := ms.blockGroupData.Get(item)
+
+	if newItem != nil {
+		return newItem.(btree.BGKV).V, nil
 	}
-	ms.BlockGroupLocker.RUnlock()
 	return []byte{}, errNotExists
 
 }
 
 //BGSet ...
-func (ms *KvStateMachine) BGSet(raftGroupID uint64, key string, value []byte) error {
+func (ms *KvStateMachine) BGSet(raftGroupID uint64, key uint64, value []byte) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
 	}
@@ -385,7 +371,7 @@ func (ms *KvStateMachine) BGSet(raftGroupID uint64, key string, value []byte) er
 	var data []byte
 	var err error
 
-	kv := &kvp.Kv{Opt: OPT_SET_BG, K: key, V: value}
+	kv := &kvp.Kv{Opt: OPT_SET_BG, K: strconv.FormatUint(key, 10), V: value}
 
 	if data, err = pbproto.Marshal(kv); err != nil {
 		return err
@@ -400,11 +386,19 @@ func (ms *KvStateMachine) BGSet(raftGroupID uint64, key string, value []byte) er
 }
 
 //BGGetAll ...
-func (ms *KvStateMachine) BGGetAll(raftGroupID uint64) (*map[string][]byte, error) {
+func (ms *KvStateMachine) BGGetAll(raftGroupID uint64) ([]btree.BGKV, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
 	}
-	return &ms.blockGroupData, nil
+
+	var v []btree.BGKV
+
+	ms.blockGroupData.Ascend(func(a btree.Item) bool {
+		v = append(v, a.(btree.BGKV))
+		return true
+	})
+
+	return v, nil
 }
 
 //ChunkIDGET ...
@@ -463,6 +457,401 @@ func (ms *KvStateMachine) InodeIDGET(raftGroupID uint64) (uint64, error) {
 	return inodeID, nil
 }
 
+func (ms *KvStateMachine) DatanodeGetAll(raftGroupID uint64) ([]btree.DataNodeKV, error) {
+	if !ms.raft.IsLeader(raftGroupID) {
+		return nil, errors.New("not leader")
+	}
+	var v []btree.DataNodeKV
+
+	ms.dataNodeData.Ascend(func(a btree.Item) bool {
+		v = append(v, a.(btree.DataNodeKV))
+		return true
+	})
+
+	return v, nil
+}
+
+// cluster ...
+func (ms *KvStateMachine) DataNodeGetRange(raftGroupID uint64, minKey string) ([]btree.DataNodeKV, error) {
+	if !ms.raft.IsLeader(raftGroupID) {
+		return nil, errors.New("not leader")
+	}
+
+	var v []btree.DataNodeKV
+
+	var itemMin btree.DataNodeKV
+	itemMin.K = minKey
+
+	ms.dataNodeData.AscendGreaterOrEqual(itemMin, func(a btree.Item) bool {
+		tmp := strings.Split(a.(btree.DataNodeKV).K, ":")
+		if tmp == nil {
+			return false
+		}
+		if len(tmp) < 2 {
+			return false
+		}
+		if tmp[0] != itemMin.K {
+			return false
+		}
+		v = append(v, a.(btree.DataNodeKV))
+		return true
+	})
+
+	return v, nil
+}
+
+func (ms *KvStateMachine) DatanodeGet(raftGroupID uint64, key string) ([]byte, error) {
+	var item btree.DataNodeKV
+	item.K = key
+	newItem := ms.dataNodeData.Get(item)
+
+	if newItem != nil {
+		return newItem.(btree.DataNodeKV).V, nil
+	}
+	return []byte{}, errNotExists
+
+}
+
+func (ms *KvStateMachine) DataNodeSet(raftGroupID uint64, key string, value []byte) error {
+	if !ms.raft.IsLeader(raftGroupID) {
+		return errors.New("not leader")
+	}
+	var data []byte
+	var err error
+
+	kv := &kvp.Kv{Opt: OPT_SET_DATANODE, K: key, V: value}
+
+	if data, err = pbproto.Marshal(kv); err != nil {
+		return err
+	}
+	resp := ms.raft.Submit(raftGroupID, data)
+	_, err = resp.Response()
+	if err != nil {
+		return fmt.Errorf("Put error[%v]", err)
+	}
+	return nil
+
+}
+
+//DentryDel ...
+func (ms *KvStateMachine) DataNodeDel(raftGroupID uint64, key string) error {
+	if !ms.raft.IsLeader(raftGroupID) {
+		return errors.New("not leader")
+	}
+	var data []byte
+	var err error
+
+	kv := &kvp.Kv{Opt: OPT_DEL_DATANODE, K: key}
+
+	if data, err = pbproto.Marshal(kv); err != nil {
+		return err
+	}
+	resp := ms.raft.Submit(raftGroupID, data)
+	_, err = resp.Response()
+	if err != nil {
+		return fmt.Errorf("Del error[%v]", err)
+	}
+	return nil
+
+}
+
+func (ms *KvStateMachine) RGIDGET(raftGroupID uint64) (uint64, error) {
+	if !ms.raft.IsLeader(raftGroupID) {
+		return 0, errors.New("not leader")
+	}
+
+	var data []byte
+	var err error
+
+	kv := &kvp.Kv{Opt: OPT_ALLOCATE_RGID}
+
+	if data, err = pbproto.Marshal(kv); err != nil {
+		return 0, err
+	}
+
+	ms.rgIDLocker.Lock()
+	resp := ms.raft.Submit(raftGroupID, data)
+	_, err = resp.Response()
+	if err != nil {
+		ms.rgIDLocker.Unlock()
+		return 0, fmt.Errorf("Put error[%v]", err)
+	}
+	rgID := ms.rgID
+	ms.rgIDLocker.Unlock()
+
+	return rgID, nil
+}
+
+//blockIDGET ...
+func (ms *KvStateMachine) BlockIDGET(raftGroupID uint64) (uint64, error) {
+	if !ms.raft.IsLeader(raftGroupID) {
+		return 0, errors.New("not leader")
+	}
+
+	var data []byte
+	var err error
+
+	kv := &kvp.Kv{Opt: OPT_ALLOCATE_BLOCKID}
+
+	if data, err = pbproto.Marshal(kv); err != nil {
+		return 0, err
+	}
+
+	ms.blockIDLocker.Lock()
+	resp := ms.raft.Submit(raftGroupID, data)
+	_, err = resp.Response()
+	if err != nil {
+		ms.blockIDLocker.Unlock()
+		return 0, fmt.Errorf("Put error[%v]", err)
+	}
+	blockID := ms.blockID
+	ms.blockIDLocker.Unlock()
+
+	return blockID, nil
+}
+
+//blockgroupIDGET ...
+func (ms *KvStateMachine) BGIDGET(raftGroupID uint64) (uint64, error) {
+	if !ms.raft.IsLeader(raftGroupID) {
+		return 0, errors.New("not leader")
+	}
+
+	var data []byte
+	var err error
+
+	kv := &kvp.Kv{Opt: OPT_ALLOCATE_BGID}
+
+	if data, err = pbproto.Marshal(kv); err != nil {
+		return 0, err
+	}
+
+	ms.bgIDLocker.Lock()
+	resp := ms.raft.Submit(raftGroupID, data)
+	_, err = resp.Response()
+	if err != nil {
+		ms.bgIDLocker.Unlock()
+		return 0, fmt.Errorf("Put error[%v]", err)
+	}
+	bgID := ms.bgID
+	ms.bgIDLocker.Unlock()
+
+	return bgID, nil
+}
+
+func (ms *KvStateMachine) BlockGetRange(raftGroupID uint64, minKey string) ([]btree.BlockKV, error) {
+	var v []btree.BlockKV
+
+	var itemMin btree.BlockKV
+	itemMin.K = minKey
+
+	ms.blockData.AscendGreaterOrEqual(itemMin, func(a btree.Item) bool {
+		tmp := strings.Split(a.(btree.BlockKV).K, "-")
+		if tmp == nil {
+			return false
+		}
+		if len(tmp) < 2 {
+			return false
+		}
+		if tmp[0] != itemMin.K {
+			return false
+		}
+		v = append(v, a.(btree.BlockKV))
+		return true
+	})
+
+	return v, nil
+}
+
+func (ms *KvStateMachine) BlockSet(raftGroupID uint64, key string, value []byte) error {
+	if !ms.raft.IsLeader(raftGroupID) {
+		return errors.New("not leader")
+	}
+	var data []byte
+	var err error
+
+	kv := &kvp.Kv{Opt: OPT_SET_BLOCK, K: key, V: value}
+
+	if data, err = pbproto.Marshal(kv); err != nil {
+		return err
+	}
+	resp := ms.raft.Submit(raftGroupID, data)
+	_, err = resp.Response()
+	if err != nil {
+		return fmt.Errorf("Put error[%v]", err)
+	}
+	return nil
+
+}
+
+//DentryDel ...
+func (ms *KvStateMachine) BlockDel(raftGroupID uint64, key string) error {
+	if !ms.raft.IsLeader(raftGroupID) {
+		return errors.New("not leader")
+	}
+	var data []byte
+	var err error
+
+	kv := &kvp.Kv{Opt: OPT_DEL_BLOCK, K: key}
+
+	if data, err = pbproto.Marshal(kv); err != nil {
+		return err
+	}
+	resp := ms.raft.Submit(raftGroupID, data)
+	_, err = resp.Response()
+	if err != nil {
+		return fmt.Errorf("Del error[%v]", err)
+	}
+	return nil
+
+}
+
+//BGGet ...
+func (ms *KvStateMachine) BGPGet(raftGroupID uint64, key string) ([]byte, error) {
+	var item btree.BGPKV
+	item.K = key
+	newItem := ms.bgpData.Get(item)
+
+	if newItem != nil {
+		return newItem.(btree.BGPKV).V, nil
+	}
+	return []byte{}, errNotExists
+
+}
+
+func (ms *KvStateMachine) BGPGetRange(raftGroupID uint64, minKey string) ([]btree.BGPKV, error) {
+	var v []btree.BGPKV
+
+	var itemMin btree.BGPKV
+	itemMin.K = minKey
+
+	ms.bgpData.AscendGreaterOrEqual(itemMin, func(a btree.Item) bool {
+		tmp := strings.Split(a.(btree.BGPKV).K, "-")
+		if tmp == nil {
+			return false
+		}
+		if len(tmp) < 2 {
+			return false
+		}
+		if tmp[0] != itemMin.K {
+			return false
+		}
+		v = append(v, a.(btree.BGPKV))
+		return true
+	})
+
+	return v, nil
+}
+
+//BGSet ...
+func (ms *KvStateMachine) BGPSet(raftGroupID uint64, key string, value []byte) error {
+	if !ms.raft.IsLeader(raftGroupID) {
+		return errors.New("not leader")
+	}
+
+	var data []byte
+	var err error
+
+	kv := &kvp.Kv{Opt: OPT_SET_BGP, K: key, V: value}
+
+	if data, err = pbproto.Marshal(kv); err != nil {
+		return err
+	}
+	resp := ms.raft.Submit(raftGroupID, data)
+	_, err = resp.Response()
+	if err != nil {
+		return fmt.Errorf("Put error[%v]", err)
+	}
+	return nil
+
+}
+
+func (ms *KvStateMachine) BGPDel(raftGroupID uint64, key string) error {
+	if !ms.raft.IsLeader(raftGroupID) {
+		return errors.New("not leader")
+	}
+	var data []byte
+	var err error
+
+	kv := &kvp.Kv{Opt: OPT_DEL_BGP, K: key}
+
+	if data, err = pbproto.Marshal(kv); err != nil {
+		return err
+	}
+	resp := ms.raft.Submit(raftGroupID, data)
+	_, err = resp.Response()
+	if err != nil {
+		return fmt.Errorf("Del error[%v]", err)
+	}
+	return nil
+
+}
+
+func (ms *KvStateMachine) VOLGet(raftGroupID uint64, key string) ([]byte, error) {
+	var item btree.VOLKV
+	item.K = key
+	newItem := ms.volData.Get(item)
+
+	if newItem != nil {
+		return newItem.(btree.VOLKV).V, nil
+	}
+	return []byte{}, errNotExists
+
+}
+
+func (ms *KvStateMachine) VolsGetAll(raftGroupID uint64) ([]btree.VOLKV, error) {
+	var v []btree.VOLKV
+
+	ms.volData.Ascend(func(a btree.Item) bool {
+		v = append(v, a.(btree.VOLKV))
+		return true
+	})
+
+	return v, nil
+}
+
+func (ms *KvStateMachine) VOLSet(raftGroupID uint64, key string, value []byte) error {
+	if !ms.raft.IsLeader(raftGroupID) {
+		return errors.New("not leader")
+	}
+
+	var data []byte
+	var err error
+
+	kv := &kvp.Kv{Opt: OPT_SET_VOL, K: key, V: value}
+
+	if data, err = pbproto.Marshal(kv); err != nil {
+		return err
+	}
+	resp := ms.raft.Submit(raftGroupID, data)
+	_, err = resp.Response()
+	if err != nil {
+		return fmt.Errorf("Put error[%v]", err)
+	}
+	return nil
+
+}
+
+func (ms *KvStateMachine) VOLDel(raftGroupID uint64, key string) error {
+	if !ms.raft.IsLeader(raftGroupID) {
+		return errors.New("not leader")
+	}
+	var data []byte
+	var err error
+
+	kv := &kvp.Kv{Opt: OPT_DEL_VOL, K: key}
+
+	if data, err = pbproto.Marshal(kv); err != nil {
+		return err
+	}
+	resp := ms.raft.Submit(raftGroupID, data)
+	_, err = resp.Response()
+	if err != nil {
+		return fmt.Errorf("Del error[%v]", err)
+	}
+	return nil
+
+}
+
 //AddNode ...
 func (ms *KvStateMachine) AddNode(peer proto.Peer) error {
 	resp := ms.raft.ChangeMember(1, proto.ConfAddNode, peer, nil)
@@ -483,27 +872,255 @@ func (ms *KvStateMachine) RemoveNode(peer proto.Peer) error {
 	return nil
 }
 
-func (ms *KvStateMachine) setApplied(index uint64) {
-	ms.applied = index
+//ApplyMemberChange ...
+func (ms *KvStateMachine) ApplyMemberChange(confChange *proto.ConfChange, index uint64) (interface{}, error) {
+	return nil, nil
 }
 
 //HandleLeaderChange ...
 func (ms *KvStateMachine) HandleLeaderChange(leader uint64) {
 }
 
+//HandleFatalEvent ...
+func (ms *KvStateMachine) HandleFatalEvent(err *raft.FatalError) {
+	panic(err.Err)
+}
+
+func (ms *KvStateMachine) setApplied(index uint64) {
+	ms.applied = index
+}
+
+//Snapshot ...
+func (ms *KvStateMachine) Snapshot() (proto.Snapshot, error) {
+
+	return &kvSnapshot{
+		applied:       ms.applied,
+		chunkID:       ms.chunkID,
+		inodeID:       ms.inodeID,
+		curDentryItem: ms.dentryData.Min(),
+		curInodeItem:  ms.inodeData.Min(),
+		curBgItem:     ms.blockGroupData.Min(),
+		bgTree:        ms.blockGroupData,
+		dentryTree:    ms.dentryData,
+		inodeTree:     ms.inodeData,
+	}, nil
+
+}
+
+//ApplySnapshot ...
+func (ms *KvStateMachine) ApplySnapshot(peers []proto.Peer, iter proto.SnapIterator) error {
+
+	var (
+		err      error
+		data     []byte
+		uint64ID uint64
+	)
+
+	kv := &kvp.Kv{}
+
+	for err == nil {
+		if data, err = iter.Next(); len(data) > 0 {
+
+			err := pbproto.Unmarshal(data, kv)
+			if err != nil {
+				return err
+			}
+
+			logger.Debug("---------- ApplySnapshot : %v", kv)
+
+			switch kv.Opt {
+			case OPT_APPLIED:
+				uint64ID, _ = strconv.ParseUint(kv.K, 10, 64)
+				ms.applied = uint64ID
+			case OPT_ALLOCATE_INODEID:
+				uint64ID, _ = strconv.ParseUint(kv.K, 10, 64)
+				ms.inodeID = uint64ID
+			case OPT_ALLOCATE_CHUNKID:
+				uint64ID, _ = strconv.ParseUint(kv.K, 10, 64)
+				ms.chunkID = uint64ID
+			case OPT_SET_DENTRY: // set dentryData
+				ms.dentryItem.K = kv.K
+				ms.dentryItem.V = kv.V
+				ms.dentryData.ReplaceOrInsert(ms.dentryItem)
+			case OPT_SET_INODE: // set inodeData
+				uint64ID, _ = strconv.ParseUint(kv.K, 10, 64)
+				ms.inodeItem.K = uint64ID
+				ms.inodeItem.V = kv.V
+				ms.inodeData.ReplaceOrInsert(ms.inodeItem)
+			case OPT_SET_BG:
+				uint64ID, _ = strconv.ParseUint(kv.K, 10, 64)
+				ms.bgItem.K = uint64ID
+				ms.bgItem.V = kv.V
+				ms.blockGroupData.ReplaceOrInsert(ms.bgItem)
+			}
+
+		}
+	}
+	if err != nil && err != io.EOF {
+		return err
+	}
+
+	return nil
+}
+
 type kvSnapshot struct {
-	offset  int
-	applied uint64
-	data    []byte
+	applied     uint64
+	appliedFlag bool
+
+	chunkID     uint64
+	chunkIDFlag bool
+
+	inodeID     uint64
+	inodeIDFlag bool
+
+	curBtree string
+
+	curBgItem     btree.Item
+	curInodeItem  btree.Item
+	curDentryItem btree.Item
+
+	dentryTree *btree.BTree
+	inodeTree  *btree.BTree
+	bgTree     *btree.BTree
+}
+
+func tmplog(v string) {
+	logger.Debug("Next:", v)
 }
 
 //Next ...
 func (s *kvSnapshot) Next() ([]byte, error) {
-	if s.offset >= len(s.data) {
+
+	if s.appliedFlag && s.chunkIDFlag && s.inodeIDFlag && s.curBtree == "done" {
 		return nil, io.EOF
 	}
-	s.offset = len(s.data)
-	return s.data, nil
+
+	var data []byte
+	defer tmplog(string(data))
+
+	var err error
+	kv := &kvp.Kv{}
+
+	if !s.appliedFlag {
+
+		kv.Opt = OPT_APPLIED
+		kv.K = strconv.FormatUint(s.applied, 10)
+
+		if data, err = pbproto.Marshal(kv); err != nil {
+			return nil, err
+		}
+
+		s.appliedFlag = true
+		return data, nil
+	}
+	if !s.chunkIDFlag {
+
+		kv.Opt = OPT_ALLOCATE_CHUNKID
+		kv.K = strconv.FormatUint(s.chunkID, 10)
+
+		if data, err = pbproto.Marshal(kv); err != nil {
+			return nil, err
+		}
+
+		s.chunkIDFlag = true
+		return data, nil
+	}
+	if !s.inodeIDFlag {
+
+		kv.Opt = OPT_ALLOCATE_INODEID
+		kv.K = strconv.FormatUint(s.inodeID, 10)
+
+		if data, err = pbproto.Marshal(kv); err != nil {
+			return nil, err
+		}
+
+		s.inodeIDFlag = true
+		return data, nil
+	}
+	if s.curBtree == "" {
+		s.curBtree = "bg"
+	}
+
+	if s.curBtree == "bg" {
+
+		kv.Opt = OPT_SET_BG
+
+		s.bgTree.AscendGreaterOrEqual(s.curBgItem, func(a btree.Item) bool {
+			if a.(btree.BGKV).K > s.curBgItem.(btree.BGKV).K {
+				kv.K = strconv.Itoa(int(a.(btree.BGKV).K))
+				kv.V = a.(btree.BGKV).V
+				s.curBgItem = a
+				return false
+			}
+			kv.K = strconv.Itoa(int(a.(btree.BGKV).K))
+			kv.V = a.(btree.BGKV).V
+			return true
+		})
+
+		if s.curBgItem.(btree.BGKV).K == s.bgTree.Max().(btree.BGKV).K {
+			s.curBtree = "inode"
+		}
+
+		if data, err = pbproto.Marshal(kv); err != nil {
+			return nil, err
+		}
+
+		return data, err
+	}
+
+	if s.curBtree == "inode" {
+
+		kv.Opt = OPT_SET_INODE
+
+		s.inodeTree.AscendGreaterOrEqual(s.curInodeItem, func(a btree.Item) bool {
+			if a.(btree.InodeKV).K > s.curInodeItem.(btree.InodeKV).K {
+				kv.K = strconv.FormatUint(a.(btree.InodeKV).K, 10)
+				kv.V = a.(btree.InodeKV).V
+				s.curInodeItem = a
+				return false
+			}
+			kv.K = strconv.FormatUint(a.(btree.InodeKV).K, 10)
+			kv.V = a.(btree.InodeKV).V
+			return true
+		})
+
+		if s.curInodeItem.(btree.InodeKV).K == s.inodeTree.Max().(btree.InodeKV).K {
+			s.curBtree = "dentry"
+		}
+
+		if data, err = pbproto.Marshal(kv); err != nil {
+			return nil, err
+		}
+
+		return data, err
+	}
+	if s.curBtree == "dentry" {
+		kv.Opt = OPT_SET_DENTRY
+
+		s.dentryTree.AscendGreaterOrEqual(s.curDentryItem, func(a btree.Item) bool {
+			if a.(btree.DentryKV).K > s.curDentryItem.(btree.DentryKV).K {
+				kv.K = a.(btree.DentryKV).K
+				kv.V = a.(btree.DentryKV).V
+				s.curDentryItem = a
+				return false
+			}
+			kv.K = a.(btree.DentryKV).K
+			kv.V = a.(btree.DentryKV).V
+			return true
+		})
+
+		if s.curDentryItem.(btree.DentryKV).K == s.dentryTree.Max().(btree.DentryKV).K {
+			s.curBtree = "done"
+		}
+
+		if data, err = pbproto.Marshal(kv); err != nil {
+			return nil, err
+		}
+
+		return data, err
+
+	}
+	return nil, io.ErrUnexpectedEOF
 }
 
 //ApplyIndex ...
