@@ -88,19 +88,3 @@ func DialData(host string) (*grpc.ClientConn, error) {
 	}
 	return conn, err
 }
-
-// DialVolmgr  ...
-func DialVolmgr(host string) (*grpc.ClientConn, error) {
-	var conn *grpc.ClientConn
-	var err error
-	conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
-	if err != nil {
-		time.Sleep(300 * time.Millisecond)
-		conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
-		if err != nil {
-			time.Sleep(300 * time.Millisecond)
-			conn, err = grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
-		}
-	}
-	return conn, err
-}

@@ -23,6 +23,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/shirou/gopsutil/cpu"
+	"github.com/shirou/gopsutil/disk"
+	"github.com/shirou/gopsutil/load"
+	"github.com/shirou/gopsutil/mem"
+	utilnet "github.com/shirou/gopsutil/net"
 )
 
 // DataNodeServer ...
@@ -370,6 +376,60 @@ func (s *DataNodeServer) DeleteChunk(ctx context.Context, in *dp.DeleteChunkReq)
 		ack.Ret = 0
 	}
 	ack.Ret = 0
+	return &ack, nil
+}
+
+// rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
+func (s *DataNodeServer) NodeMonitor(ctx context.Context, in *dp.NodeMonitorReq) (*dp.NodeMonitorAck, error) {
+	ack := dp.NodeMonitorAck{}
+
+	cpuUsage, _ := cpu.Percent(time.Millisecond, false)
+	ack.NodeInfo.CpuUsage = cpuUsage[0]
+
+	cpuLoad, _ := load.Avg()
+	ack.NodeInfo.CpuLoad = cpuLoad.Load1
+
+	memv, _ := mem.VirtualMemory()
+	ack.NodeInfo.TotalMem = memv.Total
+	ack.NodeInfo.FreeMem = memv.Free
+	ack.NodeInfo.MemUsedPercent = memv.UsedPercent
+
+	diskUsage, _ := disk.Usage(DataNodeServerAddr.Path)
+	ack.NodeInfo.PathUsedPercent = diskUsage.UsedPercent
+	ack.NodeInfo.PathTotal = diskUsage.Total
+	ack.NodeInfo.PathFree = diskUsage.Free
+
+	disksIO, _ := disk.IOCounters()
+	for _, v := range disksIO {
+		diskio := dp.DiskIO{}
+		diskio.IoTime = v.IoTime
+		diskio.IopsInProgress = v.IopsInProgress
+		diskio.Name = v.Name
+		diskio.ReadBytes = diskio.ReadBytes
+		diskio.ReadCount = diskio.ReadCount
+		diskio.WeightedIO = diskio.WeightedIO
+		diskio.WriteBytes = diskio.WriteBytes
+		diskio.WriteCount = diskio.WriteCount
+		ack.NodeInfo.DiskIOs = append(ack.NodeInfo.DiskIOs, &diskio)
+	}
+
+	NetsIO, _ := utilnet.IOCounters(true)
+	for _, v := range NetsIO {
+		netio := dp.NetIO{}
+		netio.BytesRecv = v.BytesRecv
+		netio.BytesSent = v.BytesSent
+		netio.Dropin = v.Dropin
+		netio.Dropout = v.Dropout
+		netio.Errin = v.Errin
+		netio.Errout = v.Errout
+		netio.Name = v.Name
+		netio.PacketsRecv = v.PacketsRecv
+		netio.PacketsSent = v.PacketsSent
+		ack.NodeInfo.NetIOs = append(ack.NodeInfo.NetIOs, &netio)
+	}
+
+	logger.Debug("NodeMonitor: %v", ack.NodeInfo)
+
 	return &ack, nil
 }
 

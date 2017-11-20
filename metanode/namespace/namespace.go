@@ -184,11 +184,13 @@ func SnapShootNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
 
 	defer catchPanic()
 
-	ret, nameSpace := GetNameSpace(UUID)
-	if ret != 0 {
-		return ret
+	if UUID != "Cluster" {
+		ret, nameSpace := GetNameSpace(UUID)
+		if ret != 0 {
+			return ret
+		}
+		raftopt.TakeKvSnapShoot(nameSpace.RaftGroup, nameSpace.RaftStorage, path.Join(dir, UUID, "wal", "snap"))
 	}
-	raftopt.TakeKvSnapShoot(nameSpace.RaftGroup, nameSpace.RaftStorage, path.Join(dir, UUID, "wal", "snap"))
 	return 0
 }
 
@@ -1048,4 +1050,20 @@ func (ns *nameSpace) AllocateBGID() (uint64, error) {
 
 func (ns *nameSpace) AllocateBlockID() (uint64, error) {
 	return ns.RaftGroup.BlockIDGET(1)
+}
+
+func (ns *nameSpace) GetAllVolume() ([]*mp.Volume, error) {
+	v, _ := ns.RaftGroup.VolsGetAll(1)
+	var vols []*mp.Volume
+
+	for _, vv := range v {
+		volume := mp.Volume{}
+		err := pbproto.Unmarshal(vv.V, &volume)
+		if err != nil {
+			return []*mp.Volume{}, err
+		}
+		vols = append(vols, &volume)
+	}
+	return vols, nil
+
 }
