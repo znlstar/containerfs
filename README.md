@@ -3,7 +3,7 @@
 # ContainerFS
 ![image](doc/logo.png) 
 
-A cluster filesystem for the containers
+A cluster filesystem for the containers. Please see http://containerfs.io/ for current info.
 
 # Concepts
 
