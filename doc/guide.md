@@ -35,7 +35,7 @@
 	/home/cfs/cfs-CLI -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923  -action createvol test 10 sas
 	101d18db4043fa26808fce9dc93a6d9f 
 
-	说明：创建volume多个存储介质选择，sas表示将该volume的data存储到sas盘的datanode上
+	说明：创建volume时支持选择不同存储介质，如sas表示将该volume的data存储到sas盘的datanode上
 
 4、在某客户机，安装 fuse (yum install fuse -y) ,然后挂载步骤5创建的volume：
 
