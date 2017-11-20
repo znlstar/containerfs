@@ -44,7 +44,7 @@ type addr struct {
 	Path  string
 	Flag  string
 	Log   string
-	Tier string
+	Tier  string
 }
 
 var MetaNodePeers []string
@@ -383,10 +383,14 @@ func (s *DataNodeServer) DeleteChunk(ctx context.Context, in *dp.DeleteChunkReq)
 
 // rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
 func (s *DataNodeServer) NodeMonitor(ctx context.Context, in *dp.NodeMonitorReq) (*dp.NodeMonitorAck, error) {
-	ack := dp.NodeMonitorAck{}
+	ack := dp.NodeMonitorAck{NodeInfo: &dp.NodeInfo{}}
 
-	cpuUsage, _ := cpu.Percent(time.Millisecond, false)
-	ack.NodeInfo.CpuUsage = cpuUsage[0]
+	cpuUsage, err := cpu.Percent(time.Millisecond*300, false)
+	if err == nil {
+		ack.NodeInfo.CpuUsage = cpuUsage[0]
+	} else {
+		logger.Error("NodeMonitor get cpu usage failed !")
+	}
 
 	cpuLoad, _ := load.Avg()
 	ack.NodeInfo.CpuLoad = cpuLoad.Load1
