@@ -138,10 +138,14 @@ func (s *MetaNodeServer) GetVolInfo(ctx context.Context, in *mp.GetVolInfoReq) (
 
 // rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
 func (s *MetaNodeServer) NodeMonitor(ctx context.Context, in *mp.NodeMonitorReq) (*mp.NodeMonitorAck, error) {
-	ack := mp.NodeMonitorAck{}
+	ack := mp.NodeMonitorAck{NodeInfo: &mp.NodeInfo{}}
 
-	cpuUsage, _ := cpu.Percent(time.Millisecond, false)
-	ack.NodeInfo.CpuUsage = cpuUsage[0]
+	cpuUsage, err := cpu.Percent(time.Millisecond*500, false)
+	if err == nil {
+		ack.NodeInfo.CpuUsage = cpuUsage[0]
+	} else {
+		logger.Error("NodeMonitor get cpu usage failed !")
+	}
 
 	cpuLoad, _ := load.Avg()
 	ack.NodeInfo.CpuLoad = cpuLoad.Load1
