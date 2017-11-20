@@ -52,10 +52,11 @@ message Datanode {
     string Ip = 1;
     int32 Port = 2;
     string MountPoint = 3 ;
-    int32 Capacity = 4; //GB
-    int32 Used = 5;
-    int32 Free = 6;
-    int32 Status = 7;
+    string Tier = 4;
+    int32 Capacity = 5; //GB
+    int32 Used = 6;
+    int32 Free = 7;
+    int32 Status = 8;
 }
 
 message DatanodeRegistryAck {
@@ -83,9 +84,10 @@ message DelDatanodeAck {
 message Volume {
 	string UUID = 1;
 	string Name = 2;
-	int32  TotalSize = 3;
-	int32  AllocatedSize = 4;
-	uint64 RGID = 5;
+    string Tier = 3;
+	int32  TotalSize = 4;
+	int32  AllocatedSize = 5;
+	uint64 RGID = 6;
 }
 
 message Vols {
@@ -109,6 +111,7 @@ message BGP {
 message CreateVolReq {
     string VolName = 1 ;
     int32  SpaceQuota = 2 ;
+    string Tier = 3;
 }
 message CreateVolAck {
     int32 Ret = 1;

@@ -120,7 +120,7 @@ func DelDatanode(ip string, port string) int {
 }
 
 // CreateVol volume function by Meta
-func CreateVolbyMeta(name string, capacity string) int32 {
+func CreateVolbyMeta(name string, capacity string, tier string) int32 {
 	conn, err := DialMeta("Cluster")
 	if err != nil {
 		logger.Error("CreateVol failed,Dial to Cluster leader metanode fail :%v", err)
@@ -133,6 +133,7 @@ func CreateVolbyMeta(name string, capacity string) int32 {
 	pCreateVolReq := &mp.CreateVolReq{
 		VolName:    name,
 		SpaceQuota: int32(spaceQuota),
+		Tier: tier,
 	}
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 	ack, err := mc.CreateVol(ctx, pCreateVolReq)

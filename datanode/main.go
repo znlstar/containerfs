@@ -44,6 +44,7 @@ type addr struct {
 	Path  string
 	Flag  string
 	Log   string
+	Tier string
 }
 
 var MetaNodePeers []string
@@ -85,6 +86,7 @@ func registryToMeta() {
 	datanodeRegistryReq.Free = int32(float64(diskInfo.Free) / float64(1024*1024*1024))
 	datanodeRegistryReq.Used = int32(float64(diskInfo.Used) / float64(1024*1024*1024))
 	datanodeRegistryReq.MountPoint = DataNodeServerAddr.Path
+	datanodeRegistryReq.Tier = DataNodeServerAddr.Tier
 	datanodeRegistryReq.Status = 0
 
 	ack, err := mc.DatanodeRegistry(context.Background(), &datanodeRegistryReq)
@@ -493,6 +495,7 @@ func init() {
 
 	flag.StringVar(&DataNodeServerAddr.IPStr, "host", "127.0.0.1", "ContainerFS DataNode Host")
 	flag.IntVar(&port, "port", 8000, "ContainerFS DataNode Port")
+	flag.StringVar(&DataNodeServerAddr.Tier, "tier", "sas", "ContainerFS DataNode Storage Medium")
 	flag.StringVar(&DataNodeServerAddr.Path, "datapath", "", "ContainerFS DataNode Data Path")
 	flag.StringVar(&DataNodeServerAddr.Log, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Log Path")
 	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS Log Level")
