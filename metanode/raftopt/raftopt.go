@@ -47,9 +47,13 @@ func CreateKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64
 	// state machine
 	kvsm := newKvStatemachine(nodeID, rs)
 
-	index, err := LoadKvSnapShoot(kvsm, path.Join(dir, UUID, "wal", "snap"))
-	if err != nil {
-		return nil, nil, err
+	var index uint64
+
+	if UUID != "Cluster" {
+		index, err = LoadKvSnapShoot(kvsm, path.Join(dir, UUID, "wal", "snap"))
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	log.Debug("CreateKvStateMachine Success index : %v", index)

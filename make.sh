@@ -18,7 +18,7 @@ for dir in CLI fuseclient metanode datanode
 do
   pushd $dir
   go get
-  go build -o cfs-$dir main.go
+  go build -o cfs-$dir 
   cp cfs-$dir  ../output
   rm -rf cfs-$dir
   popd
