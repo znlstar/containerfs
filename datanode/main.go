@@ -23,6 +23,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/shirou/gopsutil/cpu"
+	"github.com/shirou/gopsutil/disk"
+	"github.com/shirou/gopsutil/load"
+	"github.com/shirou/gopsutil/mem"
+	utilnet "github.com/shirou/gopsutil/net"
 )
 
 // DataNodeServer ...
@@ -38,6 +44,7 @@ type addr struct {
 	Path  string
 	Flag  string
 	Log   string
+	Tier  string
 }
 
 var MetaNodePeers []string
@@ -79,6 +86,7 @@ func registryToMeta() {
 	datanodeRegistryReq.Free = int32(float64(diskInfo.Free) / float64(1024*1024*1024))
 	datanodeRegistryReq.Used = int32(float64(diskInfo.Used) / float64(1024*1024*1024))
 	datanodeRegistryReq.MountPoint = DataNodeServerAddr.Path
+	datanodeRegistryReq.Tier = DataNodeServerAddr.Tier
 	datanodeRegistryReq.Status = 0
 
 	ack, err := mc.DatanodeRegistry(context.Background(), &datanodeRegistryReq)
@@ -373,6 +381,64 @@ func (s *DataNodeServer) DeleteChunk(ctx context.Context, in *dp.DeleteChunkReq)
 	return &ack, nil
 }
 
+// rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
+func (s *DataNodeServer) NodeMonitor(ctx context.Context, in *dp.NodeMonitorReq) (*dp.NodeMonitorAck, error) {
+	ack := dp.NodeMonitorAck{NodeInfo: &dp.NodeInfo{}}
+
+	cpuUsage, err := cpu.Percent(time.Millisecond*300, false)
+	if err == nil {
+		ack.NodeInfo.CpuUsage = cpuUsage[0]
+	} else {
+		logger.Error("NodeMonitor get cpu usage failed !")
+	}
+
+	cpuLoad, _ := load.Avg()
+	ack.NodeInfo.CpuLoad = cpuLoad.Load1
+
+	memv, _ := mem.VirtualMemory()
+	ack.NodeInfo.TotalMem = memv.Total
+	ack.NodeInfo.FreeMem = memv.Free
+	ack.NodeInfo.MemUsedPercent = memv.UsedPercent
+
+	diskUsage, _ := disk.Usage(DataNodeServerAddr.Path)
+	ack.NodeInfo.PathUsedPercent = diskUsage.UsedPercent
+	ack.NodeInfo.PathTotal = diskUsage.Total
+	ack.NodeInfo.PathFree = diskUsage.Free
+
+	disksIO, _ := disk.IOCounters()
+	for _, v := range disksIO {
+		diskio := dp.DiskIO{}
+		diskio.IoTime = v.IoTime
+		diskio.IopsInProgress = v.IopsInProgress
+		diskio.Name = v.Name
+		diskio.ReadBytes = diskio.ReadBytes
+		diskio.ReadCount = diskio.ReadCount
+		diskio.WeightedIO = diskio.WeightedIO
+		diskio.WriteBytes = diskio.WriteBytes
+		diskio.WriteCount = diskio.WriteCount
+		ack.NodeInfo.DiskIOs = append(ack.NodeInfo.DiskIOs, &diskio)
+	}
+
+	NetsIO, _ := utilnet.IOCounters(true)
+	for _, v := range NetsIO {
+		netio := dp.NetIO{}
+		netio.BytesRecv = v.BytesRecv
+		netio.BytesSent = v.BytesSent
+		netio.Dropin = v.Dropin
+		netio.Dropout = v.Dropout
+		netio.Errin = v.Errin
+		netio.Errout = v.Errout
+		netio.Name = v.Name
+		netio.PacketsRecv = v.PacketsRecv
+		netio.PacketsSent = v.PacketsSent
+		ack.NodeInfo.NetIOs = append(ack.NodeInfo.NetIOs, &netio)
+	}
+
+	logger.Debug("NodeMonitor: %v", ack.NodeInfo)
+
+	return &ack, nil
+}
+
 // GetLeader Get Cluster Metadata Leader Node
 func GetLeader(volumeID string) (string, error) {
 	var leader string
@@ -433,6 +499,7 @@ func init() {
 
 	flag.StringVar(&DataNodeServerAddr.IPStr, "host", "127.0.0.1", "ContainerFS DataNode Host")
 	flag.IntVar(&port, "port", 8000, "ContainerFS DataNode Port")
+	flag.StringVar(&DataNodeServerAddr.Tier, "tier", "sas", "ContainerFS DataNode Storage Medium")
 	flag.StringVar(&DataNodeServerAddr.Path, "datapath", "", "ContainerFS DataNode Data Path")
 	flag.StringVar(&DataNodeServerAddr.Log, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Log Path")
 	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS Log Level")

@@ -4,46 +4,44 @@ package mp;
 
 service MetaNode {
 
-    // cluster info
+    // cluster opt
     rpc DatanodeRegistry(Datanode) returns (DatanodeRegistryAck){};
-    //rpc DatanodeHeartbeat(DatanodeHeartbeatReq) returns (DatanodeHeartbeatAck){};
-    rpc GetAllDatanode(GetAllDatanodeReq) returns (GetAllDatanodeAck){};
     rpc	DelDatanode(DelDatanodeReq) returns (DelDatanodeAck){};
     rpc CreateVol(CreateVolReq) returns (CreateVolAck){};
     rpc ExpandVolTS(ExpandVolTSReq) returns (ExpandVolTSAck){};
     rpc ExpandVolRS(ExpandVolRSReq) returns (ExpandVolRSAck){};
     rpc DelVolRSForExpand(DelVolRSForExpandReq) returns (DelVolRSForExpandAck){};
     rpc DeleteVol(DeleteVolReq) returns (DeleteVolAck){};
-    rpc GetVolInfo(GetVolInfoReq) returns (GetVolInfoAck){};
-    //rpc UpdateBlkDB(Block) returns (UpdateBlkDBAck){};
     rpc Migrate(MigrateReq) returns (MigrateAck){};
 
+    // namespace opt
     rpc GetMetaLeader(GetMetaLeaderReq) returns (GetMetaLeaderAck){};
-
     rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
     rpc ExpandNameSpace(ExpandNameSpaceReq) returns (ExpandNameSpaceAck){};
     rpc SnapShootNameSpace(SnapShootNameSpaceReq) returns (SnapShootNameSpaceAck){};
     rpc DeleteNameSpace(DeleteNameSpaceReq) returns (DeleteNameSpaceAck){};
-
     rpc GetFSInfo(GetFSInfoReq) returns (GetFSInfoAck){};
 
+    // fs meta opt
     rpc CreateDirDirect(CreateDirDirectReq) returns (CreateDirDirectAck){};
     rpc StatDirect(StatDirectReq) returns (StatDirectAck){};
     rpc GetInodeInfoDirect(GetInodeInfoDirectReq) returns (GetInodeInfoDirectAck){};
-
     rpc ListDirect(ListDirectReq) returns (ListDirectAck){};
     rpc DeleteDirDirect(DeleteDirDirectReq) returns (DeleteDirDirectAck){};
     rpc RenameDirect(RenameDirectReq) returns (RenameDirectAck){};
     rpc CreateFileDirect(CreateFileDirectReq) returns (CreateFileDirectAck){};
     rpc DeleteFileDirect(DeleteFileDirectReq) returns (DeleteFileDirectAck){};
     rpc GetFileChunksDirect(GetFileChunksDirectReq) returns (GetFileChunksDirectAck){};
-
-
     rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
     rpc SyncChunk(SyncChunkReq) returns (SyncChunkAck){};
 
-    //rpc UpdateBlockGroup(UpdateBlockGroupReq) returns (UpdateBlockGroupAck){};
-    //rpc MigrateBlockGroup(MigrateBlockGroupReq) returns (MigrateBlockGroupAck){};
+    // Web Info
+    rpc ClusterInfo(ClusterInfoReq) returns (ClusterInfoAck){};
+    rpc GetAllDatanode(GetAllDatanodeReq) returns (GetAllDatanodeAck){};
+    rpc MetaNodeInfo(MetaNodeInfoReq) returns (MetaNodeInfoAck){};
+    rpc VolumeInfos(VolumeInfosReq) returns (VolumeInfosAck){};
+    rpc GetVolInfo(GetVolInfoReq) returns (GetVolInfoAck){};
+    rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
 
 }
 
@@ -54,10 +52,11 @@ message Datanode {
     string Ip = 1;
     int32 Port = 2;
     string MountPoint = 3 ;
-    int32 Capacity = 4; //GB
-    int32 Used = 5;
-    int32 Free = 6;
-    int32 Status = 7;
+    string Tier = 4;
+    int32 Capacity = 5; //GB
+    int32 Used = 6;
+    int32 Free = 7;
+    int32 Status = 8;
 }
 
 message DatanodeRegistryAck {
@@ -85,9 +84,10 @@ message DelDatanodeAck {
 message Volume {
 	string UUID = 1;
 	string Name = 2;
-	int32  TotalSize = 3;
-	int32  AllocatedSize = 4;
-	uint64 RGID = 5;
+    string Tier = 3;
+	int32  TotalSize = 4;
+	int32  AllocatedSize = 5;
+	uint64 RGID = 6;
 }
 
 message Vols {
@@ -111,6 +111,7 @@ message BGP {
 message CreateVolReq {
     string VolName = 1 ;
     int32  SpaceQuota = 2 ;
+    string Tier = 3;
 }
 message CreateVolAck {
     int32 Ret = 1;
@@ -154,8 +155,8 @@ message GetVolInfoReq {
 
 message GetVolInfoAck {
     int32 Ret = 1;
-    Volume VolInfo=2;
-    repeated BGP BGPS = 3;
+    //Volume VolInfo=2;
+    repeated BGP BGPS = 2;
 }
 
 message MigrateReq {
@@ -378,3 +379,90 @@ message ChunkInfoWithBG{
     BGP BGP = 3;
 }
 
+
+
+// Web
+
+// web -> leader metanode
+message ClusterInfoReq {
+}
+message ClusterInfoAck {
+    int32 Ret = 1;
+    int32 MetaNum = 2;
+    int32 DataNum = 3;
+    int32 VolNum = 4;
+    int32 ClusterSpace = 5;
+    int32 ClusterFreeSpace = 6;
+    int32 IO = 7;
+    int32 IOPS = 8;
+}
+
+// web -> each metanode
+message MetaNodeInfoReq {
+}
+message MetaNodeInfoAck {
+    int32 Ret = 1;
+    uint64 MetaID = 2;
+    bool  IsLeader = 3;
+    uint64 AppliedIndex = 4;
+}
+
+
+// web -> leader metanode
+message DataNodeInfoReq {
+}
+message DataNodeInfoAck {
+    int32 Ret = 1;
+    repeated Datanode Datanodes = 2;
+}
+
+// web -> cluster leader metanode
+message VolumeInfosReq {
+}
+message VolumeInfosAck {
+    int32 Ret = 1;
+    repeated Volume Volumes = 2;
+}
+
+// web -> the datanode or metanode (ip:port)
+message NodeMonitorReq {
+}
+message NodeMonitorAck {
+    int32 Ret = 1;
+    NodeInfo NodeInfo = 2;
+}
+message NodeInfo {
+    double CpuUsage = 1;
+    double CpuLoad = 2;
+    uint64 FreeMem = 3;
+    uint64 TotalMem = 4;
+    double  MemUsedPercent = 5;
+    uint64  PathTotal = 6;
+    uint64  PathFree = 7;
+    double  PathUsedPercent = 8;
+    repeated DiskIO DiskIOs = 9;
+    repeated NetIO NetIOs = 10;
+}
+
+message DiskIO {
+    uint64 ReadCount = 1;
+    uint64 WriteCount = 2;
+    uint64 ReadBytes = 3;
+    uint64 WriteBytes = 4;
+    uint64 IopsInProgress = 5;
+    uint64 IoTime = 6;
+    uint64 WeightedIO = 7;
+    string Name = 8;
+}
+
+message NetIO {
+    uint64 BytesSent = 1;
+    uint64 BytesRecv = 2;
+    uint64 PacketsSent = 3;
+    uint64 PacketsRecv = 4;
+    uint64 Errin = 5;
+    uint64 Errout = 6;
+    uint64 Dropin = 7;
+    uint64 Dropout = 8;
+    string Name = 9;
+}

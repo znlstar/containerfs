@@ -9,6 +9,7 @@ type Address struct {
 	Heartbeat string
 	Replicate string
 	Grpc      string
+	Pprof     string
 }
 
 //AddrDatabase ...
@@ -22,6 +23,7 @@ func AddInit(ips []string) {
 			Heartbeat: fmt.Sprintf("%s:99%d1", ips[i], i),
 			Replicate: fmt.Sprintf("%s:99%d2", ips[i], i),
 			Grpc:      fmt.Sprintf("%s:99%d3", ips[i], i),
+			Pprof:     fmt.Sprintf("%s:99%d4", ips[i], i),
 		}
 		fmt.Println(AddrDatabase[uint64(i+1)])
 	}
