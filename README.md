@@ -6,13 +6,16 @@
 A cluster filesystem for the containers. Please see http://containerfs.io/ for current info.
 
 # Roadmap
-2017Q4 WEB UI
-       ReplGroup for Datanode
+* 2017Q4  
+1. WEB UI
+2. ReplGroup for Datanode
        
-2018Q1 Kernel Client
-       Volume meta auto split
+* 2018Q1
+1. Kernel Client
+2. Volume meta auto split
 
-2018Q2 SPDK-NVME driver for Datanode
+* 2018Q2
+1. SPDK-NVME driver for Datanode
 
 # Concepts
 
