@@ -1,0 +1,62 @@
+<?xml version='1.0' encoding='UTF-8' ?>
+<!DOCTYPE log4j:configuration SYSTEM "log4j.dtd">
+<log4j:configuration xmlns:log4j="http://jakarta.apache.org/log4j/">
+
+    <appender name="CONSOLE" class="org.apache.log4j.ConsoleAppender">
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern" value="[CFS_CONSOLE] %d{yyyy-MM-dd HH:mm:ss,SSS} [%-5p][%t] (%C:%L) - %m%n"/>
+        </layout>
+    </appender>
+
+    <!-- file appender -->
+    <appender name="DEFAULT" class="org.apache.log4j.RollingFileAppender">
+        <param name="maxFileSize" value="1000KB"/>
+        <param name="maxBackupIndex" value="10"/>
+        <param name="File" value="${log.path}/cfs_default.log"/>
+        <param name="threshold" value="info"/>
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern" value="[CFS_CONSOLE]%d (%t) [%24F:%-3L:%-5p]%x %m%n"/>
+        </layout>
+    </appender>
+
+    <appender name="DEBUG" class="org.apache.log4j.DailyRollingFileAppender">
+        <param name="File" value="${log.path}/cfs_debug.log"/>
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern" value="[CFS_CONSOLE]%d{yyyy-MM-dd HH:mm:ss,SSS} %-5p%m%n"/>
+        </layout>
+        <filter class="org.apache.log4j.varia.LevelRangeFilter">
+            <param name="LevelMin" value="TRACE"/>
+            <param name="LevelMax" value="DEBUG"/>
+        </filter>
+    </appender>
+
+    <appender name="ERROR" class="org.apache.log4j.DailyRollingFileAppender">
+        <param name="File" value="${log.path}/cfs_error.log"/>
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern" value="[CFS_CONSOLE]%d{yyyy-MM-dd HH:mm:ss,SSS} %-5p%l%m%n"/>
+        </layout>
+        <filter class="org.apache.log4j.varia.LevelRangeFilter">
+            <param name="LevelMin" value="ERROR"/>
+        </filter>
+    </appender>
+
+    <appender name="INFO" class="org.apache.log4j.DailyRollingFileAppender">
+        <param name="File" value="${log.path}/cfs_info.log"/>
+        <layout class="org.apache.log4j.PatternLayout">
+            <param name="ConversionPattern" value="[CFS_CONSOLE]%d{yyyy-MM-dd HH:mm:ss} %-5p%m%n"/>
+        </layout>
+        <filter class="org.apache.log4j.varia.LevelRangeFilter">
+            <param name="LevelMin" value="INFO"/>
+            <param name="LevelMax" value="WARN"/>
+        </filter>
+    </appender>
+
+    <root>
+        <priority value="INFO"/>
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="DEFAULT"/>
+        <appender-ref ref="DEBUG"/>
+        <appender-ref ref="ERROR"/>
+    </root>
+
+</log4j:configuration>
