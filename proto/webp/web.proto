@@ -1,0 +1,104 @@
+syntax="proto3";
+
+package webp;
+
+service WebService {
+    rpc GetMetaLeader(GetMetaLeaderReq) returns (GetMetaLeaderAck){};
+
+    rpc ClusterInfo(ClusterInfoReq) returns (ClusterInfoAck){};
+    rpc MetaNodeInfo(MetaNodeInfoReq) returns (MetaNodeInfoAck){};
+    rpc DataNodeInfo(DataNodeInfoReq) returns (DataNodeInfoAck){};
+    rpc VolumeInfo(VolumeInfoReq) returns (VolumeInfoAck){};
+
+    rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
+
+
+}
+
+// web -> any metanode
+message GetMetaLeaderReq {
+}
+message GetMetaLeaderAck {
+    int32 Ret = 1;
+    string Leader = 2;
+}
+
+
+// web -> leader metanode
+message ClusterInfoReq {
+}
+message ClusterInfoAck {
+    int32 Ret = 1;
+    int32 MetaNum = 2;
+    int32 DataNum = 3;
+    int32 VolNum = 4;
+    int32 ClusterSpace = 5;
+    int32 ClusterFreeSpace = 6;
+    int32 IO = 7;
+    int32 IOPS = 8;
+}
+
+// web -> leader metanode
+message MetaNodeInfoReq {
+}
+message MetaNodeInfoAck {
+    int32 Ret = 1;
+    repeated MetaNode MetaNodes = 2;
+}
+message MetaNode {
+    int32 MetaID = 1;
+    string MetaHost = 2;
+    bool IsLeader = 3;
+    int32 Status =4; 
+}
+
+// web -> leader metanode
+message DataNodeInfoReq {
+}
+message DataNodeInfoAck {
+    int32 Ret = 1;
+    repeated DataNode DataNodes = 2;
+}
+message DataNode {
+    string DataHost = 1;
+    string MountPoint = 2;
+    int32 Status =3; 
+}
+
+// web -> leader metanode
+message VolumeInfoReq {
+}
+message VolumeInfoAck {
+    int32 Ret = 1;
+    repeated Volume Volumes = 2;
+}
+message Volume {
+    string UUID = 1;
+    string Leader = 2;
+    int32  TotalSize =3;
+    int32  AllocatedSize = 4;
+    uint64 RGID = 5; 
+}
+
+
+// web -> the datanode or metanode (ip:port)
+message NodeMonitorReq {
+    int32 Host = 1;
+}
+message NodeMonitorAck {
+    int32 Ret = 1;
+    NodeInfo NodeInfo = 2;
+}
+message NodeInfo {
+    int32 Cpu = 1;
+    int32 TotalCpu = 2;
+    int32 Mem = 3;
+    int32 TotalMem = 4;
+    int32 Disk = 5;
+    int32 DiskUtil = 6;
+    int32 DiskWrite = 7;
+    int32 DiskRead = 8;
+    int32 NetSend = 9;
+    int32 NetRecv = 10; 
+}
+

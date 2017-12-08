@@ -569,19 +569,21 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.handles--
-
+	var err error
 	if int(req.Flags)&os.O_WRONLY != 0 || int(req.Flags)&os.O_RDWR != 0 {
 		f.writers--
+		if ret := f.cfile.CloseWrite(); ret != 0 {
+			logger.Error("Release CloseWrite err ...")
+			err = fuse.Errno(syscall.EIO)
+		}
 	}
-
+	f.handles--
 	if f.handles == 0 {
 		f.cfile = nil
 	}
-
 	logger.Debug("Release end : name %v pinode %v pname %v", f.name, f.parent.inode, f.parent.name)
 
-	return nil
+	return err
 }
 
 var _ = fs.HandleReader(&File{})
@@ -773,11 +775,6 @@ func closeConns(fs *cfs.CFS) {
 
 	if fs.Conn != nil {
 		fs.Conn.Close()
-	}
-	for _, v := range fs.DataConn {
-		if v != nil {
-			v.Close()
-		}
 	}
 
 }

@@ -18,7 +18,7 @@ service MetaNode {
     rpc GetMetaLeader(GetMetaLeaderReq) returns (GetMetaLeaderAck){};
     rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
     rpc ExpandNameSpace(ExpandNameSpaceReq) returns (ExpandNameSpaceAck){};
-    rpc SnapShootNameSpace(SnapShootNameSpaceReq) returns (SnapShootNameSpaceAck){};
+    rpc SnapShotNameSpace(SnapShootNameSpaceReq) returns (SnapShootNameSpaceAck){};
     rpc DeleteNameSpace(DeleteNameSpaceReq) returns (DeleteNameSpaceAck){};
     rpc GetFSInfo(GetFSInfoReq) returns (GetFSInfoAck){};
 
@@ -34,6 +34,8 @@ service MetaNode {
     rpc GetFileChunksDirect(GetFileChunksDirectReq) returns (GetFileChunksDirectAck){};
     rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
     rpc SyncChunk(SyncChunkReq) returns (SyncChunkAck){};
+    rpc AsyncChunk(AsyncChunkReq) returns (AsyncChunkAck){};
+
 
     // Web Info
     rpc ClusterInfo(ClusterInfoReq) returns (ClusterInfoAck){};
@@ -49,14 +51,13 @@ message NULL{
 }
 
 message Datanode {
-    string Ip = 1;
-    int32 Port = 2;
-    string MountPoint = 3 ;
-    string Tier = 4;
-    int32 Capacity = 5; //GB
-    int32 Used = 6;
-    int32 Free = 7;
-    int32 Status = 8;
+    string Host = 1;
+    string MountPoint = 2 ;
+    string Tier = 3;
+    int32 Capacity = 4; //GB
+    int32 Used = 5;
+    int32 Free = 6;
+    int32 Status = 7;
 }
 
 message DatanodeRegistryAck {
@@ -74,8 +75,7 @@ message GetAllDatanodeAck {
     repeated Datanode Datanodes = 2;
 }
 message DelDatanodeReq {
-    string Ip = 1;
-    string Port = 2;
+    string Host = 1;
 }
 message DelDatanodeAck {
     int32 Ret = 1;
@@ -96,12 +96,11 @@ message Vols {
 
 message Block {
     uint64 BlkID = 1;
-    string Ip = 2;
-    int32 Port = 3;
-    string Path = 4;
-    int32 Status = 5;
-    uint64 BGID = 6;
-    string VolID = 7;
+    string Host = 2;
+    string Path = 3;
+    int32 Status = 4;
+    uint64 BGID = 5;
+    string VolID = 6;
 }
 
 message BGP {
@@ -160,8 +159,7 @@ message GetVolInfoAck {
 }
 
 message MigrateReq {
-    string DataNodeIP = 1;
-    int32  DataNodePort = 2;
+    string DataNodeHost = 1;
 }
 
 message MigrateAck {
@@ -330,6 +328,19 @@ message SyncChunkReq {
     int64 Size = 5;
 }
 message SyncChunkAck {
+    int32 Ret = 1;
+}
+
+
+message AsyncChunkReq {
+    string VolID = 1;
+    uint64 ParentInodeID = 2;
+    string Name = 3;
+    uint64 BlockGroupID = 4;
+    uint64 ChunkID = 5;
+    uint32  CommitSize = 6;
+}
+message AsyncChunkAck {
     int32 Ret = 1;
 }
 

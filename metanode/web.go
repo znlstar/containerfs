@@ -45,6 +45,15 @@ func (s *MetaNodeServer) ClusterInfo(ctx context.Context, in *mp.ClusterInfoReq)
 	ack.ClusterSpace = total
 	ack.ClusterFreeSpace = free
 
+	volumes, err := nameSpace.GetAllVolume()
+	if err != nil {
+		logger.Error("GetAllVolume Info failed:%v for ClusterInfo", err)
+		ack.Ret = ret
+		return &ack, nil
+	}
+
+	ack.VolNum = int32(len(volumes))
+
 	logger.Debug("ClusterInfo: %v", ack)
 
 	return &ack, nil
@@ -80,6 +89,9 @@ func (s *MetaNodeServer) VolumeInfos(ctx context.Context, in *mp.VolumeInfosReq)
 		volume.RGID = vv.RGID
 		volume.TotalSize = vv.TotalSize
 		volume.AllocatedSize = vv.AllocatedSize
+		volume.UUID = vv.UUID
+		volume.Name = vv.Name
+		volume.Tier = vv.Tier
 
 		ack.Volumes = append(ack.Volumes, &volume)
 	}
