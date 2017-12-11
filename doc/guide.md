@@ -8,7 +8,6 @@
 
 二、集群搭建
 
-
 0、组件分配：
 
 	metanode : 192.168.100.216 192.168.100.17 192.168.100.19 
@@ -52,3 +51,18 @@
 	/dev/mapper/centos-home                       150G   45G  106G  30% /home
 	tmpfs                                         3.2G     0  3.2G   0% /run/user/0
 	ContainerFS-101d18db4043fa26808fce9dc93a6d9f   10G     0   10G   0% /mnt/mytest
+	
+## Containerfs 控制台使用
+一、环境要求
+    jdk1.8、maven、tomcat8
+二、操作说明
+    方式1：运行jar包
+		  1.进入containerfsUI目录运行如下命令: mvn clean -P all,dev package -Dmaven.test.skip=true
+		  2.从命令行进入containerfsUI目录下的containerfs-service/target目录，然后执行java -jar service-tomcat.jar 命令启动服务,服务需要占用9999端口。
+		  3.从命令行进入containerfsUI目录下的containerfs-web/target目录，然后执行java -jar web-tomcat.jar 命令启动控制台,控制台需要占用8888端口。
+		  4.启动完成后，在浏览器访问以下地址：http://127.0.0.1:8888/ 进入控制台首页。
+	方式2：部署war包
+		  1.进入containerfsUI目录运行如下命令: mvn clean -P all,dev package -Dmaven.test.skip=true
+		  2.将containerfs-service/target和containerfs-web/target 目录下的war包部署到tomcat中去
+		  3.将containerfs-web对应的resources.properties配置文件中的node.rest.service.url=http://127.0.0.1:9999/改成SERVER的IP和端口，如果SERVER的上下文路径不是空，
+		    还需要将上下文路径加添进去,如：http://127.0.0.1:6666/serv/
