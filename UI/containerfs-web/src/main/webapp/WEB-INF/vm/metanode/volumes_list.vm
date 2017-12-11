@@ -35,8 +35,8 @@
                         <th>UUID</th>
                         <th>名称</th>
                         <th>存储介质</th>
-                        <th>使用量/申请量</th>
-                        <th>剩余量</th>
+                        <th>已分配容量/申请总容量</th>
+                        <th>剩余待分配容量</th>
                         <th>备份设置</th>
                     </tr>
                     </thead>
@@ -64,7 +64,7 @@
                                 #end
                             </td>
                             <td>
-                                <button type="button" class="btn-sm btn-default btn-custom btn-rounded waves-effect waves-light">snapshot设置</button>
+##                                <button type="button" class="btn-sm btn-default btn-custom btn-rounded waves-effect waves-light">snapshot设置</button>
                             </td>
                         </tr>
                         #end

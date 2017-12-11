@@ -1,5 +1,6 @@
 package com.jd.containerfs.controller;
 
+import com.jd.containerfs.common.util.JSONHelper;
 import com.jd.containerfs.manager.DataNodeManager;
 import com.jd.containerfs.vo.NodeInfoVO;
 import org.springframework.stereotype.Controller;
@@ -35,6 +36,8 @@ public class DataNodeController extends BaseController{
     @RequestMapping(value="/monitor/{ip}/{port}",method = RequestMethod.GET)
     public String dataNodeMonitor(@PathVariable("ip")String ip, @PathVariable("port") Integer port, Model model){
         NodeInfoVO vo = dataNodeManager.dataNodeMonitor(ip,port);
+        System.out.println("datanode netIo=====");
+        System.out.println(JSONHelper.toJSON(vo.getNetIosList()));
         SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
         Date now = new Date();
         String dateStr = formatter.format(now);

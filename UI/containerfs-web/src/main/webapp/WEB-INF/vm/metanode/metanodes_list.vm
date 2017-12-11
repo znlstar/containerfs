@@ -56,8 +56,8 @@
                                 #end
                             </td>
                             <td>
-                                <button type="button" class="btn-sm btn-primary btn-custom btn-rounded waves-effect waves-light">设置</button>&nbsp;&nbsp;&nbsp;
-                                <button type="button" class="btn-sm btn-default btn-custom btn-rounded waves-effect waves-light">一键备份</button>
+##                                <button type="button" class="btn-sm btn-primary btn-custom btn-rounded waves-effect waves-light">设置</button>&nbsp;&nbsp;&nbsp;
+##                                <button type="button" class="btn-sm btn-default btn-custom btn-rounded waves-effect waves-light">一键备份</button>
                             </td>
                         </tr>
                         #end

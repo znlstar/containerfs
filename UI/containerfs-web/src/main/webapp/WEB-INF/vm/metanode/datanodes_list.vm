@@ -64,8 +64,8 @@
                                 #end
                             </td>
                             <td>
-                                <button type="button" class="btn-sm btn-warning btn-custom btn-rounded waves-effect waves-light">禁用</button>&nbsp;&nbsp;&nbsp;
-                                <button type="button" class="btn-sm btn-default btn-custom btn-rounded waves-effect waves-light">迁移</button>
+##                                <button type="button" class="btn-sm btn-warning btn-custom btn-rounded waves-effect waves-light">禁用</button>&nbsp;&nbsp;&nbsp;
+##                                <button type="button" class="btn-sm btn-default btn-custom btn-rounded waves-effect waves-light">迁移</button>
                             </td>
                         </tr>
                         #end
