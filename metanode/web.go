@@ -178,11 +178,11 @@ func (s *MetaNodeServer) NodeMonitor(ctx context.Context, in *mp.NodeMonitorReq)
 		diskio.IoTime = v.IoTime
 		diskio.IopsInProgress = v.IopsInProgress
 		diskio.Name = v.Name
-		diskio.ReadBytes = diskio.ReadBytes
-		diskio.ReadCount = diskio.ReadCount
-		diskio.WeightedIO = diskio.WeightedIO
-		diskio.WriteBytes = diskio.WriteBytes
-		diskio.WriteCount = diskio.WriteCount
+		diskio.ReadBytes = v.ReadBytes
+		diskio.ReadCount = v.ReadCount
+		diskio.WeightedIO = v.WeightedIO
+		diskio.WriteBytes = v.WriteBytes
+		diskio.WriteCount = v.WriteCount
 		ack.NodeInfo.DiskIOs = append(ack.NodeInfo.DiskIOs, &diskio)
 	}
 
