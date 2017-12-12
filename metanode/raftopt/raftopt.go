@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	log "github.com/tigcode/containerfs/logger"
-	btree "github.com/tigcode/containerfs/metanode/raftopt/BTree"
+	"github.com/tigcode/containerfs/metanode/raftopt/BTree"
 	"github.com/tigcode/raft"
 	"github.com/tigcode/raft/proto"
 	"github.com/tigcode/raft/storage/wal"

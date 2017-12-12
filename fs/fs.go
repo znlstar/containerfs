@@ -7,8 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/tigcode/containerfs/logger"
-	dp "github.com/tigcode/containerfs/proto/dp"
-	mp "github.com/tigcode/containerfs/proto/mp"
+	"github.com/tigcode/containerfs/proto/dp"
+	"github.com/tigcode/containerfs/proto/mp"
 	//"github.com/tigcode/containerfs/utils"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -1545,13 +1545,17 @@ ALLOCATECHUNK:
 		BlockGroupID: cfile.CurChunk.ChunkInfo.BGP.Blocks[0].BGID,
 	}
 
-	if cfile.CurChunk.ChunkWriteSteam != nil {
-		if err := cfile.CurChunk.ChunkWriteSteam.Send(req); err != nil {
-			logger.Debug("WriteHandler: send file %v, chunk %v len: %v failed\n", cfile.Name, cfile.CurChunk, length)
-			cfile.CurChunk.ChunkFreeSize = 0
+	if cfile.CurChunk != nil {
+		if cfile.CurChunk.ChunkWriteSteam != nil {
+			if err := cfile.CurChunk.ChunkWriteSteam.Send(req); err != nil {
+				logger.Debug("WriteHandler: send file %v, chunk %v len: %v failed\n", cfile.Name, cfile.CurChunk, length)
+				cfile.CurChunk.ChunkFreeSize = 0
+			} else {
+				logger.Debug("WriteHandler: send file %v, chunk %v len: %v success\n", cfile.Name, cfile.CurChunk, length)
+				cfile.CurChunk.ChunkFreeSize -= length
+			}
 		} else {
-			logger.Debug("WriteHandler: send file %v, chunk %v len: %v success\n", cfile.Name, cfile.CurChunk, length)
-			cfile.CurChunk.ChunkFreeSize -= length
+			goto ALLOCATECHUNK
 		}
 	} else {
 		goto ALLOCATECHUNK

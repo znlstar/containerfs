@@ -5,7 +5,7 @@ import (
 	"bazil.org/fuse/fs"
 	"flag"
 	"fmt"
-	cfs "github.com/tigcode/containerfs/fs"
+	"github.com/tigcode/containerfs/fs"
 	"github.com/tigcode/containerfs/logger"
 	"golang.org/x/net/context"
 	"math"
