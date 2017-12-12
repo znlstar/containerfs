@@ -4,7 +4,7 @@ import (
 	pbproto "github.com/golang/protobuf/proto"
 	"github.com/tigcode/containerfs/logger"
 	ns "github.com/tigcode/containerfs/metanode/namespace"
-	mp "github.com/tigcode/containerfs/proto/mp"
+	"github.com/tigcode/containerfs/proto/mp"
 	"golang.org/x/net/context"
 	"time"
 

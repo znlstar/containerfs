@@ -6,7 +6,7 @@ import (
 	pbproto "github.com/golang/protobuf/proto"
 	"github.com/tigcode/containerfs/logger"
 	"github.com/tigcode/containerfs/metanode/raftopt"
-	mp "github.com/tigcode/containerfs/proto/mp"
+	"github.com/tigcode/containerfs/proto/mp"
 	//vp "github.com/tigcode/containerfs/proto/vp"
 	//"github.com/tigcode/containerfs/utils"
 	"github.com/tigcode/raft"

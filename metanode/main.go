@@ -7,7 +7,7 @@ import (
 	"github.com/tigcode/containerfs/logger"
 	ns "github.com/tigcode/containerfs/metanode/namespace"
 	"github.com/tigcode/containerfs/metanode/raftopt"
-	mp "github.com/tigcode/containerfs/proto/mp"
+	"github.com/tigcode/containerfs/proto/mp"
 	"github.com/tigcode/raft"
 	"github.com/tigcode/raft/proto"
 	"golang.org/x/net/context"

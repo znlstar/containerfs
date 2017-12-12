@@ -2,7 +2,7 @@ package cfs
 
 import (
 	"errors"
-	mp "github.com/tigcode/containerfs/proto/mp"
+	"github.com/tigcode/containerfs/proto/mp"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"time"
