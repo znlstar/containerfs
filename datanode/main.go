@@ -36,20 +36,25 @@ import (
 type C2MReplServerStream struct {
 	stream dp.DataNode_C2MReplServer
 	sync.Mutex
+	NeedBreak    bool
+	BlockGroupID uint64
 }
 type M2SReplClientStream struct {
 	s      *DataNodeServer
 	stream dp.DataNode_M2SReplClient
 	sync.Mutex
+	BlockGroupID uint64
 }
 
 // Slave Struct
 type M2SReplServerStream struct {
-	stream    dp.DataNode_M2SReplServer
-	NeedBreak bool
+	stream       dp.DataNode_M2SReplServer
+	NeedBreak    bool
+	BlockGroupID uint64
 }
 type S2BReplClientStream struct {
-	stream dp.DataNode_S2BReplClient
+	stream       dp.DataNode_S2BReplClient
+	BlockGroupID uint64
 }
 
 // DataNodeServer ...
@@ -195,8 +200,9 @@ func (s *DataNodeServer) C2MRepl(stream dp.DataNode_C2MReplServer) error {
 
 	logger.Debug("C2MRepl init ,clientStreamID %v", clientStreamID)
 
+	C2MReplServerStream := &C2MReplServerStream{stream: stream}
 	s.C2MReplServerStreamCacheLocker.Lock()
-	s.C2MReplServerStreamCache[clientStreamID] = &C2MReplServerStream{stream: stream}
+	s.C2MReplServerStreamCache[clientStreamID] = C2MReplServerStream
 	s.C2MReplServerStreamCacheLocker.Unlock()
 
 	defer func() {
@@ -207,7 +213,7 @@ func (s *DataNodeServer) C2MRepl(stream dp.DataNode_C2MReplServer) error {
 	}()
 
 	for {
-		in, err := stream.Recv()
+		in, err := C2MReplServerStream.stream.Recv()
 		if err == io.EOF {
 			logger.Debug("C2MRepl C2MStream Recv EOF")
 			return nil
@@ -216,6 +222,11 @@ func (s *DataNodeServer) C2MRepl(stream dp.DataNode_C2MReplServer) error {
 			logger.Error("C2MRepl C2MStream Recv err %v", err)
 			return err
 		}
+		if C2MReplServerStream.NeedBreak {
+			return errors.New("C2MReplServerStream NeedBreak")
+		}
+
+		C2MReplServerStream.BlockGroupID = in.BlockGroupID
 
 		// save to localdisk
 		if err := s.writeDisk(in.Master.BlockID, in.ChunkID, in.Databuf); err != nil {
@@ -287,7 +298,7 @@ func (s *DataNodeServer) CreateM2SReplClientStream(slaveHost string, blockGroupI
 		return nil
 	}
 
-	M2SReplClientStream := &M2SReplClientStream{stream: stream, s: s}
+	M2SReplClientStream := &M2SReplClientStream{stream: stream, s: s, BlockGroupID: blockGroupID}
 	s.M2SReplClientStreamCacheLocker.Lock()
 	s.M2SReplClientStreamCache[blockGroupID] = M2SReplClientStream
 	s.M2SReplClientStreamCacheLocker.Unlock()
@@ -302,6 +313,18 @@ func (s *DataNodeServer) CreateM2SReplClientStream(slaveHost string, blockGroupI
 func (mss *M2SReplClientStream) BackWard() {
 
 	logger.Debug("Starting M2SRecv init ...")
+
+	defer func() {
+
+		mss.s.C2MReplServerStreamCacheLocker.Lock()
+		for _, v := range mss.s.C2MReplServerStreamCache {
+			if v.BlockGroupID == mss.BlockGroupID {
+				v.NeedBreak = true
+			}
+		}
+		mss.s.C2MReplServerStreamCacheLocker.Unlock()
+
+	}()
 
 	for {
 		in, err := mss.stream.Recv()
@@ -324,6 +347,7 @@ func (mss *M2SReplClientStream) BackWard() {
 			if err := C2MReplServerStream.stream.Send(in); err != nil {
 				logger.Error("M2SRecv get StreamID %v C2MReplServerStream success but send err %v", in.StreamID, err)
 				C2MReplServerStream.Unlock()
+				C2MReplServerStream.NeedBreak = true
 				return
 			}
 			C2MReplServerStream.Unlock()
@@ -350,7 +374,7 @@ func (s *DataNodeServer) M2SRepl(stream dp.DataNode_M2SReplServer) error {
 	M2SReplServerStream := &M2SReplServerStream{stream: stream}
 
 	for {
-		in, err := stream.Recv()
+		in, err := M2SReplServerStream.stream.Recv()
 		if err == io.EOF {
 			logger.Debug("M2SRepl  stream.Recv EOF")
 			return nil

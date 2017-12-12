@@ -789,9 +789,7 @@ func (cfs *CFS) CreateFileDirect(pinode uint64, name string, flags int) (int32, 
 		DataQueue:      make(chan *chanData, 1),
 		CloseSignal:    make(chan struct{}, 10),
 		WriteErrSignal: make(chan bool, 2),
-		//WriteRetrySignal: make(chan bool, 1024),
-
-		ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
+		ReaderMap:      make(map[fuse.HandleID]*ReaderInfo),
 	}
 	go cfile.WriteThread()
 
@@ -800,110 +798,44 @@ func (cfs *CFS) CreateFileDirect(pinode uint64, name string, flags int) (int32, 
 
 // OpenFileDirect ...
 func (cfs *CFS) OpenFileDirect(pinode uint64, name string, flags int) (int32, *CFile) {
-	var ret int32
-	var writer int32
-	var tmpFileSize int64
 
-	cfile := CFile{}
 	logger.Debug("OpenFileDirect: name: %v, flags: %v\n", name, flags)
 
-	if (flags&os.O_WRONLY) != 0 || (flags&os.O_RDWR) != 0 {
-
-		chunkInfos := make([]*mp.ChunkInfoWithBG, 0)
-		var inode uint64
-		if ret, chunkInfos, inode = cfs.GetFileChunksDirect(pinode, name); ret != 0 {
-			return ret, nil
-		}
-
-		if len(chunkInfos) > 0 {
-
-			for i := range chunkInfos {
-				tmpFileSize += int64(chunkInfos[i].ChunkSize)
-
-			}
-
-			cfile = CFile{
-				OpenFlag:       flags,
-				cfs:            cfs,
-				Writer:         writer,
-				FileSize:       tmpFileSize,
-				ParentInodeID:  pinode,
-				Inode:          inode,
-				wBuffer:        wBuffer{buffer: new(bytes.Buffer), freeSize: BufferSize},
-				Name:           name,
-				chunks:         chunkInfos,
-				DataCache:      make(map[uint64]*Data),
-				DataQueue:      make(chan *chanData, 1),
-				CloseSignal:    make(chan struct{}, 10),
-				WriteErrSignal: make(chan bool, 2),
-				//WriteRetrySignal: make(chan bool, 1024),
-				ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
-			}
-
-		} else {
-
-			cfile = CFile{
-				OpenFlag:       flags,
-				cfs:            cfs,
-				Writer:         writer,
-				FileSize:       0,
-				ParentInodeID:  pinode,
-				Inode:          inode,
-				Name:           name,
-				wBuffer:        wBuffer{buffer: new(bytes.Buffer), freeSize: BufferSize},
-				DataCache:      make(map[uint64]*Data),
-				DataQueue:      make(chan *chanData, 1),
-				CloseSignal:    make(chan struct{}, 10),
-				WriteErrSignal: make(chan bool, 2),
-				//WriteRetrySignal: make(chan bool, 1024),
-				ReaderMap: make(map[fuse.HandleID]*ReaderInfo),
-			}
-
-		}
-		go cfile.WriteThread()
-
-	} else {
-		chunkInfos := make([]*mp.ChunkInfoWithBG, 0)
-		var inode uint64
-		if ret, chunkInfos, inode = cfs.GetFileChunksDirect(pinode, name); ret != 0 {
-			logger.Error("OpenFile failed , GetFileChunksDirect failed !")
-			return ret, nil
-		}
-
+	ret, chunkInfos, inode := cfs.GetFileChunksDirect(pinode, name)
+	if ret != 0 {
+		return ret, nil
+	}
+	var tmpFileSize int64
+	if len(chunkInfos) > 0 {
 		for i := range chunkInfos {
 			tmpFileSize += int64(chunkInfos[i].ChunkSize)
 		}
-
-		cfile = CFile{
-			OpenFlag:      flags,
-			cfs:           cfs,
-			Writer:        writer,
-			FileSize:      tmpFileSize,
-			ParentInodeID: pinode,
-			Inode:         inode,
-			Name:          name,
-			chunks:        chunkInfos,
-			ReaderMap:     make(map[fuse.HandleID]*ReaderInfo),
-		}
-
 	}
+
+	cfile := CFile{
+		OpenFlag:       flags,
+		cfs:            cfs,
+		FileSize:       tmpFileSize,
+		ParentInodeID:  pinode,
+		Inode:          inode,
+		wBuffer:        wBuffer{buffer: new(bytes.Buffer), freeSize: BufferSize},
+		Name:           name,
+		chunks:         chunkInfos,
+		DataCache:      make(map[uint64]*Data),
+		DataQueue:      make(chan *chanData, 1),
+		CloseSignal:    make(chan struct{}, 10),
+		WriteErrSignal: make(chan bool, 2),
+		ReaderMap:      make(map[fuse.HandleID]*ReaderInfo),
+	}
+
+	go cfile.WriteThread()
+
 	return 0, &cfile
 }
 
 // UpdateOpenFileDirect ...
 func (cfs *CFS) UpdateOpenFileDirect(pinode uint64, name string, cfile *CFile, flags int) int32 {
 
-	if (flags&os.O_WRONLY) != 0 || (flags&os.O_RDWR) != 0 {
-
-		chunkInfos := make([]*mp.ChunkInfoWithBG, 0)
-
-		var ret int32
-		if ret, chunkInfos, _ = cfs.GetFileChunksDirect(pinode, name); ret != 0 {
-			return ret
-		}
-		cfile.chunks = chunkInfos
-
-	}
 	return 0
 }
 
@@ -1438,8 +1370,10 @@ func (cfile *CFile) WriteThread() {
 					ti++
 					time.Sleep(time.Millisecond * 5)
 				}
-				if cfile.CurChunk.ChunkWriteSteam != nil {
-					cfile.CurChunk.ChunkWriteSteam.CloseSend()
+				if cfile.CurChunk != nil {
+					if cfile.CurChunk.ChunkWriteSteam != nil {
+						cfile.CurChunk.ChunkWriteSteam.CloseSend()
+					}
 				}
 				cfile.CloseSignal <- struct{}{}
 				return
@@ -1493,7 +1427,9 @@ ALLOCATECHUNK:
 					return errors.New("cfile status err")
 				}
 				logger.Debug("WriteHandler: file %v, end wait after %v ms\n", cfile.Name, ti)
-				cfile.CurChunk.ChunkWriteSteam.CloseSend()
+				if cfile.CurChunk.ChunkWriteSteam != nil {
+					cfile.CurChunk.ChunkWriteSteam.CloseSend()
+				}
 
 				flag := false
 				for retryCnt := 0; retryCnt < 5; retryCnt++ {
@@ -1539,7 +1475,7 @@ ALLOCATECHUNK:
 		Master:       &dp.Block{BlockID: cfile.CurChunk.ChunkInfo.BGP.Blocks[0].BlkID, Host: cfile.CurChunk.ChunkInfo.BGP.Blocks[0].Host},
 		Slave:        &dp.Block{BlockID: cfile.CurChunk.ChunkInfo.BGP.Blocks[1].BlkID, Host: cfile.CurChunk.ChunkInfo.BGP.Blocks[1].Host},
 		Backup:       &dp.Block{BlockID: cfile.CurChunk.ChunkInfo.BGP.Blocks[2].BlkID, Host: cfile.CurChunk.ChunkInfo.BGP.Blocks[2].Host},
-		Databuf:      newData.DataBuf.Next(newData.DataBuf.Len()),
+		Databuf:      newData.DataBuf.Next(length),
 		DataLen:      uint32(length),
 		CommitID:     cfile.atomicNum,
 		BlockGroupID: cfile.CurChunk.ChunkInfo.BGP.Blocks[0].BGID,
@@ -1559,6 +1495,24 @@ ALLOCATECHUNK:
 		}
 	} else {
 		goto ALLOCATECHUNK
+	}
+
+	var lastChunkID uint64
+	if len(cfile.chunks) > 0 {
+		//for appned write
+		lastChunkID = cfile.chunks[len(cfile.chunks)-1].ChunkID
+		if lastChunkID == cfile.CurChunk.ChunkInfo.ChunkID {
+			cfile.FileSize = cfile.FileSize + int64(length)
+			cfile.chunks[len(cfile.chunks)-1].ChunkSize = cfile.chunks[len(cfile.chunks)-1].ChunkSize + int32(length)
+		} else {
+			chunkinfo := &mp.ChunkInfoWithBG{ChunkID: cfile.CurChunk.ChunkInfo.ChunkID, ChunkSize: int32(length), BGP: cfile.CurChunk.ChunkInfo.BGP}
+			cfile.chunks = append(cfile.chunks, chunkinfo)
+			cfile.FileSize += int64(length)
+		}
+	} else {
+		chunkinfo := &mp.ChunkInfoWithBG{ChunkID: cfile.CurChunk.ChunkInfo.ChunkID, ChunkSize: int32(length), BGP: cfile.CurChunk.ChunkInfo.BGP}
+		cfile.chunks = append(cfile.chunks, chunkinfo)
+		cfile.FileSize += int64(length)
 	}
 
 	return nil
