@@ -25,7 +25,7 @@ func main() {
 		expandvol [volumeuuid ] size
 		migrate [datanodeIP] [datanodePort]
 		deletevol [volumeuuid ]
-		snapshootvol [volumeuuid ]
+		snapshotvol [volumeuuid ]
 		getvolleader [volumeuuid ]
 		getvolinfo [volumeuuid ]
 		getinodeinfo [volumeuuid ] parentinodeid name
@@ -85,10 +85,10 @@ func main() {
 	case "migrate":
 		argNum := flag.NArg()
 		if argNum != 2 {
-			fmt.Println("migrate [datanodeIP] [datanodePort]")
+			fmt.Println("migrate [datanodeIP:Port]")
 			os.Exit(1)
 		}
-		ret := fs.Migrate(flag.Arg(0), flag.Arg(1))
+		ret := fs.Migrate(flag.Arg(0))
 		if ret != 0 {
 			fmt.Println("Migrate failed")
 		} else {
@@ -105,13 +105,13 @@ func main() {
 		if ret != 0 {
 			fmt.Println("failed")
 		}
-	case "snapshootvol":
+	case "snapshotvol":
 		argNum := flag.NArg()
 		if argNum != 1 {
-			fmt.Println("snapshootvol [voluuid]")
+			fmt.Println("snapshotvol [voluuid]")
 			os.Exit(1)
 		}
-		ret := fs.SnapShootVol(flag.Arg(0))
+		ret := fs.SnapShotVol(flag.Arg(0))
 		if ret != 0 {
 			fmt.Println("failed")
 		}
@@ -181,10 +181,10 @@ func main() {
 	case "deldatanode":
 		argNum := flag.NArg()
 		if argNum != 2 {
-			fmt.Println("deldatanode ip port")
+			fmt.Println("deldatanode ip:port")
 			os.Exit(1)
 		}
-		ret := fs.DelDatanode(flag.Arg(0), flag.Arg(1))
+		ret := fs.DelDatanode(flag.Arg(0))
 		if ret == 0 {
 			fmt.Printf("del success")
 		} else {
