@@ -38,7 +38,6 @@ const (
 
 const (
 	FileNormal = 0
-	FileRetry  = 1
 	FileError  = 2
 )
 
@@ -1362,7 +1361,7 @@ func (cfile *CFile) WriteThread() {
 			if chanData == nil {
 				logger.Debug("WriteThread recv channel close ...")
 				var ti uint32
-				for true && cfile.Status == FileNormal {
+				for cfile.Status == FileNormal {
 					if len(cfile.DataCache) == 0 {
 						logger.Debug("WriteThread cfile.DataCache == 0 ")
 						break
@@ -1416,7 +1415,7 @@ ALLOCATECHUNK:
 			if cfile.CurChunk.ChunkWriteSteam != nil {
 				var ti uint32
 				logger.Debug("WriteHandler: file %v, begin waiting last chunk: %v\n", cfile.Name, len(cfile.DataCache))
-				for true && cfile.Status == FileNormal {
+				for cfile.Status == FileNormal {
 					if len(cfile.DataCache) == 0 {
 						break
 					}
@@ -1681,7 +1680,7 @@ func (chunk *Chunk) WriteRetryHandle() error {
 
 	sortedKeys := make([]int, 0)
 
-	for k, _ := range chunk.CFile.DataCache {
+	for k:= range chunk.CFile.DataCache {
 		sortedKeys = append(sortedKeys, int(k))
 	}
 	sort.Ints(sortedKeys)
@@ -1754,28 +1753,3 @@ func (cfile *CFile) CloseWrite() int32 {
 	return 0
 }
 
-// ProcessLocalBuffer ...
-func ProcessLocalBuffer(buffer []byte, cfile *CFile) {
-	cfile.Write(buffer, int32(len(buffer)))
-}
-
-// ReadLocalAndWriteCFS ...
-func ReadLocalAndWriteCFS(filePth string, bufSize int, hookfn func([]byte, *CFile), cfile *CFile) error {
-	f, err := os.Open(filePth)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	buf := make([]byte, bufSize)
-	bfRd := bufio.NewReader(f)
-	for {
-		n, err := bfRd.Read(buf)
-		hookfn(buf[:n], cfile)
-		if err != nil {
-			if err == io.EOF {
-				return nil
-			}
-			return err
-		}
-	}
-}
