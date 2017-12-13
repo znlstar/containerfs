@@ -1354,7 +1354,7 @@ func (cfile *CFile) WriteThread() {
 
 	logger.Debug("Write Thread: file %v start writethread!\n", cfile.Name)
 
-	for cfile.Status != FileError {
+	for true {
 		select {
 		case chanData := <-cfile.DataQueue:
 			if chanData == nil {
@@ -1566,6 +1566,20 @@ func (cfile *CFile) AllocateChunk(IsStream bool) (int32, *Chunk) {
 
 	if IsStream {
 
+		tmpConn1, err := grpc.Dial(pAllocateChunkAck.ChunkInfo.BGP.Blocks[1].Host, grpc.WithInsecure(), grpc.WithBlock(), grpc.FailOnNonTempDialError(true))
+		if err != nil {
+			return -1, nil
+		} else {
+			tmpConn1.Close()
+		}
+
+		tmpConn2, err := grpc.Dial(pAllocateChunkAck.ChunkInfo.BGP.Blocks[2].Host, grpc.WithInsecure(), grpc.WithBlock(), grpc.FailOnNonTempDialError(true))
+		if err != nil {
+			return -1, nil
+		} else {
+			tmpConn2.Close()
+		}
+
 		C2Mconn, err := grpc.Dial(pAllocateChunkAck.ChunkInfo.BGP.Blocks[0].Host, grpc.WithInsecure(), grpc.WithBlock(), grpc.FailOnNonTempDialError(true))
 		if err != nil {
 			return -1, nil
@@ -1597,7 +1611,7 @@ func (chunk *Chunk) Retry() {
 	for retryCnt := 0; retryCnt < 5; retryCnt++ {
 		err = chunk.WriteRetryHandle()
 		if err != nil {
-			time.Sleep(time.Millisecond * 500)
+			time.Sleep(time.Millisecond * 100)
 			continue
 		} else {
 			flag = true
@@ -1679,7 +1693,7 @@ func (chunk *Chunk) WriteRetryHandle() error {
 
 	sortedKeys := make([]int, 0)
 
-	for k:= range chunk.CFile.DataCache {
+	for k := range chunk.CFile.DataCache {
 		sortedKeys = append(sortedKeys, int(k))
 	}
 	sort.Ints(sortedKeys)
@@ -1751,4 +1765,3 @@ func (cfile *CFile) CloseWrite() int32 {
 	}
 	return 0
 }
-
