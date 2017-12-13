@@ -4,7 +4,7 @@ import (
 	pbproto "github.com/golang/protobuf/proto"
 	"github.com/tigcode/containerfs/logger"
 	ns "github.com/tigcode/containerfs/metanode/namespace"
-	mp "github.com/tigcode/containerfs/proto/mp"
+	"github.com/tigcode/containerfs/proto/mp"
 	"golang.org/x/net/context"
 	"time"
 
@@ -45,6 +45,15 @@ func (s *MetaNodeServer) ClusterInfo(ctx context.Context, in *mp.ClusterInfoReq)
 	ack.ClusterSpace = total
 	ack.ClusterFreeSpace = free
 
+	volumes, err := nameSpace.GetAllVolume()
+	if err != nil {
+		logger.Error("GetAllVolume Info failed:%v for ClusterInfo", err)
+		ack.Ret = ret
+		return &ack, nil
+	}
+
+	ack.VolNum = int32(len(volumes))
+
 	logger.Debug("ClusterInfo: %v", ack)
 
 	return &ack, nil
@@ -80,6 +89,9 @@ func (s *MetaNodeServer) VolumeInfos(ctx context.Context, in *mp.VolumeInfosReq)
 		volume.RGID = vv.RGID
 		volume.TotalSize = vv.TotalSize
 		volume.AllocatedSize = vv.AllocatedSize
+		volume.UUID = vv.UUID
+		volume.Name = vv.Name
+		volume.Tier = vv.Tier
 
 		ack.Volumes = append(ack.Volumes, &volume)
 	}
@@ -138,10 +150,14 @@ func (s *MetaNodeServer) GetVolInfo(ctx context.Context, in *mp.GetVolInfoReq) (
 
 // rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
 func (s *MetaNodeServer) NodeMonitor(ctx context.Context, in *mp.NodeMonitorReq) (*mp.NodeMonitorAck, error) {
-	ack := mp.NodeMonitorAck{}
+	ack := mp.NodeMonitorAck{NodeInfo: &mp.NodeInfo{}}
 
-	cpuUsage, _ := cpu.Percent(time.Millisecond, false)
-	ack.NodeInfo.CpuUsage = cpuUsage[0]
+	cpuUsage, err := cpu.Percent(time.Millisecond*500, false)
+	if err == nil {
+		ack.NodeInfo.CpuUsage = cpuUsage[0]
+	} else {
+		logger.Error("NodeMonitor get cpu usage failed !")
+	}
 
 	cpuLoad, _ := load.Avg()
 	ack.NodeInfo.CpuLoad = cpuLoad.Load1
@@ -162,11 +178,11 @@ func (s *MetaNodeServer) NodeMonitor(ctx context.Context, in *mp.NodeMonitorReq)
 		diskio.IoTime = v.IoTime
 		diskio.IopsInProgress = v.IopsInProgress
 		diskio.Name = v.Name
-		diskio.ReadBytes = diskio.ReadBytes
-		diskio.ReadCount = diskio.ReadCount
-		diskio.WeightedIO = diskio.WeightedIO
-		diskio.WriteBytes = diskio.WriteBytes
-		diskio.WriteCount = diskio.WriteCount
+		diskio.ReadBytes = v.ReadBytes
+		diskio.ReadCount = v.ReadCount
+		diskio.WeightedIO = v.WeightedIO
+		diskio.WriteBytes = v.WriteBytes
+		diskio.WriteCount = v.WriteCount
 		ack.NodeInfo.DiskIOs = append(ack.NodeInfo.DiskIOs, &diskio)
 	}
 
