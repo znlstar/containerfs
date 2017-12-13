@@ -16,7 +16,6 @@ import (
 	//"net"
 	"path"
 	"runtime/debug"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -1058,87 +1057,5 @@ func (ns *nameSpace) BlockGroupDBGetAll() (bool, []*mp.BlockGroup) {
 	}
 
 	return true, blockGroups
-
-}
-
-func (ns *nameSpace) DatanodeRegistry(in *mp.Datanode) int32 {
-	k := in.Host
-	v, _ := pbproto.Marshal(in)
-	err := ns.RaftGroup.DataNodeSet(1, k, v)
-	if err != nil {
-		logger.Error("Datanode(%v) Register to MetaNode failed:%v", in.Host, err)
-		return -1
-	}
-
-	logger.Error("Datanode(%v) Register to MetaNode success", in.Host)
-	return 0
-}
-
-func (ns *nameSpace) GetAllDatanode() ([]*mp.Datanode, error) {
-	v, _ := ns.RaftGroup.DatanodeGetAll(1)
-	var datanodes []*mp.Datanode
-
-	for _, vv := range v {
-		datanode := mp.Datanode{}
-		err := pbproto.Unmarshal(vv.V, &datanode)
-		if err != nil {
-			return []*mp.Datanode{}, err
-		}
-		datanodes = append(datanodes, &datanode)
-	}
-	return datanodes, nil
-
-}
-
-func (ns *nameSpace) DataNodeDel(host string) error {
-
-	v, err := ns.RaftGroup.BlockGetRange(1, host)
-	if err != nil {
-		return err
-	}
-
-	for _, vv := range v {
-		block := mp.Block{}
-		pbproto.Unmarshal(vv.V, &block)
-		key := host + "-" + strconv.FormatUint(block.BlkID, 10)
-		ns.RaftGroup.BlockDel(1, key)
-	}
-
-	err = ns.RaftGroup.DataNodeDel(1, host)
-	if err != nil {
-		err := ns.RaftGroup.DataNodeDel(1, host)
-		if err != nil {
-			logger.Error("Delete Datanode raftgrpid:%v,key:%v,err:%v", 1, host, err)
-			return err
-		}
-	}
-	return nil
-}
-
-func (ns *nameSpace) AllocateRGID() (uint64, error) {
-	return ns.RaftGroup.RGIDGET(1)
-}
-
-func (ns *nameSpace) AllocateBGID() (uint64, error) {
-	return ns.RaftGroup.BGIDGET(1)
-}
-
-func (ns *nameSpace) AllocateBlockID() (uint64, error) {
-	return ns.RaftGroup.BlockIDGET(1)
-}
-
-func (ns *nameSpace) GetAllVolume() ([]*mp.Volume, error) {
-	v, _ := ns.RaftGroup.VolsGetAll(1)
-	var vols []*mp.Volume
-
-	for _, vv := range v {
-		volume := mp.Volume{}
-		err := pbproto.Unmarshal(vv.V, &volume)
-		if err != nil {
-			return []*mp.Volume{}, err
-		}
-		vols = append(vols, &volume)
-	}
-	return vols, nil
 
 }

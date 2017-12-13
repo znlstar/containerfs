@@ -171,7 +171,7 @@ func main() {
 			fmt.Println("getdatanodes")
 			os.Exit(1)
 		}
-		ret, vi := fs.GetAllDatanode()
+		ret, vi := fs.GetAllDataNode()
 		if ret == 0 {
 			fmt.Println(vi)
 		} else {
@@ -184,7 +184,7 @@ func main() {
 			fmt.Println("deldatanode ip:port")
 			os.Exit(1)
 		}
-		ret := fs.DelDatanode(flag.Arg(0))
+		ret := fs.DelDataNode(flag.Arg(0))
 		if ret == 0 {
 			fmt.Printf("del success")
 		} else {

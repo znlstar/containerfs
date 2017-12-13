@@ -6,7 +6,7 @@ service DataNode {
     rpc WriteChunk(WriteChunkReq) returns (WriteChunkAck){};
     rpc StreamReadChunk(StreamReadChunkReq) returns (stream StreamReadChunkAck){};
     rpc DeleteChunk(DeleteChunkReq) returns (DeleteChunkAck){};
-    rpc DatanodeHealthCheck(DatanodeHealthCheckReq) returns (DatanodeHealthCheckAck){};
+    rpc DataNodeHealthCheck(DataNodeHealthCheckReq) returns (DataNodeHealthCheckAck){};
     rpc RecvMigrateMsg(RecvMigrateReq) returns (RecvMigrateAck){};
     rpc SendMigrateData(stream FInfo) returns (SendAck){};
 
@@ -86,10 +86,10 @@ message DeleteChunkAck{
     int32 Ret = 1;
 }
 
-message DatanodeHealthCheckReq{
+message DataNodeHealthCheckReq{
 }
 
-message DatanodeHealthCheckAck{
+message DataNodeHealthCheckAck{
     int32 Ret = 1;
     int32 Used = 2;
     int32 Status = 3;   

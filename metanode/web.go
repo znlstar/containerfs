@@ -18,17 +18,11 @@ import (
 // rpc ClusterInfo(ClusterInfoReq) returns (ClusterInfoAck){};
 func (s *MetaNodeServer) ClusterInfo(ctx context.Context, in *mp.ClusterInfoReq) (*mp.ClusterInfoAck, error) {
 	ack := mp.ClusterInfoAck{}
-	ret, nameSpace := ns.GetNameSpace("Cluster")
-	if ret != 0 {
-		ack.Ret = ret
-		return &ack, nil
-	}
-
 	ack.MetaNum = 3
 
-	v, err := nameSpace.GetAllDatanode()
+	v, err := GetAllDataNode()
 	if err != nil {
-		logger.Error("GetAllDatanode Info failed:%v for ClusterInfo", err)
+		logger.Error("GetAllDataNode Info failed:%v for ClusterInfo", err)
 		ack.Ret = 1
 		return &ack, nil
 	}
@@ -45,10 +39,10 @@ func (s *MetaNodeServer) ClusterInfo(ctx context.Context, in *mp.ClusterInfoReq)
 	ack.ClusterSpace = total
 	ack.ClusterFreeSpace = free
 
-	volumes, err := nameSpace.GetAllVolume()
+	volumes, err := GetAllVolume()
 	if err != nil {
 		logger.Error("GetAllVolume Info failed:%v for ClusterInfo", err)
-		ack.Ret = ret
+		ack.Ret = -1
 		return &ack, nil
 	}
 
@@ -71,16 +65,11 @@ func (s *MetaNodeServer) MetaNodeInfo(ctx context.Context, in *mp.MetaNodeInfoRe
 // rpc VolumeInfo(VolumeInfoReq) returns (VolumeInfoAck){};
 func (s *MetaNodeServer) VolumeInfos(ctx context.Context, in *mp.VolumeInfosReq) (*mp.VolumeInfosAck, error) {
 	ack := mp.VolumeInfosAck{}
-	ret, nameSpace := ns.GetNameSpace("Cluster")
-	if ret != 0 {
-		ack.Ret = ret
-		return &ack, nil
-	}
 
-	v, err := nameSpace.GetAllVolume()
+	v, err := GetAllVolume()
 	if err != nil {
 		logger.Error("GetAllVolume Info failed:%v for VolumeInfo", err)
-		ack.Ret = ret
+		ack.Ret = -1
 		return &ack, nil
 	}
 

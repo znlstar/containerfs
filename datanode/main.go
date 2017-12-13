@@ -104,7 +104,7 @@ func registryToMeta() {
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
 
-	var datanodeRegistryReq mp.Datanode
+	var datanodeRegistryReq mp.DataNode
 	datanodeRegistryReq.Host = DataNodeServerAddr.Host
 	diskInfo := utils.DiskUsage(DataNodeServerAddr.Path)
 	datanodeRegistryReq.Capacity = int32(float64(diskInfo.All) / float64(1024*1024*1024))
@@ -114,7 +114,7 @@ func registryToMeta() {
 	datanodeRegistryReq.Tier = DataNodeServerAddr.Tier
 	datanodeRegistryReq.Status = 0
 
-	ack, err := mc.DatanodeRegistry(context.Background(), &datanodeRegistryReq)
+	ack, err := mc.DataNodeRegistry(context.Background(), &datanodeRegistryReq)
 	if err != nil {
 		logger.Debug("datanode statup failed : registry to metanode failed ! err %v", err)
 		os.Exit(1)
@@ -131,8 +131,8 @@ func registryToMeta() {
 }
 
 // DatanodeHealthCheck rpc GetChunks(GetChunksReq) returns (GetChunksAck){};
-func (s *DataNodeServer) DatanodeHealthCheck(ctx context.Context, in *dp.DatanodeHealthCheckReq) (*dp.DatanodeHealthCheckAck, error) {
-	ack := dp.DatanodeHealthCheckAck{}
+func (s *DataNodeServer) DataNodeHealthCheck(ctx context.Context, in *dp.DataNodeHealthCheckReq) (*dp.DataNodeHealthCheckAck, error) {
+	ack := dp.DataNodeHealthCheckAck{}
 	f, err := os.OpenFile(DataNodeServerAddr.Path+"/health", os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0666)
 	if err != nil {
 		logger.Error("Open datanode check health file error:%v", err)
