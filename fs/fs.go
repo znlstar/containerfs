@@ -79,48 +79,48 @@ func (cfs *CFS) DelDataConn(addr string) {
 }
 */
 
-func GetAllDatanode() (int32, []*mp.Datanode) {
+func GetAllDataNode() (int32, []*mp.DataNode) {
 	conn, err := DialMeta("Cluster")
 	if err != nil {
-		logger.Error("GetAllDatanode failed,Dial to metanode fail :%v", err)
+		logger.Error("GetAllDataNode failed,Dial to metanode fail :%v", err)
 		return -1, nil
 	}
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
-	pGetAllDatanodeReq := &mp.GetAllDatanodeReq{}
+	pGetAllDataNodeReq := &mp.GetAllDataNodeReq{}
 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	pGetAllDatanodeAck, err := mc.GetAllDatanode(ctx, pGetAllDatanodeReq)
+	pGetAllDataNodeAck, err := mc.GetDataNode(ctx, pGetAllDataNodeReq)
 	if err != nil {
-		logger.Error("GetAllDatanode failed,grpc func err :%v", err)
+		logger.Error("GetAllDataNode failed,grpc func err :%v", err)
 		return -1, nil
 	}
-	if pGetAllDatanodeAck.Ret != 0 {
-		logger.Error("GetAllDatanode failed,grpc func ret :%v", pGetAllDatanodeAck.Ret)
+	if pGetAllDataNodeAck.Ret != 0 {
+		logger.Error("GetAllDataNode failed,grpc func ret :%v", pGetAllDataNodeAck.Ret)
 		return -1, nil
 	}
-	return 0, pGetAllDatanodeAck.Datanodes
+	return 0, pGetAllDataNodeAck.DataNodes
 }
 
-func DelDatanode(host string) int {
+func DelDataNode(host string) int {
 	conn, err := DialMeta("Cluster")
 	if err != nil {
-		logger.Error("GetAllDatanode failed,Dial to metanode fail :%v", err)
+		logger.Error("GetAllDataNode failed,Dial to metanode fail :%v", err)
 		return -1
 	}
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
 
-	pDelDatanodeReq := &mp.DelDatanodeReq{
+	pDelDataNodeReq := &mp.DelDataNodeReq{
 		Host: host,
 	}
 	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-	ack, err := mc.DelDatanode(ctx, pDelDatanodeReq)
+	ack, err := mc.DelDataNode(ctx, pDelDataNodeReq)
 	if err != nil {
-		logger.Error("DelDatanode failed,grpc func err :%v", err)
+		logger.Error("DelDataNode failed,grpc func err :%v", err)
 		return -1
 	}
 	if ack.Ret != 0 {
-		logger.Error("DelDatanode failed,grpc func ret :%v", ack.Ret)
+		logger.Error("DelDataNode failed,grpc func ret :%v", ack.Ret)
 		return -1
 	}
 	return 0

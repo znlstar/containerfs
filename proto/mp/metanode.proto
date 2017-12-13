@@ -5,8 +5,8 @@ package mp;
 service MetaNode {
 
     // cluster opt
-    rpc DatanodeRegistry(Datanode) returns (DatanodeRegistryAck){};
-    rpc	DelDatanode(DelDatanodeReq) returns (DelDatanodeAck){};
+    rpc DataNodeRegistry(DataNode) returns (DataNodeRegistryAck){};
+    rpc	DelDataNode(DelDataNodeReq) returns (DelDataNodeAck){};
     rpc CreateVol(CreateVolReq) returns (CreateVolAck){};
     rpc ExpandVolTS(ExpandVolTSReq) returns (ExpandVolTSAck){};
     rpc ExpandVolRS(ExpandVolRSReq) returns (ExpandVolRSAck){};
@@ -39,7 +39,7 @@ service MetaNode {
 
     // Web Info
     rpc ClusterInfo(ClusterInfoReq) returns (ClusterInfoAck){};
-    rpc GetAllDatanode(GetAllDatanodeReq) returns (GetAllDatanodeAck){};
+    rpc GetDataNode(GetAllDataNodeReq) returns (GetAllDataNodeAck){};
     rpc MetaNodeInfo(MetaNodeInfoReq) returns (MetaNodeInfoAck){};
     rpc VolumeInfos(VolumeInfosReq) returns (VolumeInfosAck){};
     rpc GetVolInfo(GetVolInfoReq) returns (GetVolInfoAck){};
@@ -50,7 +50,7 @@ service MetaNode {
 message NULL{
 }
 
-message Datanode {
+message DataNode {
     string Host = 1;
     string MountPoint = 2 ;
     string Tier = 3;
@@ -60,7 +60,7 @@ message Datanode {
     int32 Status = 7;
 }
 
-message DatanodeRegistryAck {
+message DataNodeRegistryAck {
     int32 Ret = 1;
 }
 
@@ -68,16 +68,16 @@ message UpdateBlkDBAck {
     int32 Ret = 1;
 }
 
-message GetAllDatanodeReq {
+message GetAllDataNodeReq {
 }
-message GetAllDatanodeAck {
+message GetAllDataNodeAck {
     int32 Ret = 1;
-    repeated Datanode Datanodes = 2;
+    repeated DataNode DataNodes = 2;
 }
-message DelDatanodeReq {
+message DelDataNodeReq {
     string Host = 1;
 }
-message DelDatanodeAck {
+message DelDataNodeAck {
     int32 Ret = 1;
 }
 
@@ -424,7 +424,7 @@ message DataNodeInfoReq {
 }
 message DataNodeInfoAck {
     int32 Ret = 1;
-    repeated Datanode Datanodes = 2;
+    repeated DataNode DataNodes = 2;
 }
 
 // web -> cluster leader metanode
