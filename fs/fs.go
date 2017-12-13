@@ -2,7 +2,6 @@ package cfs
 
 import (
 	"bazil.org/fuse"
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
