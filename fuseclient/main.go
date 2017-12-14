@@ -109,6 +109,7 @@ var _ fs.NodeForgetter = (*dir)(nil)
 var _ fs.NodeMkdirer = (*dir)(nil)
 var _ fs.NodeRemover = (*dir)(nil)
 var _ fs.NodeRenamer = (*dir)(nil)
+var _ fs.NodeFsyncer = (*dir)(nil)
 var _ fs.NodeStringLookuper = (*dir)(nil)
 var _ fs.HandleReadDirAller = (*dir)(nil)
 
@@ -447,6 +448,12 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	return nil
 }
 
+// Fsync ...
+func (d *dir) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
+
+	return nil
+}
+
 type node interface {
 	fs.Node
 	setName(name string)
@@ -487,8 +494,6 @@ func (f *File) setParentInode(pdir *dir) {
 // Attr ...
 func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 
-	logger.Debug("File Attr")
-
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -508,6 +513,10 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Mode = 0666
 	a.Valid = time.Minute
 
+	if f.cfile != nil {
+		a.Size = uint64(f.cfile.FileSize)
+	}
+	logger.Debug("File Attr %v size %v", f.name, a.Size)
 	return nil
 }
 
@@ -621,7 +630,7 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	w := f.cfile.Write(req.Data, int32(len(req.Data)))
+	w := f.cfile.Write(req.Data, req.Offset, int32(len(req.Data)))
 	if w != int32(len(req.Data)) {
 		if w == -1 {
 			logger.Error("Write Failed Err:ENOSPC")

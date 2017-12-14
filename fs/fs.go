@@ -133,7 +133,7 @@ func CreateVolbyMeta(name string, capacity string, tier string) int32 {
 	pCreateVolReq := &mp.CreateVolReq{
 		VolName:    name,
 		SpaceQuota: int32(spaceQuota),
-		Tier: tier,
+		Tier:       tier,
 	}
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 	ack, err := mc.CreateVol(ctx, pCreateVolReq)
@@ -899,6 +899,7 @@ func (cfs *CFS) OpenFileDirect(pinode uint64, name string, flags int) (int32, *C
 		}
 
 	}
+	logger.Debug("OpenFile %v with flags:%v success return cfile: %p", name, flags, &cfile)
 	return 0, &cfile
 }
 
@@ -1357,17 +1358,19 @@ func (cfile *CFile) streamread(chunkidx int, ch chan *bytes.Buffer, offset int64
 }
 
 // Read ...
-func (cfile *CFile) Read(handleID fuse.HandleID, data *[]byte, offset int64, readsize int64) int64 {
+func (cfile *CFile) OldRead(handleID fuse.HandleID, data *[]byte, offset int64, readsize int64) int64 {
 	// read data from write buffer
 
 	cache := cfile.wBuffer
 	n := cache.buffer.Len()
 	if n != 0 && offset >= cache.startOffset {
+		logger.Debug("Read %s offset:%v hit wBuffer cache with offset:%v, len:%v", cfile.Name, offset, cache.startOffset, n)
 		cfile.ReaderMap[handleID].readBuf = cache.buffer.Bytes()
 		if offset+readsize < cache.endOffset {
 			*data = append(*data, cfile.ReaderMap[handleID].readBuf[offset:offset+readsize]...)
 			return readsize
 		}
+		logger.Debug("Read %s readsize:%v return %v bytes from wBuffer", cfile.Name, readsize, n)
 		*data = append(*data, cfile.ReaderMap[handleID].readBuf[offset:cache.endOffset]...)
 		return cache.endOffset - offset
 	}
@@ -1412,7 +1415,7 @@ func (cfile *CFile) Read(handleID fuse.HandleID, data *[]byte, offset int64, rea
 	var eachReadLen int64
 	freesize := readsize
 	if endChunkNum < beginChunkNum {
-		logger.Error("This Read data from beginchunk:%v lager than endchunk:%v", beginChunkNum, endChunkNum)
+		logger.Error("Read %s offset:%v len:%v beginchunk:%v > endchunk:%v", cfile.Name, offset, readsize, beginChunkNum, endChunkNum)
 		return -1
 	}
 
@@ -1470,21 +1473,350 @@ func (cfile *CFile) Read(handleID fuse.HandleID, data *[]byte, offset int64, rea
 	return length
 }
 
-// Write ...
-func (cfile *CFile) Write(buf []byte, len int32) int32 {
+func (cfile *CFile) readBuffer(eInfo extentInfo, data *[]byte) int32 {
+
+	bufLen := cfile.wBuffer.buffer.Len()
+	if bufLen < int(eInfo.length) {
+		logger.Error("cfile %v wBuffer length %v less than request %v", cfile.Name, bufLen, eInfo.length)
+		return -1
+	}
+	wbuf := cfile.wBuffer.buffer.Next(int(eInfo.length))
+	*data = append(*data, wbuf[:eInfo.length]...)
+	cfile.wBuffer.buffer.Write(wbuf)
+	logger.Debug("cfile %v read %v from wBuffer len: %v,%v success", cfile.Name, eInfo.length, bufLen, cfile.wBuffer.buffer.Len())
+	return eInfo.length
+}
+
+func (cfile *CFile) readChunk(eInfo extentInfo, handleID fuse.HandleID, data *[]byte, offset int64) int32 {
+
+	//check if hit readBuf
+	readBufOffset := cfile.ReaderMap[handleID].LastOffset
+	readBufLen := len(cfile.ReaderMap[handleID].readBuf)
+	if offset >= readBufOffset && offset+int64(eInfo.length) <= readBufOffset+int64(readBufLen) {
+		pos := int32(offset - readBufOffset)
+		*data = append(*data, cfile.ReaderMap[handleID].readBuf[pos:pos+eInfo.length]...)
+		return eInfo.length
+	}
+
+	//prepare to read from datanode
+	cfile.ReaderMap[handleID].readBuf = []byte{}
+	buffer := new(bytes.Buffer)
+	cfile.ReaderMap[handleID].Ch = make(chan *bytes.Buffer)
+	readSize := eInfo.length
+	if readSize < 2097152 {
+		readSize = 2097152
+	}
+
+	//go streamread
+	go cfile.streamread(int(eInfo.pos), cfile.ReaderMap[handleID].Ch, int64(eInfo.offset), int64(readSize))
+	buffer = <-cfile.ReaderMap[handleID].Ch
+	bLen := buffer.Len()
+	if bLen == 0 {
+		logger.Error("try to read %v chunk:%v from datanode size:%v, but return:%v", cfile.Name, eInfo.pos, readSize, bLen)
+		return -1
+	}
+	cfile.ReaderMap[handleID].readBuf = buffer.Next(bLen)
+	cfile.ReaderMap[handleID].LastOffset = offset
+	appendLen := eInfo.length
+	if appendLen > int32(bLen) {
+		appendLen = int32(bLen)
+	}
+	*data = append(*data, cfile.ReaderMap[handleID].readBuf[0:appendLen]...)
+	buffer.Reset()
+	buffer = nil
+	return appendLen
+}
+
+const (
+	ExtentFlagInvalid    = 0 //extent is invalid
+	ExtentFlagOnDisk     = 1 //extent is on disk
+	ExtentFlagInBuffer   = 2 //extent is in buffer
+	ExtentFlagBeyondFile = 3 //extent is beyond file size
+)
+
+type extentInfo struct {
+	flag   int32
+	pos    int32 //pos in chunks of cfile
+	offset int32 //offset in chunk or buffer
+	length int32
+}
+
+//get extent info by [start, end)
+func (cfile *CFile) getExtentInfo(start int64, end int64, eInfo []extentInfo) int32 {
+	var i, c int32
+	var chunkStart, chunkEnd int64
+
+	//1.seek all on-disk chunks
+	for i = 0; i < int32(len(cfile.chunks)); i++ {
+		chunkEnd += int64(cfile.chunks[i].ChunkSize) //@chunkEnd is next chunk's @chunkStart
+
+		if start < chunkEnd {
+			eInfo[c].flag = ExtentFlagOnDisk
+			eInfo[c].pos = i
+			eInfo[c].offset = int32(start - chunkStart)
+			if chunkEnd < end {
+				eInfo[c].length = int32(chunkEnd - start)
+				start = chunkEnd //update @start to next chunk
+			} else {
+				eInfo[c].length = int32(end - start)
+				return 0 //reach @end, done
+			}
+			c++
+		}
+
+		chunkStart = chunkEnd
+	}
+
+	bufLen := cfile.wBuffer.buffer.Len()
+	if start > chunkEnd+int64(bufLen) {
+		logger.Error("cfile %v unsupport read/write %v beyond file size %v", cfile.Name, start, cfile.FileSize)
+		return -1
+	}
+
+	//2.extent in wBuffer with @start to min(wBufferEnd, @end)
+	if bufLen != 0 {
+		if chunkEnd != cfile.wBuffer.startOffset {
+			logger.Error("cfile %v chunkEnd:%v != wBuffer.startOffset:%v", cfile.Name, chunkEnd, cfile.wBuffer.startOffset)
+			return -1
+		}
+		eInfo[c].flag = ExtentFlagInBuffer
+		eInfo[c].pos = i
+		eInfo[c].offset = int32(start - cfile.wBuffer.startOffset)
+
+		eInfo[c].length = int32(bufLen) - eInfo[c].offset
+		if eInfo[c].length > int32(end-start) {
+			eInfo[c].length = int32(end - start)
+		}
+		start += int64(eInfo[c].length)
+		c++
+	}
+
+	//3.extent beyond file size
+	if start < end {
+		eInfo[c].flag = ExtentFlagBeyondFile
+		eInfo[c].pos = i
+		eInfo[c].offset = 0
+		eInfo[c].length = int32(end - start)
+	}
+	return 0
+}
+
+// Read ...
+func (cfile *CFile) Read(handleID fuse.HandleID, data *[]byte, offset int64, readsize int64) int64 {
 
 	if cfile.Status != 0 {
-		logger.Error("cfile status error , Write func return -2 ")
+		logger.Error("cfile %v status error , read func return -2 ", cfile.Name)
 		return -2
 	}
 
-	var w int32
-	w = 0
+	if offset >= cfile.FileSize {
+		logger.Error("cfile %v unsupport read beyond file size return -3 ", cfile.Name)
+		return -3
+	}
 
-	for w < len {
-		if (cfile.FileSize % chunkSize) == 0 {
-			logger.Debug("need a new chunk...")
-			var ret int32
+	var ret int32
+	eInfo := make([]extentInfo, 4)
+	if ret = cfile.getExtentInfo(offset, offset+readsize, eInfo); ret < 0 {
+		logger.Error("cfile %v getExtentInfo failed, return -3 ", cfile.Name)
+		return -3
+	}
+	logger.Debug("cfile %v getExtentInfo for Read: offset: %v, len: %v, eInfo: %v", cfile.Name, offset, readsize, eInfo)
+
+	var c int
+	var doneFlag bool
+	curOffset := offset
+	for c = 0; c <= len(eInfo) && !doneFlag; c++ {
+		ret = 0
+		switch eInfo[c].flag {
+		case ExtentFlagOnDisk:
+			ret = cfile.readChunk(eInfo[c], handleID, data, curOffset)
+			if ret < 0 {
+				logger.Error("cfile %v readChunk failed %v", cfile.Name, eInfo[c])
+				return -1
+			}
+			if ret != eInfo[c].length {
+				logger.Error("cfile %v eInfo:%v, readChunk ret %v", cfile.Name, eInfo[c], ret)
+				doneFlag = true
+			}
+
+		case ExtentFlagInBuffer:
+			ret = cfile.readBuffer(eInfo[c], data)
+			if ret < 0 {
+				logger.Error("cfile %v readBuffer failed %v", cfile.Name, eInfo[c])
+				return -1
+			}
+
+		case ExtentFlagBeyondFile:
+			logger.Debug("cfile %v read %v:%v beyond file size %v, do nothing...", cfile.Name, offset, readsize, cfile.FileSize)
+			doneFlag = true
+
+		default:
+			doneFlag = true
+		}
+
+		curOffset += int64(ret)
+	}
+	return curOffset - offset
+}
+
+// Write ...
+func (cfile *CFile) Write(buf []byte, offset int64, length int32) int32 {
+
+	if cfile.Status != 0 {
+		logger.Error("cfile %v status error , Write func return -2 ", cfile.Name)
+		return -2
+	}
+
+	if offset > cfile.FileSize {
+		logger.Error("cfile %v unsupport write beyond file size return -3 ", cfile.Name)
+		return -3
+	}
+
+	if offset == cfile.FileSize {
+		logger.Debug("cfile %v write append only: offset %v, length %v", cfile.Name, offset, length)
+		return cfile.appendWrite(buf, length)
+	}
+
+	eInfo := make([]extentInfo, 4)
+	if ret := cfile.getExtentInfo(offset, offset+int64(length), eInfo); ret < 0 {
+		logger.Error("cfile %v getExtentInfo failed, return -3 ", cfile.Name)
+		return -3
+	}
+	logger.Debug("cfile %v getExtentInfo for Write: offset: %v, len: %v, eInfo: %v", cfile.Name, offset, length, eInfo)
+
+	var c int
+	var ret, pos int32
+	var doneFlag bool
+	for c = 0; c <= len(eInfo) && !doneFlag; c++ {
+		switch eInfo[c].flag {
+		case ExtentFlagOnDisk:
+			ret = cfile.seekWrite(eInfo[c], buf[pos:(pos+eInfo[c].length)])
+			if ret < 0 {
+				logger.Error("cfile %v doOverwrite failed %v", cfile.Name, eInfo[c])
+				return -1
+			}
+
+		case ExtentFlagInBuffer:
+			ret = cfile.overwriteBuffer(eInfo[c], buf[pos:(pos+eInfo[c].length)])
+			if ret < 0 {
+				logger.Error("cfile %v doOverwrite failed %v", cfile.Name, eInfo[c])
+				return -1
+			}
+
+		case ExtentFlagBeyondFile:
+			ret = cfile.appendWrite(buf[pos:(pos+eInfo[c].length)], eInfo[c].length)
+			if ret < 0 {
+				logger.Error("cfile %v Write failed %v", cfile.Name, eInfo[c])
+				return -1
+			}
+
+		default:
+			doneFlag = true
+		}
+
+		pos += eInfo[c].length
+	}
+	return length
+}
+
+func (cfile *CFile) overwriteBuffer(eInfo extentInfo, buf []byte) int32 {
+
+	//read wBuffer all bytes to tmpBuf
+	bufLen := cfile.wBuffer.buffer.Len()
+	tmpBuf := cfile.wBuffer.buffer.Next(bufLen)
+	if len(tmpBuf) != bufLen {
+		logger.Error("cfile %v read wBuffer len: %v return: %v ", cfile.Name, bufLen, len(tmpBuf))
+		return -1
+	}
+
+	//copy buf to tmpBuf
+	n := copy(tmpBuf[eInfo.offset:], buf)
+	if n != int(eInfo.length) {
+		logger.Error("cfile %v copy to wBuffer len: %v return n: %v", cfile.Name, eInfo.length, n)
+		return -1
+	}
+
+	//write to wBuffer
+	cfile.wBuffer.buffer.Reset()
+	n, err := cfile.wBuffer.buffer.Write(tmpBuf)
+	if n != int(bufLen) || err != nil {
+		logger.Error("cfile %v write wBuffer len: %v return n: %v err %v", cfile.Name, bufLen, n, err)
+		return -1
+	}
+
+	return 0
+}
+
+func (cfile *CFile) seekWrite(eInfo extentInfo, buf []byte) int32 {
+
+	chunkInfo := cfile.chunks[eInfo.pos]
+	var copies uint64
+
+	for i := range chunkInfo.BGP.Blocks {
+
+		ip := chunkInfo.BGP.Blocks[i].Ip
+		port := chunkInfo.BGP.Blocks[i].Port
+		addr := ip + ":" + strconv.Itoa(int(port))
+
+		conn, err := cfile.cfs.GetDataConn(addr)
+		if err != nil || conn == nil {
+			conn, err = DialData(addr)
+			if err == nil && conn != nil {
+				logger.Debug("new datanode conn !!!")
+				cfile.cfs.SetDataConn(addr, conn)
+			} else {
+				logger.Error("new conn to %v failed", addr)
+				return -1
+			}
+		} else {
+			//logger.Debug("reuse datanode conn !!!")
+		}
+	}
+
+	for i := range chunkInfo.BGP.Blocks {
+
+		ip := chunkInfo.BGP.Blocks[i].Ip
+		port := chunkInfo.BGP.Blocks[i].Port
+		addr := ip + ":" + strconv.Itoa(int(port))
+
+		conn, _ := cfile.cfs.GetDataConn(addr)
+
+		pSeekWriteChunkReq := &dp.SeekWriteChunkReq{
+			ChunkID:     chunkInfo.ChunkID,
+			BlockID:     chunkInfo.BGP.Blocks[i].BlkID,
+			Databuf:     buf,
+			ChunkOffset: int64(eInfo.offset),
+		}
+
+		cfile.wgWriteReps.Add(1)
+
+		go cfile.seekWriteChunk(addr, conn, pSeekWriteChunkReq, &copies)
+
+	}
+
+	cfile.wgWriteReps.Wait()
+
+	if copies < 3 {
+		cfile.Status = 1
+		logger.Error("cfile %v seekWriteChunk copies: %v, set error!", cfile.Name, copies)
+		return -1
+	}
+	return 0
+}
+
+// Write only appending file...
+func (cfile *CFile) appendWrite(buf []byte, length int32) int32 {
+
+	if cfile.Status != 0 {
+		logger.Error("cfile %v status error , Write func return -2 ", cfile.Name, cfile.Status)
+		return -2
+	}
+
+	var ret, w int32
+	w = 0
+	for w < length {
+		if (cfile.FileSize%chunkSize) == 0 || cfile.wBuffer.chunkInfo.ChunkSize+length > chunkSize {
+			logger.Debug("cfile %v need a new chunk...filesize: %v", cfile.Name, cfile.FileSize)
 			ret, cfile.wBuffer.chunkInfo = cfile.AllocateChunk()
 			if ret != 0 {
 				if ret == 28 /*ENOSPC*/ {
@@ -1492,30 +1824,33 @@ func (cfile *CFile) Write(buf []byte, len int32) int32 {
 				}
 				return -2
 			}
-
 		}
 		if cfile.wBuffer.freeSize == 0 {
 			cfile.wBuffer.buffer = new(bytes.Buffer)
 			cfile.wBuffer.freeSize = BufferSize
 		}
-		if len-w < cfile.wBuffer.freeSize {
-			if len != w {
-				cfile.wBuffer.buffer.Write(buf[w:len])
-				cfile.wBuffer.freeSize = cfile.wBuffer.freeSize - (len - w)
-				cfile.wBuffer.startOffset = cfile.FileSize
-				cfile.FileSize = cfile.FileSize + int64(len-w)
+		// set startOffset when writing first byte
+		if cfile.wBuffer.buffer.Len() == 0 {
+			cfile.wBuffer.startOffset = cfile.FileSize
+		}
+		if length-w < cfile.wBuffer.freeSize {
+			if length != w {
+				cfile.wBuffer.buffer.Write(buf[w:length])
+				cfile.wBuffer.freeSize = cfile.wBuffer.freeSize - (length - w)
+				//cfile.wBuffer.startOffset = cfile.FileSize
+				cfile.FileSize = cfile.FileSize + int64(length-w)
 				cfile.wBuffer.endOffset = cfile.FileSize
-				cfile.wBuffer.chunkInfo.ChunkSize = cfile.wBuffer.chunkInfo.ChunkSize + int32(len-w)
-				w = len
+				//cfile.wBuffer.chunkInfo.ChunkSize = cfile.wBuffer.chunkInfo.ChunkSize + int32(length-w)
+				w = length
 			}
 			break
 		} else {
 			cfile.wBuffer.buffer.Write(buf[w : w+cfile.wBuffer.freeSize])
 			w = w + cfile.wBuffer.freeSize
-			cfile.wBuffer.startOffset = cfile.FileSize
+			//cfile.wBuffer.startOffset = cfile.FileSize
 			cfile.FileSize = cfile.FileSize + int64(cfile.wBuffer.freeSize)
 			cfile.wBuffer.endOffset = cfile.FileSize
-			cfile.wBuffer.chunkInfo.ChunkSize = cfile.wBuffer.chunkInfo.ChunkSize + int32(cfile.wBuffer.freeSize)
+			//cfile.wBuffer.chunkInfo.ChunkSize = cfile.wBuffer.chunkInfo.ChunkSize + int32(cfile.wBuffer.freeSize)
 			cfile.wBuffer.freeSize = 0
 		}
 
@@ -1523,6 +1858,7 @@ func (cfile *CFile) Write(buf []byte, len int32) int32 {
 
 			ret := cfile.push()
 			if ret != 0 {
+				logger.Error("cfile %v push error", cfile.Name)
 				return -1
 			}
 		}
@@ -1534,11 +1870,12 @@ func (cfile *CFile) Write(buf []byte, len int32) int32 {
 func (cfile *CFile) push() int32 {
 
 	if cfile.Status != 0 {
-		logger.Error("cfile status error , push func return err ")
+		logger.Error("cfile %v status error , push func return err ", cfile.Name)
 		return -1
 	}
 
 	if cfile.wBuffer.chunkInfo == nil {
+		logger.Error("cfile %v chunkInfo is nil", cfile.Name)
 		return 0
 	}
 	wBuffer := cfile.wBuffer // record cur buffer
@@ -1564,6 +1901,28 @@ func (cfile *CFile) Flush() int32 {
 	}
 
 	return 0
+}
+
+func (cfile *CFile) seekWriteChunk(addr string, conn *grpc.ClientConn, req *dp.SeekWriteChunkReq, copies *uint64) {
+
+	if conn == nil {
+	} else {
+		dc := dp.NewDataNodeClient(conn)
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		ret, err := dc.SeekWriteChunk(ctx, req)
+		if err != nil {
+			logger.Error("SeekWriteChunk err %v", err)
+			conn.Close()
+			cfile.cfs.DelDataConn(addr)
+		} else {
+			if ret.Ret != 0 {
+			} else {
+				atomic.AddUint64(copies, 1)
+			}
+		}
+	}
+	cfile.wgWriteReps.Add(-1)
+
 }
 
 func (cfile *CFile) writeChunk(addr string, conn *grpc.ClientConn, req *dp.WriteChunkReq, copies *uint64) {
@@ -1649,7 +2008,7 @@ func (cfile *CFile) send(v *wBuffer) int32 {
 		if copies < 3 {
 			var ret int32
 			ret, cfile.wBuffer.chunkInfo = cfile.AllocateChunk()
-			cfile.wBuffer.chunkInfo.ChunkSize = int32(sendLen)
+			//cfile.wBuffer.chunkInfo.ChunkSize = int32(sendLen)
 			v.chunkInfo = cfile.wBuffer.chunkInfo
 			if ret != 0 {
 				cfile.Status = 1
@@ -1676,7 +2035,7 @@ func (cfile *CFile) send(v *wBuffer) int32 {
 	}
 
 	var tmpChunkInfo mp.ChunkInfo
-	tmpChunkInfo.ChunkSize = v.chunkInfo.ChunkSize
+	tmpChunkInfo.ChunkSize = v.chunkInfo.ChunkSize + int32(sendLen) //we do not update ChunkSize when write to wBuffer
 	tmpChunkInfo.ChunkID = v.chunkInfo.ChunkID
 	tmpChunkInfo.BlockGroupID = v.chunkInfo.BGP.Blocks[0].BGID
 	pSyncChunkReq.ChunkInfo = &tmpChunkInfo
@@ -1743,15 +2102,12 @@ func (cfile *CFile) send(v *wBuffer) int32 {
 
 	chunkNum := len(cfile.chunks)
 	//v.chunkInfo.Status = tmpChunkInfo.Status
-	if chunkNum == 0 {
-		cfile.chunks = append(cfile.chunks, v.chunkInfo)
+	if chunkNum != 0 && cfile.chunks[chunkNum-1].ChunkID == v.chunkInfo.ChunkID {
+		cfile.chunks[chunkNum-1].ChunkSize += int32(sendLen) // update ChunkSize only if chunk's data has be writted to datanode
+		//cfile.chunks[chunkNum-1].Status = v.chunkInfo.Status
 	} else {
-		if cfile.chunks[chunkNum-1].ChunkID == v.chunkInfo.ChunkID {
-			cfile.chunks[chunkNum-1].ChunkSize = v.chunkInfo.ChunkSize
-			//cfile.chunks[chunkNum-1].Status = v.chunkInfo.Status
-		} else {
-			cfile.chunks = append(cfile.chunks, v.chunkInfo)
-		}
+		cfile.chunks = append(cfile.chunks, v.chunkInfo)
+		cfile.chunks[chunkNum].ChunkSize = int32(sendLen) //set ChunkSize when write chunk to datanode first time
 	}
 	return cfile.Status
 }
@@ -1768,7 +2124,7 @@ func (cfile *CFile) Close(flags int) int32 {
 
 // ProcessLocalBuffer ...
 func ProcessLocalBuffer(buffer []byte, cfile *CFile) {
-	cfile.Write(buffer, int32(len(buffer)))
+	cfile.appendWrite(buffer, int32(len(buffer)))
 }
 
 // ReadLocalAndWriteCFS ...
