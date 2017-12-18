@@ -5,10 +5,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/tigcode/containerfs/logger"
-	"github.com/tigcode/containerfs/proto/dp"
-	"github.com/tigcode/containerfs/proto/mp"
-	"github.com/tigcode/containerfs/utils"
+	"github.com/tiglabs/containerfs/logger"
+	"github.com/tiglabs/containerfs/proto/dp"
+	"github.com/tiglabs/containerfs/proto/mp"
+	"github.com/tiglabs/containerfs/utils"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	//"google.golang.org/grpc/keepalive"
@@ -524,7 +524,7 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 
 		if totalsize >= readsize {
 
-			n = n - int(totalsize - readsize)
+			n = n - int(totalsize-readsize)
 			ack.Databuf = buf[:n]
 			if err := stream.Send(&ack); err != nil {
 				logger.Error("Send stream data to fuse error:%v", err)

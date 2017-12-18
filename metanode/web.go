@@ -2,9 +2,9 @@ package main
 
 import (
 	pbproto "github.com/golang/protobuf/proto"
-	"github.com/tigcode/containerfs/logger"
-	ns "github.com/tigcode/containerfs/metanode/namespace"
-	"github.com/tigcode/containerfs/proto/mp"
+	"github.com/tiglabs/containerfs/logger"
+	ns "github.com/tiglabs/containerfs/metanode/namespace"
+	"github.com/tiglabs/containerfs/proto/mp"
 	"golang.org/x/net/context"
 	"time"
 

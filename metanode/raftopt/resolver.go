@@ -2,7 +2,7 @@ package raftopt
 
 import (
 	"errors"
-	"github.com/tigcode/raft"
+	"github.com/tiglabs/raft"
 	"sync"
 )
 
