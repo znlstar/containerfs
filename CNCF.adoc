@@ -10,15 +10,15 @@ ContainerFS is an open source file system for containers across multiple hosts, 
 
 *Unique Identifier*: ContainerFS
 
-*License*: Apache License v2.0 https://github.com/tigcode/containerfs/blob/master/LICENSE[https://github.com/tigcode/containerfs/blob/master/LICENSE]
+*License*: Apache License v2.0 https://github.com/tiglabs/containerfs/blob/master/LICENSE[https://github.com/tiglabs/containerfs/blob/master/LICENSE]
 
-*Source control repositories*: https://github.com/tigcode/containerfs[https://github.com/tigcode/containerfs] (everything in the org)
+*Source control repositories*: https://github.com/tiglabs/containerfs[https://github.com/tiglabs/containerfs] (everything in the org)
 
 *Initial Committers*: bladehliu jsonkey zhengxiaochuan-3 jls502
 
 *Infrastructure requirements (CI / CNCF Cluster)*:
 
-* Travis https://travis-ci.org/tigcode/containerfs[https://travis-ci.org/tigcode/containerfs]
+* Travis https://travis-ci.org/tiglabs/containerfs[https://travis-ci.org/tiglabs/containerfs]
 
 
 *External Dependencies*

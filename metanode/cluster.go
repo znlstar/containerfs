@@ -1,21 +1,21 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	pbproto "github.com/golang/protobuf/proto"
-	"github.com/tigcode/containerfs/logger"
-	ns "github.com/tigcode/containerfs/metanode/namespace"
-	"github.com/tigcode/containerfs/metanode/raftopt"
-	"github.com/tigcode/containerfs/proto/dp"
-	"github.com/tigcode/containerfs/proto/mp"
-	"github.com/tigcode/containerfs/utils"
+	"github.com/tiglabs/containerfs/logger"
+	ns "github.com/tiglabs/containerfs/metanode/namespace"
+	"github.com/tiglabs/containerfs/metanode/raftopt"
+	"github.com/tiglabs/containerfs/proto/dp"
+	"github.com/tiglabs/containerfs/proto/mp"
+	"github.com/tiglabs/containerfs/utils"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"math/rand"
+	"strconv"
 	"strings"
 	"time"
-	"strconv"
-	"errors"
 )
 
 func GetAllDataNode() ([]*mp.DataNode, error) {
