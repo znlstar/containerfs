@@ -600,18 +600,13 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if _, ok := f.cfile.ReaderMap[req.Handle]; !ok {
-		rdinfo := cfs.ReaderInfo{}
-		rdinfo.LastOffset = int64(0)
-		f.cfile.ReaderMap[req.Handle] = &rdinfo
-	}
-	if req.Offset == f.cfile.FileSize {
 
+	if req.Offset == f.cfile.FileSize {
 		logger.Debug("Request Read file offset equal filesize")
 		return nil
 	}
 
-	length := f.cfile.Read(req.Handle, &resp.Data, req.Offset, int64(req.Size))
+	length := f.cfile.Read(&resp.Data, req.Offset, int64(req.Size))
 	if length != int64(req.Size) {
 		logger.Debug("== Read reqsize:%v, but return datasize:%v ==\n", req.Size, length)
 	}

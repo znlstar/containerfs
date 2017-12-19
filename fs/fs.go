@@ -1,7 +1,7 @@
 package cfs
 
 import (
-	"bazil.org/fuse"
+	//"bazil.org/fuse"
 	"bufio"
 	"bytes"
 	"errors"
@@ -798,7 +798,6 @@ func (cfs *CFS) CreateFileDirect(pinode uint64, name string, flags int) (int32, 
 		ParentInodeID: pinode,
 		Inode:         inode,
 		Name:          name,
-		ReaderMap:     make(map[fuse.HandleID]*ReaderInfo),
 		wBuffer:       tmpBuffer,
 	}
 	//go cfile.send()
@@ -845,7 +844,6 @@ func (cfs *CFS) OpenFileDirect(pinode uint64, name string, flags int) (int32, *C
 				Inode:         inode,
 				Name:          name,
 				chunks:        chunkInfos,
-				ReaderMap:     make(map[fuse.HandleID]*ReaderInfo),
 			}
 
 		} else {
@@ -863,7 +861,6 @@ func (cfs *CFS) OpenFileDirect(pinode uint64, name string, flags int) (int32, *C
 				Inode:         inode,
 				Name:          name,
 				wBuffer:       tmpBuffer,
-				ReaderMap:     make(map[fuse.HandleID]*ReaderInfo),
 			}
 
 		}
@@ -895,7 +892,6 @@ func (cfs *CFS) OpenFileDirect(pinode uint64, name string, flags int) (int32, *C
 			Inode:         inode,
 			Name:          name,
 			chunks:        chunkInfos,
-			ReaderMap:     make(map[fuse.HandleID]*ReaderInfo),
 		}
 
 	}
@@ -1137,8 +1133,8 @@ type wBuffer struct {
 	endOffset   int64
 }
 
-// ReaderInfo ...
-type ReaderInfo struct {
+// ReadCacheT ...
+type ReadCache struct {
 	LastOffset int64
 	readBuf    []byte
 	Ch         chan *bytes.Buffer
@@ -1167,7 +1163,7 @@ type CFile struct {
 	RMutex sync.Mutex
 	chunks []*mp.ChunkInfoWithBG // chunkinfo
 	//readBuf    []byte
-	ReaderMap map[fuse.HandleID]*ReaderInfo
+	readCache ReadCache
 }
 
 // AllocateChunk ...
@@ -1371,41 +1367,59 @@ func (cfile *CFile) readBuffer(eInfo extentInfo, data *[]byte) int32 {
 	return eInfo.length
 }
 
-func (cfile *CFile) readChunk(eInfo extentInfo, handleID fuse.HandleID, data *[]byte, offset int64) int32 {
+func (cfile *CFile) disableReadCache(wOffset int64, wLen int32) {
+	readBufOffset := cfile.readCache.LastOffset
+	readBufLen := len(cfile.readCache.readBuf)
+	if readBufLen == 0 {
+		return
+	}
+
+	if wOffset >= readBufOffset+int64(readBufLen) || wOffset+int64(wLen) <= readBufOffset {
+		return
+	}
+
+	//we need disable read buffer here
+	cfile.readCache.readBuf = []byte{}
+	logger.Debug("cfile %v disableReadCache: offset: %v len %v --> %v", cfile.Name, readBufOffset, readBufLen, len(cfile.readCache.readBuf))
+}
+
+func (cfile *CFile) readChunk(eInfo extentInfo, data *[]byte, offset int64) int32 {
 
 	//check if hit readBuf
-	readBufOffset := cfile.ReaderMap[handleID].LastOffset
-	readBufLen := len(cfile.ReaderMap[handleID].readBuf)
+	readBufOffset := cfile.readCache.LastOffset
+	readBufLen := len(cfile.readCache.readBuf)
 	if offset >= readBufOffset && offset+int64(eInfo.length) <= readBufOffset+int64(readBufLen) {
 		pos := int32(offset - readBufOffset)
-		*data = append(*data, cfile.ReaderMap[handleID].readBuf[pos:pos+eInfo.length]...)
+		*data = append(*data, cfile.readCache.readBuf[pos:pos+eInfo.length]...)
+
+		logger.Debug("cfile %v hit read buffer, offset:%v len:%v, readBuf offset:%v, len:%v", cfile.Name, offset, eInfo.length, readBufOffset, readBufLen)
 		return eInfo.length
 	}
 
 	//prepare to read from datanode
-	cfile.ReaderMap[handleID].readBuf = []byte{}
+	cfile.readCache.readBuf = []byte{}
 	buffer := new(bytes.Buffer)
-	cfile.ReaderMap[handleID].Ch = make(chan *bytes.Buffer)
+	cfile.readCache.Ch = make(chan *bytes.Buffer)
 	readSize := eInfo.length
 	if readSize < 2097152 {
 		readSize = 2097152
 	}
 
 	//go streamread
-	go cfile.streamread(int(eInfo.pos), cfile.ReaderMap[handleID].Ch, int64(eInfo.offset), int64(readSize))
-	buffer = <-cfile.ReaderMap[handleID].Ch
+	go cfile.streamread(int(eInfo.pos), cfile.readCache.Ch, int64(eInfo.offset), int64(readSize))
+	buffer = <-cfile.readCache.Ch
 	bLen := buffer.Len()
 	if bLen == 0 {
 		logger.Error("try to read %v chunk:%v from datanode size:%v, but return:%v", cfile.Name, eInfo.pos, readSize, bLen)
 		return -1
 	}
-	cfile.ReaderMap[handleID].readBuf = buffer.Next(bLen)
-	cfile.ReaderMap[handleID].LastOffset = offset
+	cfile.readCache.readBuf = buffer.Next(bLen)
+	cfile.readCache.LastOffset = offset
 	appendLen := eInfo.length
 	if appendLen > int32(bLen) {
 		appendLen = int32(bLen)
 	}
-	*data = append(*data, cfile.ReaderMap[handleID].readBuf[0:appendLen]...)
+	*data = append(*data, cfile.readCache.readBuf[0:appendLen]...)
 	buffer.Reset()
 	buffer = nil
 	return appendLen
@@ -1486,7 +1500,7 @@ func (cfile *CFile) getExtentInfo(start int64, end int64, eInfo []extentInfo) in
 }
 
 // Read ...
-func (cfile *CFile) Read(handleID fuse.HandleID, data *[]byte, offset int64, readsize int64) int64 {
+func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 
 	if cfile.Status != 0 {
 		logger.Error("cfile %v status error , read func return -2 ", cfile.Name)
@@ -1513,7 +1527,7 @@ func (cfile *CFile) Read(handleID fuse.HandleID, data *[]byte, offset int64, rea
 		ret = 0
 		switch eInfo[c].flag {
 		case ExtentFlagOnDisk:
-			ret = cfile.readChunk(eInfo[c], handleID, data, curOffset)
+			ret = cfile.readChunk(eInfo[c], data, curOffset)
 			if ret < 0 {
 				logger.Error("cfile %v readChunk failed %v", cfile.Name, eInfo[c])
 				return -1
@@ -1560,6 +1574,8 @@ func (cfile *CFile) Write(buf []byte, offset int64, length int32) int32 {
 		logger.Debug("cfile %v write append only: offset %v, length %v", cfile.Name, offset, length)
 		return cfile.appendWrite(buf, length)
 	}
+
+	cfile.disableReadCache(offset, length)
 
 	eInfo := make([]extentInfo, 4)
 	if ret := cfile.getExtentInfo(offset, offset+int64(length), eInfo); ret < 0 {
