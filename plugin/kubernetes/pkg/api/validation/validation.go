@@ -778,9 +778,6 @@ func validateGlusterfs(glusterfs *api.GlusterfsVolumeSource, fldPath *field.Path
 
 func validateContainerfs(containerfs *api.ContainerfsVolumeSource, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
-	if len(containerfs.Volmgr) == 0 {
-		allErrs = append(allErrs, field.Required(fldPath.Child("volmgr"), ""))
-	}
 	if len(containerfs.Metanode) == 0 {
 		allErrs = append(allErrs, field.Required(fldPath.Child("metanode"), ""))
 	}

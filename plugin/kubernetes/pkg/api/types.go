@@ -867,9 +867,7 @@ type GlusterfsVolumeSource struct {
 // Represents a Containerfs mount that lasts the lifetime of a pod.
 // Containerfs volumes do not support ownership management or SELinux relabeling.
 type ContainerfsVolumeSource struct {
-	Volmgr string
 	Metanode string
-
 	// Required: Uuid is the Containerfs volume uuid
 	Uuid string
 	// Optional: Defaults to false (read/write). ReadOnly here will force

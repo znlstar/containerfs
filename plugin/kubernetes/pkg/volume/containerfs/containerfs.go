@@ -113,7 +113,6 @@ func (plugin *containerfsPlugin) newMounterInternal(spec *volume.Spec, pod *v1.P
 			pod:     pod,
 			plugin:  plugin,
 		},
-		volmgr:   source.Volmgr,
 		metanode: source.Metanode,
 		uuid:     source.Uuid,
 		readOnly: readOnly,
@@ -181,7 +180,6 @@ type containerfs struct {
 
 type containerfsMounter struct {
 	*containerfs
-	volmgr       string
 	metanode     string
 	uuid         string
 	readOnly     bool
@@ -245,7 +243,6 @@ func (b *containerfsMounter) setUpAtInternal(dir string) error {
 	options := []string{}
 	options = append(options, "-uuid=" + b.uuid)
 	options = append(options, "-mountpoint=" + dir)
-	options = append(options, "-volmgr=" + b.volmgr)
 	options = append(options, "-metanode=" + b.metanode)
 	// TODO readOnly option is not support now.
 	//if b.readOnly {
@@ -323,7 +320,6 @@ func (plugin *containerfsPlugin) newProvisionerInternal(options volume.VolumeOpt
 }
 
 type provisionerConfig struct {
-	volmgr             string
 	metanode           string
 }
 
@@ -400,7 +396,6 @@ func (d *containerfsVolumeDeleter) Delete() error {
 	glog.V(4).Infof("containerfs: deleting volume %s", volumeId)
 
 	options := []string{}
-	options = append(options, "-volmgr=" + d.spec.Spec.Containerfs.Volmgr)
 	options = append(options, "-metanode=" + d.spec.Spec.Containerfs.Metanode)
 	options = append(options, "-action=" + containerfsDeleteCommand)
 	options = append(options, volumeId)
@@ -422,7 +417,6 @@ func (p *containerfsVolumeProvisioner) CreateVolume() (r *v1.ContainerfsVolumeSo
 	glog.V(2).Infof("containerfs: create volume of size: %d Gi", sizeGB)
 
 	options := []string{}
-	options = append(options, "-volmgr=" + p.volmgr)
 	options = append(options, "-metanode=" + p.metanode)
 	options = append(options, "-action=" + containerfsCreateCommand)
 	options = append(options, p.options.PVName)
@@ -436,7 +430,6 @@ func (p *containerfsVolumeProvisioner) CreateVolume() (r *v1.ContainerfsVolumeSo
 	glog.V(4).Infof("containerfs: creating volume successfully. %s", uuid)
 
 	return &v1.ContainerfsVolumeSource{
-		Volmgr:        p.volmgr,
 		Metanode:      p.metanode,
 		Uuid:          uuid,
 		ReadOnly:      false,
@@ -461,8 +454,6 @@ func parseClassParameters(kubeClient clientset.Interface, params map[string]stri
 
 	for k, v := range params {
 		switch dstrings.ToLower(k) {
-		case "volmgr":
-			cfg.volmgr = v
 		case "metanode":
 			cfg.metanode = v
 		default:
@@ -470,9 +461,6 @@ func parseClassParameters(kubeClient clientset.Interface, params map[string]stri
 		}
 	}
 
-	if len(cfg.volmgr) == 0 {
-		return nil, fmt.Errorf("StorageClass for provisioner %s must contain 'volmgr' parameter", containerfsPluginName)
-	}
 	if len(cfg.metanode) == 0 {
 		return nil, fmt.Errorf("StorageClass for provisioner %s must contain 'metanode' parameter", containerfsPluginName)
 	}
