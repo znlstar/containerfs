@@ -188,7 +188,7 @@ func SnapShotNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
 		if ret != 0 {
 			return ret
 		}
-		raftopt.TakeKvSnapShoot(nameSpace.RaftGroup, nameSpace.RaftStorage, path.Join(dir, UUID, "wal", "snap"))
+		raftopt.TakeKvSnapShot(nameSpace.RaftGroup, nameSpace.RaftStorage, path.Join(dir, UUID, "wal", "snap"))
 	}
 	return 0
 }
