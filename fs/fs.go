@@ -341,19 +341,19 @@ func SnapShotVol(uuid string) int32 {
 	}
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
-	pmSnapShootNameSpaceReq := &mp.SnapShootNameSpaceReq{
+	pmSnapShotNameSpaceReq := &mp.SnapShotNameSpaceReq{
 		VolID: uuid,
 		Type:  0,
 	}
 	ctx, _ := context.WithTimeout(context.Background(), 100*time.Second)
-	pmSnapShootNameSpaceAck, err := mc.SnapShotNameSpace(ctx, pmSnapShootNameSpaceReq)
+	pmSnapShotNameSpaceAck, err := mc.SnapShotNameSpace(ctx, pmSnapShotNameSpaceReq)
 	if err != nil {
 		logger.Error("SnapShotVol failed,grpc func err :%v", err)
 		return -1
 	}
 
-	if pmSnapShootNameSpaceAck.Ret != 0 {
-		logger.Error("SnapShotVol failed,rpc func ret:%v", pmSnapShootNameSpaceAck.Ret)
+	if pmSnapShotNameSpaceAck.Ret != 0 {
+		logger.Error("SnapShotVol failed,rpc func ret:%v", pmSnapShotNameSpaceAck.Ret)
 		return -1
 	}
 	return 0

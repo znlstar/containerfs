@@ -92,10 +92,10 @@ func (s *MetaNodeServer) ExpandNameSpace(ctx context.Context, in *mp.ExpandNameS
 }
 
 // SnapShotNameSpace ...
-func (s *MetaNodeServer) SnapShotNameSpace(ctx context.Context, in *mp.SnapShootNameSpaceReq) (*mp.SnapShootNameSpaceAck, error) {
-	ack := mp.SnapShootNameSpaceAck{}
+func (s *MetaNodeServer) SnapShotNameSpace(ctx context.Context, in *mp.SnapShotNameSpaceReq) (*mp.SnapShotNameSpaceAck, error) {
+	ack := mp.SnapShotNameSpaceAck{}
 	ack.Ret = ns.SnapShotNameSpace(s.RaftServer, in.VolID, MetaNodeServerAddr.waldir)
-	// send to follower metadatas to SnapShoot
+	// send to follower metadatas to SnapShot
 	if in.Type == 0 {
 		for _, addr := range raftopt.AddrDatabase {
 			if addr.Grpc == s.Addr.Grpc {
@@ -103,22 +103,22 @@ func (s *MetaNodeServer) SnapShotNameSpace(ctx context.Context, in *mp.SnapShoot
 			}
 			conn2, err2 := grpc.Dial(addr.Grpc, grpc.WithInsecure())
 			if err2 != nil {
-				logger.Error("told peers to SnapShoot NameSpace Failed ...")
+				logger.Error("told peers to SnapShot NameSpace Failed ...")
 				continue
 			}
 			defer conn2.Close()
 			mc := mp.NewMetaNodeClient(conn2)
-			pmSnapShootNameSpaceReq := &mp.SnapShootNameSpaceReq{
+			pmSnapShotNameSpaceReq := &mp.SnapShotNameSpaceReq{
 				VolID: in.VolID,
 				Type:  1,
 			}
-			pmSnapShootNameSpaceAck, ret := mc.SnapShotNameSpace(context.Background(), pmSnapShootNameSpaceReq)
+			pmSnapShotNameSpaceAck, ret := mc.SnapShotNameSpace(context.Background(), pmSnapShotNameSpaceReq)
 			if ret != nil {
-				logger.Error("told peers to SnapShoot NameSpace Failed ...")
+				logger.Error("told peers to SnapShot NameSpace Failed ...")
 				continue
 			}
-			if pmSnapShootNameSpaceAck.Ret != 0 {
-				logger.Error("told peers to SnapShoot NameSpace Failed ...")
+			if pmSnapShotNameSpaceAck.Ret != 0 {
+				logger.Error("told peers to SnapShot NameSpace Failed ...")
 				continue
 			}
 		}

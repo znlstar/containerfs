@@ -41,8 +41,8 @@ It has these top-level messages:
 	CreateNameSpaceAck
 	ExpandNameSpaceReq
 	ExpandNameSpaceAck
-	SnapShootNameSpaceReq
-	SnapShootNameSpaceAck
+	SnapShotNameSpaceReq
+	SnapShotNameSpaceAck
 	DeleteNameSpaceReq
 	DeleteNameSpaceAck
 	GetFSInfoReq
@@ -843,40 +843,40 @@ func (m *ExpandNameSpaceAck) GetRet() int32 {
 	return 0
 }
 
-type SnapShootNameSpaceReq struct {
+type SnapShotNameSpaceReq struct {
 	VolID string `protobuf:"bytes,1,opt,name=VolID" json:"VolID,omitempty"`
 	Type  int32  `protobuf:"varint,2,opt,name=Type" json:"Type,omitempty"`
 }
 
-func (m *SnapShootNameSpaceReq) Reset()                    { *m = SnapShootNameSpaceReq{} }
-func (m *SnapShootNameSpaceReq) String() string            { return proto.CompactTextString(m) }
-func (*SnapShootNameSpaceReq) ProtoMessage()               {}
-func (*SnapShootNameSpaceReq) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{32} }
+func (m *SnapShotNameSpaceReq) Reset()                    { *m = SnapShotNameSpaceReq{} }
+func (m *SnapShotNameSpaceReq) String() string            { return proto.CompactTextString(m) }
+func (*SnapShotNameSpaceReq) ProtoMessage()               {}
+func (*SnapShotNameSpaceReq) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{32} }
 
-func (m *SnapShootNameSpaceReq) GetVolID() string {
+func (m *SnapShotNameSpaceReq) GetVolID() string {
 	if m != nil {
 		return m.VolID
 	}
 	return ""
 }
 
-func (m *SnapShootNameSpaceReq) GetType() int32 {
+func (m *SnapShotNameSpaceReq) GetType() int32 {
 	if m != nil {
 		return m.Type
 	}
 	return 0
 }
 
-type SnapShootNameSpaceAck struct {
+type SnapShotNameSpaceAck struct {
 	Ret int32 `protobuf:"varint,1,opt,name=Ret" json:"Ret,omitempty"`
 }
 
-func (m *SnapShootNameSpaceAck) Reset()                    { *m = SnapShootNameSpaceAck{} }
-func (m *SnapShootNameSpaceAck) String() string            { return proto.CompactTextString(m) }
-func (*SnapShootNameSpaceAck) ProtoMessage()               {}
-func (*SnapShootNameSpaceAck) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{33} }
+func (m *SnapShotNameSpaceAck) Reset()                    { *m = SnapShotNameSpaceAck{} }
+func (m *SnapShotNameSpaceAck) String() string            { return proto.CompactTextString(m) }
+func (*SnapShotNameSpaceAck) ProtoMessage()               {}
+func (*SnapShotNameSpaceAck) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{33} }
 
-func (m *SnapShootNameSpaceAck) GetRet() int32 {
+func (m *SnapShotNameSpaceAck) GetRet() int32 {
 	if m != nil {
 		return m.Ret
 	}
@@ -2393,8 +2393,8 @@ func init() {
 	proto.RegisterType((*CreateNameSpaceAck)(nil), "mp.CreateNameSpaceAck")
 	proto.RegisterType((*ExpandNameSpaceReq)(nil), "mp.ExpandNameSpaceReq")
 	proto.RegisterType((*ExpandNameSpaceAck)(nil), "mp.ExpandNameSpaceAck")
-	proto.RegisterType((*SnapShootNameSpaceReq)(nil), "mp.SnapShootNameSpaceReq")
-	proto.RegisterType((*SnapShootNameSpaceAck)(nil), "mp.SnapShootNameSpaceAck")
+	proto.RegisterType((*SnapShotNameSpaceReq)(nil), "mp.SnapShotNameSpaceReq")
+	proto.RegisterType((*SnapShotNameSpaceAck)(nil), "mp.SnapShotNameSpaceAck")
 	proto.RegisterType((*DeleteNameSpaceReq)(nil), "mp.DeleteNameSpaceReq")
 	proto.RegisterType((*DeleteNameSpaceAck)(nil), "mp.DeleteNameSpaceAck")
 	proto.RegisterType((*GetFSInfoReq)(nil), "mp.GetFSInfoReq")
@@ -2469,7 +2469,7 @@ type MetaNodeClient interface {
 	GetMetaLeader(ctx context.Context, in *GetMetaLeaderReq, opts ...grpc.CallOption) (*GetMetaLeaderAck, error)
 	CreateNameSpace(ctx context.Context, in *CreateNameSpaceReq, opts ...grpc.CallOption) (*CreateNameSpaceAck, error)
 	ExpandNameSpace(ctx context.Context, in *ExpandNameSpaceReq, opts ...grpc.CallOption) (*ExpandNameSpaceAck, error)
-	SnapShotNameSpace(ctx context.Context, in *SnapShootNameSpaceReq, opts ...grpc.CallOption) (*SnapShootNameSpaceAck, error)
+	SnapShotNameSpace(ctx context.Context, in *SnapShotNameSpaceReq, opts ...grpc.CallOption) (*SnapShotNameSpaceAck, error)
 	DeleteNameSpace(ctx context.Context, in *DeleteNameSpaceReq, opts ...grpc.CallOption) (*DeleteNameSpaceAck, error)
 	GetFSInfo(ctx context.Context, in *GetFSInfoReq, opts ...grpc.CallOption) (*GetFSInfoAck, error)
 	// fs meta opt
@@ -2601,8 +2601,8 @@ func (c *metaNodeClient) ExpandNameSpace(ctx context.Context, in *ExpandNameSpac
 	return out, nil
 }
 
-func (c *metaNodeClient) SnapShotNameSpace(ctx context.Context, in *SnapShootNameSpaceReq, opts ...grpc.CallOption) (*SnapShootNameSpaceAck, error) {
-	out := new(SnapShootNameSpaceAck)
+func (c *metaNodeClient) SnapShotNameSpace(ctx context.Context, in *SnapShotNameSpaceReq, opts ...grpc.CallOption) (*SnapShotNameSpaceAck, error) {
+	out := new(SnapShotNameSpaceAck)
 	err := grpc.Invoke(ctx, "/mp.MetaNode/SnapShotNameSpace", in, out, c.cc, opts...)
 	if err != nil {
 		return nil, err
@@ -2806,7 +2806,7 @@ type MetaNodeServer interface {
 	GetMetaLeader(context.Context, *GetMetaLeaderReq) (*GetMetaLeaderAck, error)
 	CreateNameSpace(context.Context, *CreateNameSpaceReq) (*CreateNameSpaceAck, error)
 	ExpandNameSpace(context.Context, *ExpandNameSpaceReq) (*ExpandNameSpaceAck, error)
-	SnapShotNameSpace(context.Context, *SnapShootNameSpaceReq) (*SnapShootNameSpaceAck, error)
+	SnapShotNameSpace(context.Context, *SnapShotNameSpaceReq) (*SnapShotNameSpaceAck, error)
 	DeleteNameSpace(context.Context, *DeleteNameSpaceReq) (*DeleteNameSpaceAck, error)
 	GetFSInfo(context.Context, *GetFSInfoReq) (*GetFSInfoAck, error)
 	// fs meta opt
@@ -3034,7 +3034,7 @@ func _MetaNode_ExpandNameSpace_Handler(srv interface{}, ctx context.Context, dec
 }
 
 func _MetaNode_SnapShotNameSpace_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SnapShootNameSpaceReq)
+	in := new(SnapShotNameSpaceReq)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -3046,7 +3046,7 @@ func _MetaNode_SnapShotNameSpace_Handler(srv interface{}, ctx context.Context, d
 		FullMethod: "/mp.MetaNode/SnapShotNameSpace",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MetaNodeServer).SnapShotNameSpace(ctx, req.(*SnapShootNameSpaceReq))
+		return srv.(MetaNodeServer).SnapShotNameSpace(ctx, req.(*SnapShotNameSpaceReq))
 	}
 	return interceptor(ctx, in, info, handler)
 }
