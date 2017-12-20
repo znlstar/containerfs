@@ -388,10 +388,18 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ret, _, _ := d.fs.cfs.StatDirect(newDir.(*dir).inode, req.NewName)
+	ret, inodeType, _ := d.fs.cfs.StatDirect(newDir.(*dir).inode, req.NewName)
 	if ret == 0 {
-		logger.Error("Rename Failed , newName in newDir is already exsit")
-		return fuse.Errno(syscall.EPERM)
+		logger.Debug("newName in newDir is already exsit, inodeType: %v", inodeType)
+		if false == inodeType {
+			logger.Error("Rename newName %v in newDir %v is an exsit dir, un-supportted rename", req.NewName, d.name)
+			return fuse.Errno(syscall.EPERM)
+		}
+		ret = d.fs.cfs.DeleteFileDirect(newDir.(*dir).inode, req.NewName)
+		if ret != 0 {
+			logger.Error("Rename Delete the exist newName %v in newDir %v failed!", req.NewName, d.name)
+			return fuse.Errno(syscall.EPERM)
+		}
 	}
 
 	if newDir != d {
