@@ -20,13 +20,12 @@ spec:
   accessModes:
     - ReadWriteMany
   containerfs:
-    volmgr: "192.168.100.216:10001"
     metanode: "192.168.100.17:10002,192.168.100.17:10003,192.168.100.17:10004"
     uuid: 72f32fe240548ae880e27446f49f9935
     readOnly: false
 ```
 
-一个PersistentVolume对应cfs的一个volume，需要指定containerfs及参数volmgr, metanode, uuid, readOnly（可选，默认为false）。
+一个PersistentVolume对应cfs的一个volume，需要指定containerfs及参数metanode, uuid, readOnly（可选，默认为false）。
 
 
 
@@ -97,10 +96,9 @@ metadata:
 provisioner: kubernetes.io/containerfs
 parameters:
   metanode: "192.168.100.17:9903,192.168.100.18:9913,192.168.100.19:9923"
-  volmgr: "192.168.100.216:10001"
 ```
 
-以上创建了一个名为standard的StorageClass对象，该对象指定存储插件为kubernetes.io/containerfs，并设置了containerfs需要的参数metanode, volmgr。
+以上创建了一个名为standard的StorageClass对象，该对象指定存储插件为kubernetes.io/containerfs，并设置了containerfs需要的参数metanode。
 
 
 
