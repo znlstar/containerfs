@@ -1,0 +1,32 @@
+<tfoot>
+<tr>
+    <td colspan="5">
+        <div class="pull-left" style="margin: 20px 0;">
+            <span class="pagination-info"> 共  条记录</span>
+        </div>
+        <div class="text-right">
+            <ul class="pagination pagination-split m-t-30 m-b-0">
+                <li #if($page.isFirst()) class="disabled" #end>
+                    <a href="$!{requestUrl}&pn=1"><i class="fa fa-angle-double-left"></i></a>
+                </li>
+                <li #if($page.isFirst()) class="disabled" #end>
+                    <a href="$!{requestUrl}&pn=${PagePackage.prePn}"><i class="fa fa-angle-left"></i></a>
+                </li>
+
+                #foreach($item in $PagePackage.pageArr)
+                <li #if($!item == ${page.pn}) class="active" #end>
+                    <a href="$!{requestUrl}&pn=$!item">$!item</a>
+                </li>
+                #end
+
+                <li #if($page.isLast()) class="disabled" #end>
+                    <a href="$!{requestUrl}&pn=${PagePackage.nextPn}"><i class="fa fa-angle-right"></i></a>
+                </li>
+                <li #if($page.isLast()) class="disabled" #end>
+                    <a href="$!{requestUrl}&pn=${page.totalPages}"><i class="fa fa-angle-double-right"></i></a>
+                </li>
+            </ul>
+        </div>
+    </td>
+</tr>
+</tfoot>

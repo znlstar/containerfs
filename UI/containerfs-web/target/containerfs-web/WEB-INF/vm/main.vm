@@ -1,0 +1,224 @@
+#parse("include_header.vm")
+    <div class="container">
+        <!-- Page-Title -->
+        <div class="row">
+            <div class="col-sm-12">
+                <h4 class="page-title">首页 - 数据概览</h4>
+                <p class="text-muted page-title-alt">欢迎使用ContainerFS！</p>
+            </div>
+        </div>
+
+        <!-- Table Content -->
+        <div class="row">
+            <!-- 最新拦截记录 -->
+            <div class="col-lg-12">
+                <div class="card-box">
+                    <div class="row">
+                        <div class="col-sm-2" style="text-align: center">
+                            <img src="/static/icon/server1.png"><br/>
+                            <span style="font-size: 18px;">服务器</span><br/>
+                            <span id="serverNum" style="font-size: 18px;color: #00aced">$!{serverNum}</span>
+                            <span style="font-size: 18px;">台</span>
+                        </div>
+                        <div class="col-sm-2" style="text-align: center">
+                            <img src="/static/icon/server2.png"><br/>
+                            <span style="font-size: 18px;">Meta Node</span><br/>
+                            <span id="MetaNum" style="font-size: 18px;color: #00aced"">$!{MetaNum}</span>
+                            <span style="font-size: 18px;">台</span>
+                        </div>
+                        <div class="col-sm-2" style="text-align: center">
+                            <img src="/static/icon/server3.png"><br/>
+                            <span style="font-size: 18px;">Data Node</span><br/>
+                            <span id="DataNum" style="font-size: 18px;color: #00aced"">$!{DataNum}</span>
+                            <span style="font-size: 18px;">台</span>
+                        </div>
+                        <div class="col-sm-2" style="text-align: center">
+                            <img src="/static/icon/server4.png"><br/>
+                            <span style="font-size: 18px;">Volume</span><br/>
+                            <span id="VolNum" style="font-size: 18px;color: #00aced"">$!{VolNum}</span>
+                            <span style="font-size: 18px;">个</span>
+                        </div>
+                        <div class="col-sm-2" style="text-align: center">
+                            <img src="/static/icon/server5.png"><br/>
+                            <span style="font-size: 18px;">磁盘使用量</span><br/>
+                            <span style="font-size: 18px;">剩余</span>
+                            <span id="ClusterFreeSpace" style="font-size: 18px;color: #00aced"">$!{ClusterFreeSpace}</span>
+                            <span style="font-size: 18px;">G / 共</span>
+                            <span id="ClusterSpace" style="font-size: 18px;">$!{ClusterSpace}</span>
+                            <span style="font-size: 18px;">G</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+        </div><!-- end row -->
+
+        <!-- Echart Content -->
+        <div class="row">
+            <!-- 最新拦截记录 折线图 -->
+            <div class="col-md-6">
+                <div class="card-box">
+                    <h4 class="text-dark header-title m-t-0">吞吐量折线图</h4>
+
+                    <div class="text-center">
+                        <div id="ioChart" style="width: 100%;height:300px;"></div>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <!-- 最新警告记录 折线图 -->
+            <div class="col-md-6">
+                <div class="card-box">
+                    <h4 class="text-dark header-title m-t-0">IOPS折线图</h4>
+
+                    <div class="text-center">
+                        <div id="iopsChart" style="width: 100%;height:300px;"></div>
+                    </div>
+
+                </div>
+            </div>
+
+        </div><!-- end row -->
+
+    </div> <!-- container -->
+#parse("include_footer.vm")
+
+<script type="text/javascript">
+    // IO图表，初始化echarts
+    var ioChart = echarts.init(document.getElementById('ioChart'));
+
+    var ioDate = [];
+    var ioData = [];
+    ioDate.push('$!{dateStr}');
+    ioData.push('$!{io}');
+
+    // 指定图表的配置项和数据
+    var io_option = {
+        title: {
+            text: '吞吐量(单位:MB/s)',
+            left: 'center'
+        },
+        color:[
+            '#00aced',
+        ],
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: ioDate
+        },
+        yAxis: {
+            type: 'value',
+            name: 'IO'
+        },
+        series: [{
+            name: 'IO',
+            type: 'line',
+            data: ioData
+        }]
+    };
+
+    // 使用刚指定的配置项和数据显示图表。
+    ioChart.setOption(io_option);
+</script>
+
+<script type="text/javascript">
+    // IOPS图表，初始化echarts
+    var iopsChart = echarts.init(document.getElementById('iopsChart'));
+
+    var iopsDate = [];
+    var iopsData = [];
+    iopsDate.push('$!{dateStr}');
+    iopsData.push('$!{iops}');
+
+    // 指定图表的配置项和数据
+    var iops_option = {
+        title: {
+            text: 'IOPS(单位:次)',
+            left: 'center'
+        },
+        color:[
+            '#00aced',
+        ],
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: iopsDate
+        },
+        yAxis: {
+            type: 'value',
+            name: 'IOPS'
+        },
+        series: [{
+            type: 'line',
+            data: iopsData
+        }]
+    };
+
+    // 使用刚指定的配置项和数据显示图表。
+    iopsChart.setOption(iops_option);
+</script>
+<script type="text/javascript">
+
+    setInterval("clusterData()","5000");
+
+    function clusterData(){
+        $.ajax({
+            url: "/clusterData",
+            type: "GET",
+            async:false,
+            dataType: "json",
+            data: {
+                engineRoom: "LF"
+            },
+            async: false,
+            error: function (request) {
+            },
+            success: function (json) {
+                var dateStr = json.dateStr;
+                var io = json.io;
+                var iops = json.iops;
+
+                //设置IO图表
+                ioDate.push(dateStr);
+                ioData.push(io);
+
+                ioChart.setOption({
+                    xAxis: {
+                        data: ioDate
+                    },
+                    series: [{
+                        data: ioData
+                    }]
+                });
+
+                //设置IOPS图表
+                iopsDate.push(dateStr);
+                iopsData.push(iops);
+
+                iopsChart.setOption({
+                    xAxis: {
+                        data: iopsDate
+                    },
+                    series: [{
+                        name: 'IO',
+                        data: iopsData
+                    }]
+                });
+            }
+        });
+    }
+
+</script>

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+    <meta name="description" content="JD Ins, etc.">
+    <meta name="author" content="JD Ins">
+
+    <title>ContainerFS</title>
+
+    <!-- Code editor css -->
+    <link href="/static/assets/plugins/codemirror/css/codemirror.css" rel="stylesheet" type="text/css" />
+    <link href="/static/assets/plugins/codemirror/css/ambiance.css" rel="stylesheet" type="text/css" />
+
+    <!-- Treeview css -->
+    <link href="/static/assets/plugins/jstree/style.css" rel="stylesheet" type="text/css"/>
+
+    <!-- Table -->
+    <link href="/static/assets/plugins/bootstrap-table/css/bootstrap-table.min.css" rel="stylesheet" type="text/css" />
+
+    <link href="/static/assets/css/bootstrap.min.css" rel="stylesheet" type="text/css"/>
+    <link href="/static/assets/css/core.css" rel="stylesheet" type="text/css"/>
+    <link href="/static/assets/css/components.css" rel="stylesheet" type="text/css"/>
+    <link href="/static/assets/css/icons.css" rel="stylesheet" type="text/css"/>
+    <link href="/static/assets/css/pages.css" rel="stylesheet" type="text/css"/>
+    <link href="/static/assets/css/responsive.css" rel="stylesheet" type="text/css"/>
+
+    <!-- plugins css -->
+    <link href="/static/assets/plugins/bootstrap-tagsinput/css/bootstrap-tagsinput.css" rel="stylesheet"/>
+    <link href="/static/assets/plugins/switchery/css/switchery.min.css" rel="stylesheet"/>
+    <link href="/static/assets/plugins/multiselect/css/multi-select.css" rel="stylesheet" type="text/css"/>
+    <link href="/static/assets/plugins/select2/css/select2.min.css" rel="stylesheet" type="text/css"/>
+    <link href="/static/assets/plugins/bootstrap-select/css/bootstrap-select.min.css" rel="stylesheet"/>
+    <link href="/static/assets/plugins/bootstrap-touchspin/css/jquery.bootstrap-touchspin.min.css" rel="stylesheet"/>
+
+    <!-- artdialog-->
+    <link href="/static/utils/artdialog/css/ui-dialog.css" rel="stylesheet" type="text/css"/>
+
+    <!-- 表单验证CSS -->
+    <link href="/static/utils/validation/tip-yellowsimple/tip-yellowsimple.css" rel="stylesheet" type="text/css"/>
+
+    <!-- serarchable select -->
+    <link href="/static/utils/searchable/jquery.searchableSelect.css" rel="stylesheet" type="text/css"/>
+
+    <!-- 自定义JS -->
+    <link href="/static/utils/utils.css" rel="stylesheet" type="text/css"/>
+
+    <!-- HTML5 Shiv and Respond.js IE8 support of HTML5 elements and media queries -->
+    <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
+    <!--[if lt IE 9]>
+    <script src="/static/assets/js/ie9/html5shiv.js"></script>
+    <script src="/static/assets/js/ie9/respond.min.js"></script>
+    <![endif]-->
+
+    <script src="/static/assets/js/modernizr.min.js"></script>
+    <script src="/static/assets/js/jquery.min.js"></script>
+</head>
+
+
+<body class="fixed-left">
+
+<!-- Begin page -->
+<div id="wrapper">
+
+    <!-- ============================================================== -->
+    <!-- Start right Content here -->
+    <!-- ============================================================== -->
+    <div class="content-page">
+        <!-- Start content -->
+        <div class="content">

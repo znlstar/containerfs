@@ -1,0 +1,82 @@
+        </div> <!-- content -->
+
+        #parse("footer.vm")
+    </div>
+    <!-- ============================================================== -->
+    <!-- End Right content here -->
+    <!-- ============================================================== -->
+
+</div>
+<!-- END wrapper -->
+
+
+<script>
+    var resizefunc = [];
+</script>
+
+<!-- jQuery  -->
+<script src="/static/assets/js/bootstrap.min.js"></script>
+<script src="/static/assets/js/detect.js"></script>
+<script src="/static/assets/js/fastclick.js"></script>
+<script src="/static/assets/js/jquery.slimscroll.js"></script>
+<script src="/static/assets/js/jquery.blockUI.js"></script>
+<script src="/static/assets/js/waves.js"></script>
+<script src="/static/assets/js/wow.min.js"></script>
+<script src="/static/assets/js/jquery.nicescroll.js"></script>
+<script src="/static/assets/js/jquery.scrollTo.min.js"></script>
+<script src="/static/assets/plugins/peity/jquery.peity.min.js"></script>
+
+<!-- Code editor js -->
+<script src="/static/assets/plugins/codemirror/js/codemirror.js"></script>
+<script src="/static/assets/plugins/codemirror/js/formatting.js"></script>
+<script src="/static/assets/plugins/codemirror/js/xml.js"></script>
+
+<!-- jQuery  -->
+<script src="/static/assets/js/jquery.core.js"></script>
+<script src="/static/assets/js/jquery.app.js"></script>
+
+<!-- table  -->
+<script src="/static/assets/plugins/bootstrap-table/js/bootstrap-table.min.js"></script>
+<script src="/static/assets/pages/jquery.bs-table.js"></script>
+
+<!-- edittable  -->
+<script src="/static/assets/plugins/magnific-popup/js/jquery.magnific-popup.min.js"></script>
+<script src="/static/assets/plugins/jquery-datatables-editable/jquery.dataTables.js"></script>
+<script src="/static/assets/plugins/datatables/dataTables.bootstrap.js"></script>
+<script src="/static/assets/plugins/tiny-editable/mindmup-editabletable.js"></script>
+<script src="/static/assets/plugins/tiny-editable/numeric-input-example.js"></script>
+
+<!-- acvance -->
+<script src="/static/assets/plugins/bootstrap-tagsinput/js/bootstrap-tagsinput.min.js"></script>
+<script src="/static/assets/plugins/switchery/js/switchery.min.js"></script>
+<script src="/static/assets/plugins/multiselect/js/jquery.multi-select.js" type="text/javascript"></script>
+<script src="/static/assets/plugins/jquery-quicksearch/jquery.quicksearch.js" type="text/javascript"></script>
+<script src="/static/assets/plugins/select2/js/select2.min.js" type="text/javascript"></script>
+<script src="/static/assets/plugins/bootstrap-select/js/bootstrap-select.min.js" type="text/javascript"></script>
+<script src="/static/assets/plugins/bootstrap-filestyle/js/bootstrap-filestyle.min.js" type="text/javascript"></script>
+<script src="/static/assets/plugins/bootstrap-touchspin/js/jquery.bootstrap-touchspin.min.js"
+        type="text/javascript"></script>
+<script src="/static/assets/plugins/bootstrap-maxlength/bootstrap-maxlength.min.js" type="text/javascript"></script>
+
+<!-- Modal-Effect -->
+<script src="/static/assets/plugins/custombox/js/custombox.min.js"></script>
+<script src="/static/assets/plugins/custombox/js/legacy.min.js"></script>
+
+<!-- artdialog-->
+<script src="/static/utils/artdialog/dialog-min.js" type="text/javascript"></script>
+<script src="/static/utils/artdialog/dialog-common.js" type="text/javascript"></script>
+
+<!-- 表单验证 -->
+<script src="/static/utils/validation/jquery.poshytip.js"></script>
+
+<!-- 自定义JS -->
+<script src="/static/utils/utils.js" type="text/javascript"></script>
+
+<!-- ECharts 文件 -->
+<script src="/static/echarts/echarts.min.js"></script>
+
+<!-- serarchable select -->
+<script src="/static/utils/searchable/jquery.searchableSelect.js"></script>
+
+</body>
+</html>
