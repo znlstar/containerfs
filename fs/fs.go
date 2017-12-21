@@ -1401,8 +1401,8 @@ func (cfile *CFile) readChunk(eInfo extentInfo, data *[]byte, offset int64) int3
 	buffer := new(bytes.Buffer)
 	cfile.readCache.Ch = make(chan *bytes.Buffer)
 	readSize := eInfo.length
-	if readSize < 2097152 {
-		readSize = 2097152
+	if readSize < BufferSize {
+		readSize = BufferSize
 	}
 
 	//go streamread
