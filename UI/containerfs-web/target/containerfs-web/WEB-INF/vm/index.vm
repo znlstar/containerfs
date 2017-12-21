@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0" />
+    <title>ContainerFS</title>
+    <script type="text/javascript">
+    </script>
+</head>
+
+<frameset id="outsideFrame" rows="60,*" cols="*" border="0" framespacing="0">
+    <frame id="topFrame" name="topFrame" src="/topbar" scrolling="No" noresize="noresize" />
+    <frameset id="framesetName" name="framesetName" rows="*" cols="200,*" frameborder="no" border="0" framespacing="0">
+        <frame id="leftFrame" name="leftFrame" src="/side_menu" scrolling="yes" frameborder="no"  framespacing="0" noresize="noresize" />
+        <frame id="mainFrame" name="mainFrame" src="/main" />
+    </frameset>
+</frameset>
+
+<noframes>
+    <body></body>
+</noframes>
+
+</html>

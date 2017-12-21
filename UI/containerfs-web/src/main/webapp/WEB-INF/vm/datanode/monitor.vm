@@ -1,0 +1,1166 @@
+#parse("include_header.vm")
+<div class="container">
+    <!-- Page-Title -->
+    <div class="row">
+        <div class="col-sm-12">
+            <h4 class="page-title">数据节点信息</h4>
+            <p class="text-muted page-title-alt">$!{ip}</p>
+        </div>
+    </div>
+
+    <!-- Table Content -->
+    <div class="row">
+
+        <div class="col-sm-12">
+            <div class="card-box">
+                <div class="row">
+                    <div class="col-sm-3" style="text-align: center">
+                        <span style="font-size: 15px;">关键内容磁盘使用量</span><br/>
+                        <span style="font-size: 15px;">剩余</span>
+                        <span id="pathFree" style="font-size: 15px;color: #00aced"">$!{monitor.pathFreeStr}</span>
+                        <span style="font-size: 15px;">G / 共</span>
+                        <span id="pathTotal" style="font-size: 15px;">$!{monitor.pathTotalStr}</span>
+                        <span style="font-size: 15px;">G</span>
+                    </div>
+                    <div class="col-sm-3" style="text-align: center">
+                        <span style="font-size: 15px;">内存使用量</span><br/>
+                        <span style="font-size: 15px;">剩余</span>
+                        <span id="freeMem" style="font-size: 15px;color: #00aced"">$!{monitor.freeMemStr}</span>
+                        <span style="font-size: 15px;">G</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="col-sm-12">
+            <div class="card-box">
+                <div class="row">
+                    <div class="col-sm-4">
+                        <ul id="myTab" class="nav nav-tabs tabs" style="width: 100%;">
+                            <li class="tab active" style="width: 25%;">
+                                <a href="#systemCharts" data-toggle="tab" aria-expanded="true" class="active">
+                                    <span class="visible-xs"><i class="fa fa-home"></i></span>
+                                    <span class="hidden-xs">系统指标</span>
+                                </a>
+                            </li>
+                            <li class="tab" style="width: 25%;">
+                                <a href="#diskCharts" data-toggle="tab" aria-expanded="false" class="">
+                                    <span class="visible-xs"><i class="fa fa-user"></i></span>
+                                    <span class="hidden-xs">磁盘指标</span>
+                                </a>
+                            </li>
+                            <li class="tab" style="width: 25%;">
+                                <a href="#netCharts" data-toggle="tab" aria-expanded="false" class="">
+                                    <span class="visible-xs"><i class="fa fa-envelope-o"></i></span>
+                                    <span class="hidden-xs">网络指标</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="tab-content">
+                    <div class="tab-pane" id="systemCharts" style="display: block;">
+                        <div class="row">
+                            <!-- CPU/内存/关键内容磁盘 使用率 折线图 -->
+                            <div class="col-md-6">
+                                <div class="card-box">
+                                    <div class="text-center">
+                                        <div id="percentChart" style="width: 100%;height:300px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- CPU load 折线图 -->
+                            <div class="col-md-6">
+                                <div class="card-box">
+                                    <div class="text-center">
+                                        <div id="cpuLoadChart" style="width: 100%;height:300px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <!-- 内存信息 折线图 -->
+                            <div class="col-md-12">
+                                <div class="card-box">
+                                    <div class="text-center">
+                                        <div id="memoryChart" style="width: 100%;height:300px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tab-pane" id="diskCharts" style="display: none;">
+                        <div class="row">
+                            <!-- 磁盘读速度 折线图 -->
+                            <div class="col-md-6">
+                                <div class="card-box">
+                                    <div class="text-center">
+                                        <div id="readByteChart" style="width: 100%;height:300px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 磁盘写速度 折线图 -->
+                            <div class="col-md-6">
+                                <div class="card-box">
+                                    <div class="text-center">
+                                        <div id="writeByteChart" style="width: 100%;height:300px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <!-- 磁盘读次数 折线图 -->
+                            <div class="col-md-6">
+                                <div class="card-box">
+                                    <div class="text-center">
+                                        <div id="readCountChart" style="width: 100%;height:300px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 磁盘写次数 折线图 -->
+                            <div class="col-md-6">
+                                <div class="card-box">
+                                    <div class="text-center">
+                                        <div id="writeCountChart" style="width: 100%;height:300px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane" id="netCharts" style="display: none;">
+                        <div class="row">
+                            <!-- 网络流出速率 折线图 -->
+                            <div class="col-md-6">
+                                <div class="card-box">
+                                    <div class="text-center">
+                                        <div id="bytesSentChart" style="width: 100%;height:300px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 网络流入速率 折线图 -->
+                            <div class="col-md-6">
+                                <div class="card-box">
+                                    <div class="text-center">
+                                        <div id="bytesRecvChart" style="width: 100%;height:300px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <!-- 网络流出包数 折线图 -->
+                            <div class="col-md-6">
+                                <div class="card-box">
+                                    <div class="text-center">
+                                        <div id="packetsSentChart" style="width: 100%;height:300px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 网络流入速率 折线图 -->
+                            <div class="col-md-6">
+                                <div class="card-box">
+                                    <div class="text-center">
+                                        <div id="packetRecvChart" style="width: 100%;height:300px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <!-- TCP包流出错误数 折线图 -->
+                            <div class="col-md-6">
+                                <div class="card-box">
+                                    <div class="text-center">
+                                        <div id="errOutChart" style="width: 100%;height:300px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- TCP包流入错误数 折线图 -->
+                            <div class="col-md-6">
+                                <div class="card-box">
+                                    <div class="text-center">
+                                        <div id="errInChart" style="width: 100%;height:300px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <!-- TCP包流出丢包数 折线图 -->
+                            <div class="col-md-6">
+                                <div class="card-box">
+                                    <div class="text-center">
+                                        <div id="dropOutChart" style="width: 100%;height:300px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- TCP包流入丢包数 折线图 -->
+                            <div class="col-md-6">
+                                <div class="card-box">
+                                    <div class="text-center">
+                                        <div id="dropInChart" style="width: 100%;height:300px;"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+
+
+
+
+            </div>
+        </div>
+    </div><!-- end row -->
+
+
+
+</div> <!-- container -->
+#parse("include_footer.vm")
+
+<script type="text/javascript">
+    // IO图表，初始化echarts
+    var percentChart = echarts.init(document.getElementById('percentChart'));
+
+    var date = [];
+    var cpuUsageData = [];
+    var memUsedPercentData = [];
+    var pathUsedPercentData = [];
+
+    date.push('$!{monitor.dateStr}');
+    cpuUsageData.push('$!{monitor.cpuUsageStr}');
+    memUsedPercentData.push('$!{monitor.memUsedPercentStr}');
+    pathUsedPercentData.push('$!{monitor.pathUsedPercentStr}');
+
+    // 指定图表的配置项和数据
+    var percent_option = {
+        title: {
+            text: 'CPU/内存/关键内容磁盘 使用率(单位:%)',
+            left: 'center'
+        },
+        color:[
+            '#DC143C',
+            '#00aced',
+            '#32CD32'
+        ],
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: date
+        },
+        yAxis: {
+            type: 'value',
+            name: '百分比',
+            axisLabel: {
+                show: true,
+                interval: 'auto',
+                formatter: '{value} %'
+            },
+        },
+        series: [
+            {
+                name: 'CPU使用率',
+                type: 'line',
+                data: cpuUsageData
+            },
+            {
+                name: '内存使用率',
+                type: 'line',
+                data: memUsedPercentData
+            },
+            {
+                name: '关键内容磁盘使用率',
+                type: 'line',
+                data: pathUsedPercentData
+            }
+        ]
+    };
+
+    // 使用刚指定的配置项和数据显示图表。
+    percentChart.setOption(percent_option);
+</script>
+
+<script type="text/javascript">
+
+    // CPU LOAD图表，初始化echarts
+    var cpuLoadChart = echarts.init(document.getElementById('cpuLoadChart'));
+
+    var cpuloadData = [];
+    cpuloadData.push('$!{monitor.cpuLoadStr}');
+
+    // 指定图表的配置项和数据
+    var cpuload_option = {
+        title: {
+            text: 'CPU Load',
+            left: 'center'
+        },
+        color:[
+            '#00aced'
+        ],
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: date
+        },
+        yAxis: {
+            type: 'value',
+            name: '数值'
+        },
+        series: [
+            {
+                name: 'CPU Load',
+                type: 'line',
+                data: cpuloadData
+            }
+        ]
+    };
+
+    // 使用刚指定的配置项和数据显示图表。
+    cpuLoadChart.setOption(cpuload_option);
+
+</script>
+
+<script type="text/javascript">
+    // 内存图表，初始化echarts
+    var memoryChart = echarts.init(document.getElementById('memoryChart'));
+
+    var totalMemData = [];
+    var usedMemData = [];
+    totalMemData.push('$!{monitor.totalMemStr}');
+    usedMemData.push('$!{monitor.usedMemStr}');
+
+    // 指定图表的配置项和数据
+    var memory_option = {
+        title: {
+            text: '内存信息(单位:MB)',
+            left: 'center'
+        },
+        color:[
+            '#DC143C',
+            '#00aced'
+        ],
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: date
+        },
+        yAxis: {
+            type: 'value',
+            name: 'MB'
+        },
+        series: [
+            {
+                name: '总内存',
+                type: 'line',
+                data: totalMemData
+            },
+            {
+                name: '已使用内存',
+                type: 'line',
+                areaStyle: {normal: {}},
+                data: usedMemData
+            }
+        ]
+    };
+
+    // 使用刚指定的配置项和数据显示图表。
+    memoryChart.setOption(memory_option);
+</script>
+
+<script type="text/javascript">
+
+        #foreach($item in $!{monitor.diskIosList})
+        var readbyte$velocityCount = [];
+        readbyte$velocityCount .push($item.readBytes/1024);
+
+        var writebyte$velocityCount = [];
+        writebyte$velocityCount .push($item.writeBytes/1024);
+        #end
+
+    // 磁盘读速度图表，初始化echarts
+    var readByteChart = echarts.init(document.getElementById('readByteChart'));
+
+    // 指定图表的配置项和数据
+    var readByte_option = {
+        title: {
+            text: '磁盘读速度(单位:KB/s)',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: date
+        },
+        yAxis: {
+            type: 'value',
+            name: 'KB/s'
+        },
+        series: [
+            #foreach($item in $!{monitor.diskIosList})
+                {
+                    name: '$item.name',
+                    type: 'line',
+                    data: readbyte$velocityCount
+                },
+            #end
+
+        ]
+    };
+
+    // 使用刚指定的配置项和数据显示图表。
+    readByteChart.setOption(readByte_option);
+
+
+    //磁盘写速度图表，初始化echarts
+    var writeByteChart = echarts.init(document.getElementById('writeByteChart'));
+    // 指定图表的配置项和数据
+    var writeByte_option = {
+        title: {
+            text: '磁盘读速度(单位:KB/s)',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: date
+        },
+        yAxis: {
+            type: 'value',
+            name: 'KB/s'
+        },
+        series: [
+            #foreach($item in $!{monitor.diskIosList})
+                {
+                    name: '$item.name',
+                    type: 'line',
+                    data: writebyte$velocityCount
+                },
+            #end
+        ]
+    };
+
+    // 使用刚指定的配置项和数据显示图表。
+    writeByteChart.setOption(writeByte_option);
+
+</script>
+
+<script type="text/javascript">
+        #foreach($item in $!{monitor.diskIosList})
+        var readCount$velocityCount = [];
+        readCount$velocityCount .push($item.readBytes/1024);
+
+        var writeCount$velocityCount = [];
+        writeCount$velocityCount .push($item.writeBytes/1024);
+        #end
+
+    //磁盘读次数图表，初始化echarts
+    var readCountChart = echarts.init(document.getElementById('readCountChart'));
+
+    var readCount_option = {
+        title: {
+            text: '磁盘读次数',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: date
+        },
+        yAxis: {
+            type: 'value',
+            name: '次'
+        },
+        series: [
+            #foreach($item in $!{monitor.diskIosList})
+                {
+                    name: '$item.name',
+                    type: 'line',
+                    data: readCount$velocityCount
+                },
+            #end
+
+        ]
+    };
+
+    readCountChart.setOption(readCount_option);
+
+    //磁盘写次数图表，初始化echarts
+    var writeCountChart = echarts.init(document.getElementById('writeCountChart'));
+
+    var writeCount_option = {
+        title: {
+            text: '磁盘写次数',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: date
+        },
+        yAxis: {
+            type: 'value',
+            name: '次'
+        },
+        series: [
+            #foreach($item in $!{monitor.diskIosList})
+                {
+                    name: '$item.name',
+                    type: 'line',
+                    data: writeCount$velocityCount
+                },
+            #end
+
+        ]
+    };
+
+    writeCountChart.setOption(writeCount_option);
+
+</script>
+
+<script type="text/javascript">
+        #foreach($item in $!{monitor.netIosList})
+        var bytesSent$velocityCount = [];
+        bytesSent$velocityCount .push($item.bytesSentStr);
+
+        var bytesRecv$velocityCount = [];
+        bytesRecv$velocityCount .push($item.bytesRecvStr);
+        #end
+
+    //网络流出速率图表，初始化echarts
+    var bytesSentChart = echarts.init(document.getElementById('bytesSentChart'));
+
+    var bytesSent_option = {
+        title: {
+            text: '网络流出速率（MB/s）',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: date
+        },
+        yAxis: {
+            type: 'value',
+            name: 'MB/s'
+        },
+        series: [
+            #foreach($item in $!{monitor.netIosList})
+                {
+                    name: '$item.name',
+                    type: 'line',
+                    data: bytesSent$velocityCount
+                },
+            #end
+
+        ]
+    };
+
+    bytesSentChart.setOption(bytesSent_option);
+
+    //网络流入速率图表，初始化echarts
+    var bytesRecvChart = echarts.init(document.getElementById('bytesRecvChart'));
+
+    var bytesRecv_option = {
+        title: {
+            text: '网络流入速率（MB/s）',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: date
+        },
+        yAxis: {
+            type: 'value',
+            name: 'MB/s'
+        },
+        series: [
+            #foreach($item in $!{monitor.netIosList})
+                {
+                    name: '$item.name',
+                    type: 'line',
+                    data: bytesRecv$velocityCount
+                },
+            #end
+        ]
+    };
+
+    bytesRecvChart.setOption(bytesRecv_option);
+</script>
+
+<script type="text/javascript">
+
+        #foreach($item in $!{monitor.netIosList})
+        var packetsSent$velocityCount = [];
+        packetsSent$velocityCount .push($item.packetsSent);
+
+        var packetRecv$velocityCount = [];
+        packetRecv$velocityCount .push($!item.packetRecv);
+        #end
+
+
+    //网络流出包数图表，初始化echarts
+    var packetsSentChart = echarts.init(document.getElementById('packetsSentChart'));
+
+    var packetsSent_option = {
+        title: {
+            text: '网络流出包数',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: date
+        },
+        yAxis: {
+            type: 'value',
+            name: '个'
+        },
+        series: [
+            #foreach($item in $!{monitor.netIosList})
+                {
+                    name: '$item.name',
+                    type: 'line',
+                    data: packetsSent$velocityCount
+                },
+            #end
+
+        ]
+    };
+
+    packetsSentChart.setOption(packetsSent_option);
+
+    //网络流入速率图表，初始化echarts
+    var packetRecvChart = echarts.init(document.getElementById('packetRecvChart'));
+
+    var packetRecv_option = {
+        title: {
+            text: '网络流入包数',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: date
+        },
+        yAxis: {
+            type: 'value',
+            name: '个'
+        },
+        series: [
+            #foreach($item in $!{monitor.netIosList})
+                {
+                    name: '$item.name',
+                    type: 'line',
+                    data: packetRecv$velocityCount
+                },
+            #end
+        ]
+    };
+
+    packetRecvChart.setOption(packetRecv_option);
+</script>
+
+<script type="text/javascript">
+
+        #foreach($item in $!{monitor.netIosList})
+        var errOut$velocityCount = [];
+        errOut$velocityCount .push($item.errOut);
+
+        var errIn$velocityCount = [];
+        errIn$velocityCount .push($!item.errIn);
+        #end
+
+
+    //网络流出包错误数图表，初始化echarts
+    var errOutChart = echarts.init(document.getElementById('errOutChart'));
+
+    var errOut_option = {
+        title: {
+            text: '网络流出包错误数',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: date
+        },
+        yAxis: {
+            type: 'value',
+            name: '个'
+        },
+        series: [
+            #foreach($item in $!{monitor.netIosList})
+                {
+                    name: '$item.name',
+                    type: 'line',
+                    data: errOut$velocityCount
+                },
+            #end
+
+        ]
+    };
+
+    errOutChart.setOption(errOut_option);
+
+    //网络流入包错误数表，初始化echarts
+    var errInChart = echarts.init(document.getElementById('errInChart'));
+
+    var errIn_option = {
+        title: {
+            text: '网络流入包错误数',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: date
+        },
+        yAxis: {
+            type: 'value',
+            name: '个'
+        },
+        series: [
+            #foreach($item in $!{monitor.netIosList})
+                {
+                    name: '$item.name',
+                    type: 'line',
+                    data: errIn$velocityCount
+                },
+            #end
+        ]
+    };
+
+    errInChart.setOption(errIn_option);
+</script>
+
+<script type="text/javascript">
+
+        #foreach($item in $!{monitor.netIosList})
+        var dropOut$velocityCount = [];
+        dropOut$velocityCount .push($item.dropOut);
+
+        var dropIn$velocityCount = [];
+        dropIn$velocityCount .push($!item.dropIn);
+        #end
+
+
+    //网络流出包丢包数图表，初始化echarts
+    var dropOutChart = echarts.init(document.getElementById('dropOutChart'));
+
+    var dropOut_option = {
+        title: {
+            text: '网络流出包丢包数',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: date
+        },
+        yAxis: {
+            type: 'value',
+            name: '个'
+        },
+        series: [
+            #foreach($item in $!{monitor.netIosList})
+                {
+                    name: '$item.name',
+                    type: 'line',
+                    data: dropOut$velocityCount
+                },
+            #end
+
+        ]
+    };
+
+    dropOutChart.setOption(dropOut_option);
+
+    //网络流入包丢包数表，初始化echarts
+    var dropInChart = echarts.init(document.getElementById('dropInChart'));
+
+    var dropIn_option = {
+        title: {
+            text: '网络流入包丢包数',
+            left: 'center'
+        },
+        tooltip: {
+            trigger: 'axis'
+        },
+        xAxis: {
+            type: 'category',
+            name: '时间',
+            boundaryGap: false,
+            splitLine: {show: false},
+            data: date
+        },
+        yAxis: {
+            type: 'value',
+            name: '个'
+        },
+        series: [
+            #foreach($item in $!{monitor.netIosList})
+                {
+                    name: '$item.name',
+                    type: 'line',
+                    data: dropIn$velocityCount
+                },
+            #end
+        ]
+    };
+
+    dropInChart.setOption(dropIn_option);
+</script>
+
+<script type="text/javascript">
+
+    setInterval("metaNodeData()","5000");
+
+    function metaNodeData(){
+        $.ajax({
+            url: "/datanode/data/$!ip/$!port",
+            type: "GET",
+            async:false,
+            dataType: "json",
+            async: false,
+            error: function (request) {
+            },
+            success: function (json) {
+                //设置使用率图表
+                date.push(json.date)
+                cpuUsageData.push(json.cpuUsageStr);
+                memUsedPercentData.push(json.memUsedPercentStr);
+                pathUsedPercentData.push(json.pathUsedPercentStr);
+
+                percentChart.setOption({
+                    xAxis: {
+                        data: date
+                    },
+                    series: [
+                        {
+                            data: cpuUsageData
+                        },
+                        {
+                            data: memUsedPercentData
+                        },
+                        {
+                            data: pathUsedPercentData
+                        }
+                    ]
+                });
+
+                //设置CPU Load图表
+                cpuloadData.push(json.cpuLoadStr);
+
+                cpuLoadChart.setOption({
+                    xAxis: {
+                        data: date
+                    },
+                    series: [
+                        {
+                            data: cpuloadData
+                        }
+                    ]
+                });
+
+
+                //设置内存图表
+                totalMemData.push(json.totalMemStr);
+                usedMemData.push(json.usedMemStr);
+
+                memoryChart.setOption({
+                    xAxis: {
+                        data: date
+                    },
+                    series: [
+                        {
+                            data: totalMemData
+                        },
+                        {
+                            data: usedMemData
+                        },
+                    ]
+                });
+
+
+                var readbyteStr = "";
+                var writebyteStr = "";
+                var readCountStr = "";
+                var writeCountStr = "";
+                for(var i=1;i<=json.diskIosList.length;i++){
+                    eval("readbyte" + i + ".push("+json.diskIosList[i-1].readBytes/1024+")");
+                    readbyteStr+="{data:readbyte"+i+"},";
+
+                    eval("writebyte" + i + ".push("+json.diskIosList[i-1].readCount/1024+")");
+                    writebyteStr+="{data:writebyte"+i+"},";
+
+                    eval("readCount" + i + ".push("+json.diskIosList[i-1].readCount+")");
+                    readCountStr+="{data:readCount"+i+"},";
+
+                    eval("writeCount" + i + ".push("+json.diskIosList[i-1].writeCount+")");
+                    writeCountStr+="{data:writeCount"+i+"},";
+                }
+
+                //设置磁盘读速度
+                readbyteStr = "["+readbyteStr+"]";
+                var readbyteJson = eval('(' + readbyteStr + ')');
+                readByteChart.setOption({
+                    xAxis: {
+                        data: date
+                    },
+                    series: readbyteJson
+                });
+
+                //设置磁盘写速度
+                writebyteStr = "["+writebyteStr+"]";
+                var writebyteJson = eval('(' + writebyteStr + ')');
+                writeByteChart.setOption({
+                    xAxis: {
+                        data: date
+                    },
+                    series: writebyteJson
+                });
+
+                //设置读次数
+                readCountStr = "["+readCountStr+"]";
+                var readCountJson = eval('(' + readCountStr + ')');
+                readCountChart.setOption({
+                    xAxis: {
+                        data: date
+                    },
+                    series: readCountJson
+                });
+
+                //设置写次数
+                writeCountStr = "["+writeCountStr+"]";
+                var writeCountJson = eval('(' + writeCountStr + ')');
+                writeCountChart.setOption({
+                    xAxis: {
+                        data: date
+                    },
+                    series: writeCountJson
+                });
+
+
+                var bytesSentStr = "";
+                var bytesRecvStr = "";
+                var packetsSentStr = "";
+                var packetRecvStr = "";
+                var errInStr = "";
+                var errOutStr = "";
+                var dropInStr = "";
+                var dropOutStr = "";
+
+                for(var i=1;i<=json.netIosList.length;i++){
+                    eval("bytesSent" + i + ".push("+json.netIosList[i-1].bytesSentStr+")");
+                    bytesSentStr+="{data:bytesSent"+i+"},";
+
+                    eval("bytesRecv" + i + ".push("+json.netIosList[i-1].bytesRecvStr+")");
+                    bytesRecvStr+="{data:bytesRecv"+i+"},";
+
+                    eval("packetsSent" + i + ".push("+json.netIosList[i-1].packetsSent+")");
+                    packetsSentStr+="{data:packetsSent"+i+"},";
+
+                    eval("packetRecv" + i + ".push("+json.netIosList[i-1].packetRecv+")");
+                    packetRecvStr+="{data:packetRecv"+i+"},";
+
+                    eval("errIn" + i + ".push("+json.netIosList[i-1].errIn+")");
+                    errInStr+="{data:errIn"+i+"},";
+
+                    eval("errOut" + i + ".push("+json.netIosList[i-1].errOut+")");
+                    errOutStr+="{data:errOut"+i+"},";
+
+                    eval("dropIn" + i + ".push("+json.netIosList[i-1].dropIn+")");
+                    dropInStr+="{data:dropIn"+i+"},";
+
+                    eval("dropOut" + i + ".push("+json.netIosList[i-1].dropOut+")");
+                    dropOutStr+="{data:dropOut"+i+"},";
+                }
+
+                //设置磁盘读速度
+                bytesSentStr = "["+bytesSentStr+"]";
+                var bytesSentJson = eval('(' + bytesSentStr + ')');
+                bytesSentChart.setOption({
+                    xAxis: {
+                        data: date
+                    },
+                    series: bytesSentJson
+                });
+
+                //设置磁盘读速度
+                bytesRecvStr = "["+bytesRecvStr+"]";
+                var bytesRecvJson = eval('(' + bytesRecvStr + ')');
+                bytesRecvChart.setOption({
+                    xAxis: {
+                        data: date
+                    },
+                    series: bytesRecvJson
+                });
+
+                //设置磁盘读速度
+                packetsSentStr = "["+packetsSentStr+"]";
+                var packetsSentJson = eval('(' + packetsSentStr + ')');
+                packetsSentChart.setOption({
+                    xAxis: {
+                        data: date
+                    },
+                    series: packetsSentJson
+                });
+
+                //设置磁盘读速度
+                packetRecvStr = "["+packetRecvStr+"]";
+                var packetRecvJson = eval('(' + packetRecvStr + ')');
+                packetRecvChart.setOption({
+                    xAxis: {
+                        data: date
+                    },
+                    series: packetRecvJson
+                });
+
+                //设置磁盘读速度
+                errInStr = "["+errInStr+"]";
+                var errInJson = eval('(' + errInStr + ')');
+                errInChart.setOption({
+                    xAxis: {
+                        data: date
+                    },
+                    series: errInJson
+                });
+
+                //设置磁盘读速度
+                errOutStr = "["+errOutStr+"]";
+                var errOutJson = eval('(' + errOutStr + ')');
+                errOutChart.setOption({
+                    xAxis: {
+                        data: date
+                    },
+                    series: errOutJson
+                });
+
+                //设置磁盘读速度
+                dropInStr = "["+dropInStr+"]";
+                var dropInJson = eval('(' + dropInStr + ')');
+                dropInChart.setOption({
+                    xAxis: {
+                        data: date
+                    },
+                    series: dropInJson
+                });
+
+                //设置磁盘读速度
+                dropOutStr = "["+dropOutStr+"]";
+                var dropOutJson = eval('(' + dropOutStr + ')');
+                dropOutChart.setOption({
+                    xAxis: {
+                        data: date
+                    },
+                    series: dropOutJson
+                });
+            }
+        });
+    }
+</script>
+
+<script type="text/javascript">
+    $('#myTab a').on('shown.bs.tab', function (e) {
+        percentChart.resize();
+        cpuLoadChart.resize();
+        memoryChart.resize();
+        readByteChart.resize();
+        writeByteChart.resize();
+        readCountChart.resize();
+        writeCountChart.resize();
+        bytesSentChart.resize();
+        bytesRecvChart.resize();
+        packetsSentChart.resize();
+        packetRecvChart.resize();
+        errOutChart.resize();
+        errInChart.resize();
+        dropOutChart.resize();
+        dropInChart.resize();
+    })
+</script>

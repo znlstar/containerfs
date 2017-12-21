@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<parent>
+    <groupId>com.jd</groupId>
+    <artifactId>containerfs</artifactId>
+    <version>1.0-SNAPSHOT</version>
+</parent>
+<modelVersion>4.0.0</modelVersion>
+<packaging>war</packaging>
+<artifactId>containerfs-web</artifactId>
+
+<properties>
+    <servlet.version>3.0.1</servlet.version>
+</properties>
+
+<!-- 依赖配置 -->
+<dependencies>
+    <!-- servlet 依赖 -->
+    <dependency>
+        <groupId>javax.servlet</groupId>
+        <artifactId>javax.servlet-api</artifactId>
+        <version>${servlet.version}</version>
+        <scope>provided</scope>
+    </dependency>
+
+    <dependency>
+        <groupId>com.jd</groupId>
+        <artifactId>containerfs-dto</artifactId>
+        <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+        <groupId>com.jd</groupId>
+        <artifactId>containerfs-common</artifactId>
+        <version>${project.version}</version>
+    </dependency>
+
+    <dependency>
+        <groupId>commons-fileupload</groupId>
+        <artifactId>commons-fileupload</artifactId>
+        <version>1.2.2</version>
+    </dependency>
+
+    <dependency>
+        <groupId>commons-digester</groupId>
+        <artifactId>commons-digester</artifactId>
+        <version>2.0</version>
+    </dependency>
+
+    <!-- spring web/webmvc依赖 -->
+    <dependency>
+        <groupId>org.springframework</groupId>
+        <artifactId>spring-web</artifactId>
+    </dependency>
+    <dependency>
+        <groupId>org.springframework</groupId>
+        <artifactId>spring-webmvc</artifactId>
+    </dependency>
+
+</dependencies>
+
+<build>
+    <finalName>${project.artifactId}</finalName>
+    <resources>
+        <resource>
+            <directory>src/main/java</directory>
+            <includes>
+                <include>**/*.vm</include>
+            </includes>
+            <filtering>false</filtering>
+        </resource>
+        <resource>
+            <directory>src/main/resources</directory>
+            <includes>
+                <include>log4j.xml</include>
+                <include>*.properties</include>
+            </includes>
+            <filtering>true</filtering>
+        </resource>
+        <resource>
+            <directory>src/main/resources</directory>
+            <excludes>
+                <exclude>log4j.xml</exclude>
+                <exclude>*.properties</exclude>
+            </excludes>
+            <filtering>false</filtering>
+        </resource>
+    </resources>
+    <plugins>
+        <plugin>
+            <!-- war插件 -->
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-war-plugin</artifactId>
+            <version>2.1</version>
+            <configuration>
+                <warName>${project.artifactId}</warName>
+            </configuration>
+        </plugin>
+        <plugin>
+            <groupId>org.apache.tomcat.maven</groupId>
+            <artifactId>tomcat8-maven-plugin</artifactId>
+            <!--<version>3.0-r1655215</version>-->
+            <executions>
+                <execution>
+                    <id>tomcat-run</id>
+                    <goals>
+                        <goal>exec-war-only</goal>
+                    </goals>
+                    <phase>package</phase>
+                    <configuration>
+                        <path>/</path>
+                        <httpPort>8888</httpPort>
+                        <enableNaming>false</enableNaming>
+                        <finalName>web-tomcat.jar</finalName>
+                    </configuration>
+                </execution>
+            </executions>
+        </plugin>
+    </plugins>
+</build>
+
+    <!-- 环境配置 -->
+    <profiles>
+        <!-- 开发环境 -->
+        <profile>
+            <id>dev</id>
+            <properties>
+                <!-- log日志 -->
+                <log.path>/export/Logs/</log.path>
+                <log.level>INFO</log.level>
+
+            </properties>
+        </profile>
+        <!-- 测试环境 -->
+        <profile>
+            <id>test</id>
+            <properties>
+                <!-- log日志 -->
+                <log.path>/export/Logs/</log.path>
+                <log.level>INFO</log.level>
+            </properties>
+        </profile>
+        <!-- 生产环境 -->
+        <profile>
+            <id>production</id>
+            <properties>
+                <!-- log日志 -->
+                <log.path>/export/Logs/</log.path>
+                <log.level>INFO</log.level>
+            </properties>
+        </profile>
+    </profiles>
+</project>

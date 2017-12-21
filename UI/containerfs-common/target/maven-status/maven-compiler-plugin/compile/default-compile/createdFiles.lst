@@ -1,0 +1,9 @@
+com\jd\containerfs\common\Constants.class
+com\jd\containerfs\common\DataNodeStatusEnum.class
+com\jd\containerfs\common\BaseResult.class
+com\jd\containerfs\common\util\HttpUtils.class
+com\jd\containerfs\common\util\JSONHelper.class
+com\jd\containerfs\common\MetaNodeStatusEnum.class
+com\jd\containerfs\common\util\DozerMapper.class
+com\jd\containerfs\common\util\JsonUtils.class
+com\jd\containerfs\common\util\BeanUtils.class
