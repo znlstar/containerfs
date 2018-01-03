@@ -89,6 +89,27 @@ func (s *MetaNodeServer) VolumeInfos(ctx context.Context, in *mp.VolumeInfosReq)
 	return &ack, nil
 }
 
+// rpc GetAllVolumeInfos(VolumeInfoReq) returns (VolumeInfoAck){};
+func (s *MetaNodeServer) GetAllVolumeInfos(ctx context.Context, in *mp.VolumeInfosReq) (*mp.VolumeInfosAck, error) {
+	ack := mp.VolumeInfosAck{}
+	ret, nameSpace := ns.GetNameSpace("Cluster")
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+
+	v, err := nameSpace.GetAllVolume()
+	if err != nil {
+		logger.Error("GetAllVolume Info failed:%v for VolumeInfo", err)
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ack.Volumes = v
+	logger.Debug("VolumeInfos: %v", ack.Volumes)
+
+	return &ack, nil
+}
+
 func (s *MetaNodeServer) GetVolInfo(ctx context.Context, in *mp.GetVolInfoReq) (*mp.GetVolInfoAck, error) {
 	ack := mp.GetVolInfoAck{}
 	ret, nameSpace := ns.GetNameSpace("Cluster")

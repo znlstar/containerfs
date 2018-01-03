@@ -28,6 +28,7 @@ func main() {
 		snapshootvol [volumeuuid ]
 		getvolleader [volumeuuid ]
 		getvolinfo [volumeuuid ]
+		getvols
 		getinodeinfo [volumeuuid ] parentinodeid name
 		getdatanodes
 		deldatanode ip port`)
@@ -135,6 +136,21 @@ func main() {
 		} else {
 			fmt.Printf("get volume info failed , ret :%d", ret)
 		}
+	case "getvols":
+		argNum := flag.NArg()
+		if argNum != 0 {
+			fmt.Println("getvols")
+			os.Exit(1)
+		}
+		ret, vi := fs.GetAllVolumeInfos()
+		if ret == 0 {
+			for _, v := range vi {
+				fmt.Println(v)
+			}
+		} else {
+			fmt.Printf("get all volumes info failed , ret :%d", ret)
+		}
+
 	case "getinodeinfo":
 		argNum := flag.NArg()
 		if argNum != 3 {
@@ -173,7 +189,9 @@ func main() {
 		}
 		ret, vi := fs.GetAllDatanode()
 		if ret == 0 {
-			fmt.Println(vi)
+			for _, v := range vi {
+				fmt.Println(v)
+			}
 		} else {
 			fmt.Printf("get all datanodes info failed , ret :%d", ret)
 		}
