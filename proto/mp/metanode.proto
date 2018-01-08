@@ -5,8 +5,8 @@ package mp;
 service MetaNode {
 
     // cluster opt
-    rpc DatanodeRegistry(Datanode) returns (DatanodeRegistryAck){};
-    rpc	DelDatanode(DelDatanodeReq) returns (DelDatanodeAck){};
+    rpc DataNodeRegistry(DataNode) returns (DataNodeRegistryAck){};
+    rpc	DelDataNode(DelDataNodeReq) returns (DelDataNodeAck){};
     rpc CreateVol(CreateVolReq) returns (CreateVolAck){};
     rpc ExpandVolTS(ExpandVolTSReq) returns (ExpandVolTSAck){};
     rpc ExpandVolRS(ExpandVolRSReq) returns (ExpandVolRSAck){};
@@ -18,7 +18,7 @@ service MetaNode {
     rpc GetMetaLeader(GetMetaLeaderReq) returns (GetMetaLeaderAck){};
     rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
     rpc ExpandNameSpace(ExpandNameSpaceReq) returns (ExpandNameSpaceAck){};
-    rpc SnapShootNameSpace(SnapShootNameSpaceReq) returns (SnapShootNameSpaceAck){};
+    rpc SnapShotNameSpace(SnapShotNameSpaceReq) returns (SnapShotNameSpaceAck){};
     rpc DeleteNameSpace(DeleteNameSpaceReq) returns (DeleteNameSpaceAck){};
     rpc GetFSInfo(GetFSInfoReq) returns (GetFSInfoAck){};
 
@@ -34,13 +34,14 @@ service MetaNode {
     rpc GetFileChunksDirect(GetFileChunksDirectReq) returns (GetFileChunksDirectAck){};
     rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
     rpc SyncChunk(SyncChunkReq) returns (SyncChunkAck){};
+    rpc AsyncChunk(AsyncChunkReq) returns (AsyncChunkAck){};
+
 
     // Web Info
     rpc ClusterInfo(ClusterInfoReq) returns (ClusterInfoAck){};
-    rpc GetAllDatanode(GetAllDatanodeReq) returns (GetAllDatanodeAck){};
+    rpc GetDataNode(GetAllDataNodeReq) returns (GetAllDataNodeAck){};
     rpc MetaNodeInfo(MetaNodeInfoReq) returns (MetaNodeInfoAck){};
     rpc VolumeInfos(VolumeInfosReq) returns (VolumeInfosAck){};
-    rpc GetAllVolumeInfos(VolumeInfosReq) returns (VolumeInfosAck){};
     rpc GetVolInfo(GetVolInfoReq) returns (GetVolInfoAck){};
     rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
 
@@ -49,18 +50,17 @@ service MetaNode {
 message NULL{
 }
 
-message Datanode {
-    string Ip = 1;
-    int32 Port = 2;
-    string MountPoint = 3 ;
-    string Tier = 4;
-    int32 Capacity = 5; //GB
-    int32 Used = 6;
-    int32 Free = 7;
-    int32 Status = 8;
+message DataNode {
+    string Host = 1;
+    string MountPoint = 2 ;
+    string Tier = 3;
+    int32 Capacity = 4; //GB
+    int32 Used = 5;
+    int32 Free = 6;
+    int32 Status = 7;
 }
 
-message DatanodeRegistryAck {
+message DataNodeRegistryAck {
     int32 Ret = 1;
 }
 
@@ -68,17 +68,16 @@ message UpdateBlkDBAck {
     int32 Ret = 1;
 }
 
-message GetAllDatanodeReq {
+message GetAllDataNodeReq {
 }
-message GetAllDatanodeAck {
+message GetAllDataNodeAck {
     int32 Ret = 1;
-    repeated Datanode Datanodes = 2;
+    repeated DataNode DataNodes = 2;
 }
-message DelDatanodeReq {
-    string Ip = 1;
-    string Port = 2;
+message DelDataNodeReq {
+    string Host = 1;
 }
-message DelDatanodeAck {
+message DelDataNodeAck {
     int32 Ret = 1;
 }
 
@@ -97,12 +96,11 @@ message Vols {
 
 message Block {
     uint64 BlkID = 1;
-    string Ip = 2;
-    int32 Port = 3;
-    string Path = 4;
-    int32 Status = 5;
-    uint64 BGID = 6;
-    string VolID = 7;
+    string Host = 2;
+    string Path = 3;
+    int32 Status = 4;
+    uint64 BGID = 5;
+    string VolID = 6;
 }
 
 message BGP {
@@ -161,8 +159,7 @@ message GetVolInfoAck {
 }
 
 message MigrateReq {
-    string DataNodeIP = 1;
-    int32  DataNodePort = 2;
+    string DataNodeHost = 1;
 }
 
 message MigrateAck {
@@ -196,11 +193,11 @@ message ExpandNameSpaceAck{
     int32 Ret = 1;
 }
 
-message SnapShootNameSpaceReq{
+message SnapShotNameSpaceReq{
     string VolID = 1;
     int32  Type =2 ;
 }
-message SnapShootNameSpaceAck{
+message SnapShotNameSpaceAck{
     int32 Ret = 1;
 }
 message DeleteNameSpaceReq{
@@ -335,6 +332,19 @@ message SyncChunkAck {
 }
 
 
+message AsyncChunkReq {
+    string VolID = 1;
+    uint64 ParentInodeID = 2;
+    string Name = 3;
+    uint64 BlockGroupID = 4;
+    uint64 ChunkID = 5;
+    uint32  CommitSize = 6;
+}
+message AsyncChunkAck {
+    int32 Ret = 1;
+}
+
+
 message BlkInfo {
     uint64 BgpID  = 1;
     uint64 BlockID = 2;
@@ -414,7 +424,7 @@ message DataNodeInfoReq {
 }
 message DataNodeInfoAck {
     int32 Ret = 1;
-    repeated Datanode Datanodes = 2;
+    repeated DataNode DataNodes = 2;
 }
 
 // web -> cluster leader metanode

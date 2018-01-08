@@ -8,7 +8,6 @@
 
 二、集群搭建
 
-
 0、组件分配：
 
 	metanode : 192.168.100.216 192.168.100.17 192.168.100.19 
@@ -24,9 +23,9 @@
 
 2、在 192.168.100.216 192.168.100.17 192.168.100.19 启动 datanode：
 
-	/home/cfs/cfs-datanode -host 192.168.100.216 -port 8801 -tier sas -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923 -datapath /home/containerfs/datanode1/data 
-	/home/cfs/cfs-datanode -host 192.168.100.17 -port 8801 -tier sas -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923 -datapath /home/containerfs/datanode1/data 
-	/home/cfs/cfs-datanode -host 192.168.100.19 -port 8801 -tier sas -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923 -datapath /home/containerfs/datanode1/data 
+	/home/cfs/cfs-datanode -host 192.168.100.216:8801 -tier sas -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923 -datapath /home/containerfs/datanode1/data
+	/home/cfs/cfs-datanode -host 192.168.100.17:8801 -tier sas -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923 -datapath /home/containerfs/datanode1/data
+	/home/cfs/cfs-datanode -host 192.168.100.19:8801 -tier sas -metanode 192.168.100.216:9903,192.168.100.17:9913,192.168.100.19:9923 -datapath /home/containerfs/datanode1/data
 
 	-tier参数说明：cfs支持多种类型的存储介质混部, datanode启动带上-tier参数表示该datanode的磁盘介质类型是哪种, 如sata、sas、ssd、nvme等磁盘类型, 不带该参数默认为sas盘
 

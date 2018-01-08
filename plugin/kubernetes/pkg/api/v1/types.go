@@ -697,15 +697,13 @@ type GlusterfsVolumeSource struct {
 // Represents a Containerfs mount that lasts the lifetime of a pod.
 // Containerfs volumes do not support ownership management or SELinux relabeling.
 type ContainerfsVolumeSource struct {
-	Volmgr   string `json:"volmgr" protobuf:"bytes,1,opt,name=volmgr"`
-	Metanode string `json:"metanode" protobuf:"bytes,2,opt,name=metanode"`
-
+	Metanode string `json:"metanode" protobuf:"bytes,1,opt,name=metanode"`
 	// Required: Uuid is the Containerfs volume uuid
-	Uuid string `json:"uuid" protobuf:"bytes,3,opt,name=uuid"`
+	Uuid string `json:"uuid" protobuf:"bytes,2,opt,name=uuid"`
 	// Optional: Defaults to false (read/write). ReadOnly here will force
 	// the Containerfs to be mounted with read-only permissions
 	// +optional
-	ReadOnly bool `json:"readOnly,omitempty" protobuf:"varint,4,opt,name=readOnly"`
+	ReadOnly bool `json:"readOnly,omitempty" protobuf:"varint,3,opt,name=readOnly"`
 }
 
 // Represents a Rados Block Device mount that lasts the lifetime of a pod.

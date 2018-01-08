@@ -3,8 +3,8 @@ package main
 import (
 	"flag"
 	"fmt"
-	fs "github.com/tigcode/containerfs/fs"
-	"github.com/tigcode/containerfs/logger"
+	fs "github.com/tiglabs/containerfs/fs"
+	"github.com/tiglabs/containerfs/logger"
 	"os"
 	"strconv"
 	"strings"
@@ -25,10 +25,9 @@ func main() {
 		expandvol [volumeuuid ] size
 		migrate [datanodeIP] [datanodePort]
 		deletevol [volumeuuid ]
-		snapshootvol [volumeuuid ]
+		snapshotvol [volumeuuid ]
 		getvolleader [volumeuuid ]
 		getvolinfo [volumeuuid ]
-		getvols
 		getinodeinfo [volumeuuid ] parentinodeid name
 		getdatanodes
 		deldatanode ip port`)
@@ -86,10 +85,10 @@ func main() {
 	case "migrate":
 		argNum := flag.NArg()
 		if argNum != 2 {
-			fmt.Println("migrate [datanodeIP] [datanodePort]")
+			fmt.Println("migrate [datanodeIP:Port]")
 			os.Exit(1)
 		}
-		ret := fs.Migrate(flag.Arg(0), flag.Arg(1))
+		ret := fs.Migrate(flag.Arg(0))
 		if ret != 0 {
 			fmt.Println("Migrate failed")
 		} else {
@@ -106,13 +105,13 @@ func main() {
 		if ret != 0 {
 			fmt.Println("failed")
 		}
-	case "snapshootvol":
+	case "snapshotvol":
 		argNum := flag.NArg()
 		if argNum != 1 {
-			fmt.Println("snapshootvol [voluuid]")
+			fmt.Println("snapshotvol [voluuid]")
 			os.Exit(1)
 		}
-		ret := fs.SnapShootVol(flag.Arg(0))
+		ret := fs.SnapShotVol(flag.Arg(0))
 		if ret != 0 {
 			fmt.Println("failed")
 		}
@@ -136,21 +135,6 @@ func main() {
 		} else {
 			fmt.Printf("get volume info failed , ret :%d", ret)
 		}
-	case "getvols":
-		argNum := flag.NArg()
-		if argNum != 0 {
-			fmt.Println("getvols")
-			os.Exit(1)
-		}
-		ret, vi := fs.GetAllVolumeInfos()
-		if ret == 0 {
-			for _, v := range vi {
-				fmt.Println(v)
-			}
-		} else {
-			fmt.Printf("get all volumes info failed , ret :%d", ret)
-		}
-
 	case "getinodeinfo":
 		argNum := flag.NArg()
 		if argNum != 3 {
@@ -187,11 +171,9 @@ func main() {
 			fmt.Println("getdatanodes")
 			os.Exit(1)
 		}
-		ret, vi := fs.GetAllDatanode()
+		ret, vi := fs.GetAllDataNode()
 		if ret == 0 {
-			for _, v := range vi {
-				fmt.Println(v)
-			}
+			fmt.Println(vi)
 		} else {
 			fmt.Printf("get all datanodes info failed , ret :%d", ret)
 		}
@@ -199,10 +181,10 @@ func main() {
 	case "deldatanode":
 		argNum := flag.NArg()
 		if argNum != 2 {
-			fmt.Println("deldatanode ip port")
+			fmt.Println("deldatanode ip:port")
 			os.Exit(1)
 		}
-		ret := fs.DelDatanode(flag.Arg(0), flag.Arg(1))
+		ret := fs.DelDataNode(flag.Arg(0))
 		if ret == 0 {
 			fmt.Printf("del success")
 		} else {

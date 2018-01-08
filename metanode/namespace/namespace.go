@@ -4,19 +4,18 @@ import (
 	"encoding/binary"
 	"fmt"
 	pbproto "github.com/golang/protobuf/proto"
-	"github.com/tigcode/containerfs/logger"
-	"github.com/tigcode/containerfs/metanode/raftopt"
-	mp "github.com/tigcode/containerfs/proto/mp"
-	//vp "github.com/tigcode/containerfs/proto/vp"
-	//"github.com/tigcode/containerfs/utils"
-	"github.com/tigcode/raft"
-	"github.com/tigcode/raft/proto"
-	"github.com/tigcode/raft/storage/wal"
+	"github.com/tiglabs/containerfs/logger"
+	"github.com/tiglabs/containerfs/metanode/raftopt"
+	"github.com/tiglabs/containerfs/proto/mp"
+	//vp "github.com/tiglabs/containerfs/proto/vp"
+	//"github.com/tiglabs/containerfs/utils"
+	"github.com/tiglabs/raft"
+	"github.com/tiglabs/raft/proto"
+	"github.com/tiglabs/raft/storage/wal"
 	"math/rand"
 	//"net"
 	"path"
 	"runtime/debug"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -179,8 +178,8 @@ func CreateNameSpace(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir
 	return errno
 }
 
-//SnapShootNameSpace ...
-func SnapShootNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
+//SnapShotNameSpace ...
+func SnapShotNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
 
 	defer catchPanic()
 
@@ -189,7 +188,7 @@ func SnapShootNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
 		if ret != 0 {
 			return ret
 		}
-		raftopt.TakeKvSnapShoot(nameSpace.RaftGroup, nameSpace.RaftStorage, path.Join(dir, UUID, "wal", "snap"))
+		raftopt.TakeKvSnapShot(nameSpace.RaftGroup, nameSpace.RaftStorage, path.Join(dir, UUID, "wal", "snap"))
 	}
 	return 0
 }
@@ -465,10 +464,12 @@ func (ns *nameSpace) GetFileChunksDirect(pinode uint64, name string) (int32, []*
 
 	ok, dirent := ns.DentryDBGet(pinode, name)
 	if !ok {
+		logger.Error("GetFileChunksDirect DentryDBGet err %v", ok)
 		return 1, nil, 0
 	}
 	ok, pInodeInfo := ns.InodeDBGet(dirent.Inode)
 	if !ok {
+		logger.Error("GetFileChunksDirect InodeDBGet err %v", ok)
 		return 1, nil, 0
 	}
 	return 0, pInodeInfo.Chunks, dirent.Inode
@@ -585,6 +586,80 @@ func (ns *nameSpace) SyncChunk(pinode uint64, name string, chunkinfo *mp.ChunkIn
 	}
 
 	err = ns.BlockGroupDBSet(chunkinfo.BlockGroupID, pTmpBlockGroup)
+	if err != nil {
+		ns.Unlock()
+		return 1
+	}
+
+	ns.Unlock()
+	return 0
+
+}
+
+//SyncChunk ...
+func (ns *nameSpace) AsyncChunk(pinode uint64, name string, chunkid uint64, commitSize uint32, blockGroupID uint64) int32 {
+
+	defer catchPanic()
+
+	var ret int32
+
+	ok, dirent := ns.DentryDBGet(pinode, name)
+	if !ok {
+		ret = 2 /*ENOENT*/
+		return ret
+	}
+
+	ok, inodeInfo := ns.InodeDBGet(dirent.Inode)
+	if !ok {
+		ret = 2 /*ENOENT*/
+		return ret
+	}
+
+	inodeInfo.ModifiTime = time.Now().Unix()
+
+	var lastChunkID uint64
+	var blockGroupUsed uint32
+	if len(inodeInfo.Chunks) > 0 {
+		//for appned write
+		lastChunkID = inodeInfo.Chunks[len(inodeInfo.Chunks)-1].ChunkID
+		if lastChunkID == chunkid {
+			inodeInfo.FileSize = inodeInfo.FileSize + int64(commitSize)
+			blockGroupUsed = commitSize
+			inodeInfo.Chunks[len(inodeInfo.Chunks)-1].ChunkSize = inodeInfo.Chunks[len(inodeInfo.Chunks)-1].ChunkSize + int32(commitSize)
+		} else {
+			chunkinfo := &mp.ChunkInfo{ChunkID: chunkid, ChunkSize: int32(commitSize), BlockGroupID: blockGroupID}
+			inodeInfo.Chunks = append(inodeInfo.Chunks, chunkinfo)
+			inodeInfo.FileSize += int64(commitSize)
+			blockGroupUsed = commitSize
+		}
+	} else {
+		chunkinfo := &mp.ChunkInfo{ChunkID: chunkid, ChunkSize: int32(commitSize), BlockGroupID: blockGroupID}
+		inodeInfo.Chunks = append(inodeInfo.Chunks, chunkinfo)
+		inodeInfo.FileSize += int64(commitSize)
+		blockGroupUsed = commitSize
+	}
+
+	err := ns.InodeDBSet(dirent.Inode, inodeInfo)
+	if err != nil {
+
+		return 1
+	}
+
+	ns.Lock()
+
+	var pTmpBlockGroup *mp.BlockGroup
+	if ok, pTmpBlockGroup = ns.BlockGroupDBGet(blockGroupID); !ok {
+		ns.Unlock()
+		return 2
+	}
+
+	pTmpBlockGroup.FreeSize = pTmpBlockGroup.FreeSize - int64(blockGroupUsed)
+
+	if pTmpBlockGroup.FreeSize <= ChunkSize {
+		pTmpBlockGroup.Status = blockGroupFull
+	}
+
+	err = ns.BlockGroupDBSet(blockGroupID, pTmpBlockGroup)
 	if err != nil {
 		ns.Unlock()
 		return 1
@@ -982,88 +1057,5 @@ func (ns *nameSpace) BlockGroupDBGetAll() (bool, []*mp.BlockGroup) {
 	}
 
 	return true, blockGroups
-
-}
-
-func (ns *nameSpace) DatanodeRegistry(in *mp.Datanode) int32 {
-	k := in.Ip + fmt.Sprintf(":%d", in.Port)
-	v, _ := pbproto.Marshal(in)
-	err := ns.RaftGroup.DataNodeSet(1, k, v)
-	if err != nil {
-		logger.Error("Datanode(%v:%v) Register to MetaNode failed:%v", in.Ip, in.Port, err)
-		return -1
-	}
-
-	logger.Error("Datanode(%v:%v) Register to MetaNode success", in.Ip, in.Port)
-	return 0
-}
-
-func (ns *nameSpace) GetAllDatanode() ([]*mp.Datanode, error) {
-	v, _ := ns.RaftGroup.DatanodeGetAll(1)
-	var datanodes []*mp.Datanode
-
-	for _, vv := range v {
-		datanode := mp.Datanode{}
-		err := pbproto.Unmarshal(vv.V, &datanode)
-		if err != nil {
-			return []*mp.Datanode{}, err
-		}
-		datanodes = append(datanodes, &datanode)
-	}
-	return datanodes, nil
-
-}
-
-func (ns *nameSpace) DataNodeDel(ip string, port int) error {
-	k := ip + fmt.Sprintf(":%d", port)
-
-	v, err := ns.RaftGroup.BlockGetRange(1, k)
-	if err != nil {
-		return err
-	}
-
-	for _, vv := range v {
-		block := mp.Block{}
-		pbproto.Unmarshal(vv.V, &block)
-		key := k + "-" + strconv.FormatUint(block.BlkID, 10)
-		ns.RaftGroup.BlockDel(1, key)
-	}
-
-	err = ns.RaftGroup.DataNodeDel(1, k)
-	if err != nil {
-		err := ns.RaftGroup.DataNodeDel(1, k)
-		if err != nil {
-			logger.Error("Delete Datanode raftgrpid:%v,key:%v,err:%v", 1, k, err)
-			return err
-		}
-	}
-	return nil
-}
-
-func (ns *nameSpace) AllocateRGID() (uint64, error) {
-	return ns.RaftGroup.RGIDGET(1)
-}
-
-func (ns *nameSpace) AllocateBGID() (uint64, error) {
-	return ns.RaftGroup.BGIDGET(1)
-}
-
-func (ns *nameSpace) AllocateBlockID() (uint64, error) {
-	return ns.RaftGroup.BlockIDGET(1)
-}
-
-func (ns *nameSpace) GetAllVolume() ([]*mp.Volume, error) {
-	v, _ := ns.RaftGroup.VolsGetAll(1)
-	var vols []*mp.Volume
-
-	for _, vv := range v {
-		volume := mp.Volume{}
-		err := pbproto.Unmarshal(vv.V, &volume)
-		if err != nil {
-			return []*mp.Volume{}, err
-		}
-		vols = append(vols, &volume)
-	}
-	return vols, nil
 
 }

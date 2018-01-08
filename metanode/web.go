@@ -2,9 +2,9 @@ package main
 
 import (
 	pbproto "github.com/golang/protobuf/proto"
-	"github.com/tigcode/containerfs/logger"
-	ns "github.com/tigcode/containerfs/metanode/namespace"
-	mp "github.com/tigcode/containerfs/proto/mp"
+	"github.com/tiglabs/containerfs/logger"
+	ns "github.com/tiglabs/containerfs/metanode/namespace"
+	"github.com/tiglabs/containerfs/proto/mp"
 	"golang.org/x/net/context"
 	"time"
 
@@ -18,17 +18,11 @@ import (
 // rpc ClusterInfo(ClusterInfoReq) returns (ClusterInfoAck){};
 func (s *MetaNodeServer) ClusterInfo(ctx context.Context, in *mp.ClusterInfoReq) (*mp.ClusterInfoAck, error) {
 	ack := mp.ClusterInfoAck{}
-	ret, nameSpace := ns.GetNameSpace("Cluster")
-	if ret != 0 {
-		ack.Ret = ret
-		return &ack, nil
-	}
-
 	ack.MetaNum = 3
 
-	v, err := nameSpace.GetAllDatanode()
+	v, err := GetAllDataNode()
 	if err != nil {
-		logger.Error("GetAllDatanode Info failed:%v for ClusterInfo", err)
+		logger.Error("GetAllDataNode Info failed:%v for ClusterInfo", err)
 		ack.Ret = 1
 		return &ack, nil
 	}
@@ -44,6 +38,15 @@ func (s *MetaNodeServer) ClusterInfo(ctx context.Context, in *mp.ClusterInfoReq)
 	}
 	ack.ClusterSpace = total
 	ack.ClusterFreeSpace = free
+
+	volumes, err := GetAllVolume()
+	if err != nil {
+		logger.Error("GetAllVolume Info failed:%v for ClusterInfo", err)
+		ack.Ret = -1
+		return &ack, nil
+	}
+
+	ack.VolNum = int32(len(volumes))
 
 	logger.Debug("ClusterInfo: %v", ack)
 
@@ -62,16 +65,11 @@ func (s *MetaNodeServer) MetaNodeInfo(ctx context.Context, in *mp.MetaNodeInfoRe
 // rpc VolumeInfo(VolumeInfoReq) returns (VolumeInfoAck){};
 func (s *MetaNodeServer) VolumeInfos(ctx context.Context, in *mp.VolumeInfosReq) (*mp.VolumeInfosAck, error) {
 	ack := mp.VolumeInfosAck{}
-	ret, nameSpace := ns.GetNameSpace("Cluster")
-	if ret != 0 {
-		ack.Ret = ret
-		return &ack, nil
-	}
 
-	v, err := nameSpace.GetAllVolume()
+	v, err := GetAllVolume()
 	if err != nil {
 		logger.Error("GetAllVolume Info failed:%v for VolumeInfo", err)
-		ack.Ret = ret
+		ack.Ret = -1
 		return &ack, nil
 	}
 
@@ -80,31 +78,13 @@ func (s *MetaNodeServer) VolumeInfos(ctx context.Context, in *mp.VolumeInfosReq)
 		volume.RGID = vv.RGID
 		volume.TotalSize = vv.TotalSize
 		volume.AllocatedSize = vv.AllocatedSize
+		volume.UUID = vv.UUID
+		volume.Name = vv.Name
+		volume.Tier = vv.Tier
 
 		ack.Volumes = append(ack.Volumes, &volume)
 	}
 
-	logger.Debug("VolumeInfos: %v", ack.Volumes)
-
-	return &ack, nil
-}
-
-// rpc GetAllVolumeInfos(VolumeInfoReq) returns (VolumeInfoAck){};
-func (s *MetaNodeServer) GetAllVolumeInfos(ctx context.Context, in *mp.VolumeInfosReq) (*mp.VolumeInfosAck, error) {
-	ack := mp.VolumeInfosAck{}
-	ret, nameSpace := ns.GetNameSpace("Cluster")
-	if ret != 0 {
-		ack.Ret = ret
-		return &ack, nil
-	}
-
-	v, err := nameSpace.GetAllVolume()
-	if err != nil {
-		logger.Error("GetAllVolume Info failed:%v for VolumeInfo", err)
-		ack.Ret = ret
-		return &ack, nil
-	}
-	ack.Volumes = v
 	logger.Debug("VolumeInfos: %v", ack.Volumes)
 
 	return &ack, nil
@@ -187,11 +167,11 @@ func (s *MetaNodeServer) NodeMonitor(ctx context.Context, in *mp.NodeMonitorReq)
 		diskio.IoTime = v.IoTime
 		diskio.IopsInProgress = v.IopsInProgress
 		diskio.Name = v.Name
-		diskio.ReadBytes = diskio.ReadBytes
-		diskio.ReadCount = diskio.ReadCount
-		diskio.WeightedIO = diskio.WeightedIO
-		diskio.WriteBytes = diskio.WriteBytes
-		diskio.WriteCount = diskio.WriteCount
+		diskio.ReadBytes = v.ReadBytes
+		diskio.ReadCount = v.ReadCount
+		diskio.WeightedIO = v.WeightedIO
+		diskio.WriteBytes = v.WriteBytes
+		diskio.WriteCount = v.WriteCount
 		ack.NodeInfo.DiskIOs = append(ack.NodeInfo.DiskIOs, &diskio)
 	}
 

@@ -3,11 +3,11 @@ package raftopt
 import (
 	"bufio"
 	"encoding/json"
-	log "github.com/tigcode/containerfs/logger"
-	btree "github.com/tigcode/containerfs/metanode/raftopt/BTree"
-	"github.com/tigcode/raft"
-	"github.com/tigcode/raft/proto"
-	"github.com/tigcode/raft/storage/wal"
+	log "github.com/tiglabs/containerfs/logger"
+	"github.com/tiglabs/containerfs/metanode/raftopt/BTree"
+	"github.com/tiglabs/raft"
+	"github.com/tiglabs/raft/proto"
+	"github.com/tiglabs/raft/storage/wal"
 	"io"
 	"io/ioutil"
 	"os"
@@ -50,7 +50,7 @@ func CreateKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64
 	var index uint64
 
 	if UUID != "Cluster" {
-		index, err = LoadKvSnapShoot(kvsm, path.Join(dir, UUID, "wal", "snap"))
+		index, err = LoadKvSnapShot(kvsm, path.Join(dir, UUID, "wal", "snap"))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -76,8 +76,8 @@ func CreateKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64
 
 }
 
-//TakeKvSnapShoot ...
-func TakeKvSnapShoot(ms *KvStateMachine, rsg *wal.Storage, path string) error {
+//TakeKvSnapShot ...
+func TakeKvSnapShot(ms *KvStateMachine, rsg *wal.Storage, path string) error {
 
 	_, err := os.Stat(path)
 	if err == nil {
@@ -185,16 +185,16 @@ func TakeKvSnapShoot(ms *KvStateMachine, rsg *wal.Storage, path string) error {
 	f.Close()
 	err = rsg.Truncate(ms.applied)
 	if err != nil {
-		log.Error("TakeKvSnapShoot Truncate failed index : %v , err :%v", ms.applied, err)
+		log.Error("TakeKvSnapShot Truncate failed index : %v , err :%v", ms.applied, err)
 		return err
 	}
-	log.Error("TakeKvSnapShoot Truncate Success index : %v ", ms.applied)
+	log.Error("TakeKvSnapShot Truncate Success index : %v ", ms.applied)
 
 	return nil
 }
 
-//LoadKvSnapShoot ...
-func LoadKvSnapShoot(ms *KvStateMachine, path string) (uint64, error) {
+//LoadKvSnapShot ...
+func LoadKvSnapShot(ms *KvStateMachine, path string) (uint64, error) {
 	fi, err := os.Open(path + "/applied")
 	if err != nil {
 		return 0, nil

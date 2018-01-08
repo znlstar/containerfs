@@ -5,10 +5,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/tigcode/containerfs/logger"
-	dp "github.com/tigcode/containerfs/proto/dp"
-	mp "github.com/tigcode/containerfs/proto/mp"
-	"github.com/tigcode/containerfs/utils"
+	"github.com/tiglabs/containerfs/logger"
+	"github.com/tiglabs/containerfs/proto/dp"
+	"github.com/tiglabs/containerfs/proto/mp"
+	"github.com/tiglabs/containerfs/utils"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	//"google.golang.org/grpc/keepalive"
@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/shirou/gopsutil/cpu"
@@ -31,20 +32,47 @@ import (
 	utilnet "github.com/shirou/gopsutil/net"
 )
 
+// Master Struct
+type C2MReplServerStream struct {
+	stream dp.DataNode_C2MReplServer
+	sync.Mutex
+	NeedBreak    bool
+	BlockGroupID uint64
+}
+type M2SReplClientStream struct {
+	s      *DataNodeServer
+	stream dp.DataNode_M2SReplClient
+	sync.Mutex
+	BlockGroupID uint64
+}
+
+// Slave Struct
+type M2SReplServerStream struct {
+	stream       dp.DataNode_M2SReplServer
+	NeedBreak    bool
+	BlockGroupID uint64
+}
+type S2BReplClientStream struct {
+	stream       dp.DataNode_S2BReplClient
+	BlockGroupID uint64
+}
+
 // DataNodeServer ...
 type DataNodeServer struct {
-	Mutex sync.Mutex
+	ClientStreamID                 uint64
+	C2MReplServerStreamCacheLocker sync.RWMutex
+	C2MReplServerStreamCache       map[uint64]*C2MReplServerStream
+
+	M2SReplClientStreamCacheLocker sync.RWMutex
+	M2SReplClientStreamCache       map[uint64]*M2SReplClientStream
 }
 
 type addr struct {
-	Ipnr  net.IP
-	IPInt int32
-	IPStr string
-	Port  int32
-	Path  string
-	Flag  string
-	Log   string
-	Tier  string
+	Host string
+	Path string
+	Flag string
+	Log  string
+	Tier string
 }
 
 var MetaNodePeers []string
@@ -55,12 +83,12 @@ var DataNodeServerAddr addr
 
 func startDataService() {
 
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", DataNodeServerAddr.Port))
+	lis, err := net.Listen("tcp", DataNodeServerAddr.Host)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to listen on:%v", DataNodeServerAddr.Port))
+		panic(fmt.Sprintf("Failed to listen on:%v", DataNodeServerAddr.Host))
 	}
 	s := grpc.NewServer()
-	dp.RegisterDataNodeServer(s, &DataNodeServer{})
+	dp.RegisterDataNodeServer(s, &DataNodeServer{M2SReplClientStreamCache: make(map[uint64]*M2SReplClientStream), C2MReplServerStreamCache: make(map[uint64]*C2MReplServerStream)})
 	reflection.Register(s)
 	if err := s.Serve(lis); err != nil {
 		panic("Failed to serve")
@@ -76,11 +104,8 @@ func registryToMeta() {
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
 
-	dnIP := utils.InetNtoa(DataNodeServerAddr.IPInt)
-
-	var datanodeRegistryReq mp.Datanode
-	datanodeRegistryReq.Ip = dnIP.String()
-	datanodeRegistryReq.Port = DataNodeServerAddr.Port
+	var datanodeRegistryReq mp.DataNode
+	datanodeRegistryReq.Host = DataNodeServerAddr.Host
 	diskInfo := utils.DiskUsage(DataNodeServerAddr.Path)
 	datanodeRegistryReq.Capacity = int32(float64(diskInfo.All) / float64(1024*1024*1024))
 	datanodeRegistryReq.Free = int32(float64(diskInfo.Free) / float64(1024*1024*1024))
@@ -89,7 +114,7 @@ func registryToMeta() {
 	datanodeRegistryReq.Tier = DataNodeServerAddr.Tier
 	datanodeRegistryReq.Status = 0
 
-	ack, err := mc.DatanodeRegistry(context.Background(), &datanodeRegistryReq)
+	ack, err := mc.DataNodeRegistry(context.Background(), &datanodeRegistryReq)
 	if err != nil {
 		logger.Debug("datanode statup failed : registry to metanode failed ! err %v", err)
 		os.Exit(1)
@@ -106,8 +131,8 @@ func registryToMeta() {
 }
 
 // DatanodeHealthCheck rpc GetChunks(GetChunksReq) returns (GetChunksAck){};
-func (s *DataNodeServer) DatanodeHealthCheck(ctx context.Context, in *dp.DatanodeHealthCheckReq) (*dp.DatanodeHealthCheckAck, error) {
-	ack := dp.DatanodeHealthCheckAck{}
+func (s *DataNodeServer) DataNodeHealthCheck(ctx context.Context, in *dp.DataNodeHealthCheckReq) (*dp.DataNodeHealthCheckAck, error) {
+	ack := dp.DataNodeHealthCheckAck{}
 	f, err := os.OpenFile(DataNodeServerAddr.Path+"/health", os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0666)
 	if err != nil {
 		logger.Error("Open datanode check health file error:%v", err)
@@ -124,6 +149,36 @@ func (s *DataNodeServer) DatanodeHealthCheck(ctx context.Context, in *dp.Datanod
 	ack.Used = int32(float64(diskInfo.Used) / float64(1024*1024*1024))
 	ack.Ret = 0
 	return &ack, nil
+}
+
+func (s *DataNodeServer) writeDisk(blockID uint64, chunkID uint64, databuf []byte) error {
+
+	path := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID))
+	if ok, err := utils.LocalPathExists(path); !ok && err == nil {
+		os.MkdirAll(path, 0777)
+	}
+
+	chunkFileName := path + "/chunk-" + strconv.Itoa(int(chunkID))
+
+	f, err := os.OpenFile(chunkFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0660)
+	if err != nil {
+		logger.Error("Openfile:%v  error:%v ", chunkFileName, err)
+		return err
+	}
+	defer f.Close()
+
+	w := bufio.NewWriter(f)
+	_, err = w.Write(databuf)
+	if err != nil {
+		return err
+	}
+
+	err = w.Flush()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // SeekWriteChunk ...
@@ -169,63 +224,316 @@ func (s *DataNodeServer) SeekWriteChunk(ctx context.Context, in *dp.SeekWriteChu
 		return &ack, nil
 	}
 
-	/*w := bufio.NewWriter(f)
-	_, err = w.Write(in.Databuf)
-	if err != nil {
-		logger.Error("%v Write error:%v ", chunkFileName, err)
-		ack.Ret = -1
-		return &ack, nil
-	}
-
-	err = w.Flush()
-	if err != nil {
-		logger.Error("%v Flush error:%v ", chunkFileName, err)
-		ack.Ret = -1
-		return &ack, nil
-	}*/
-
 	ack.Ret = 0
 	return &ack, nil
 }
 
 // WriteChunk ...
 func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (*dp.WriteChunkAck, error) {
-	var f *os.File
-	var err error
 
 	ack := dp.WriteChunkAck{}
-	chunkID := in.ChunkID
-	blockID := in.BlockID
-
-	path := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID))
-	if ok, err := utils.LocalPathExists(path); !ok && err == nil {
-		os.MkdirAll(path, 0777)
-	}
-
-	chunkFileName := path + "/chunk-" + strconv.Itoa(int(chunkID))
-
-	f, err = os.OpenFile(chunkFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0660)
-	defer f.Close()
-	if err != nil {
-		logger.Error("Openfile:%v  error:%v ", chunkFileName, err)
+	ack.CommitID = in.CommitID
+	if err := s.writeDisk(in.BlockID, in.ChunkID, in.Databuf); err != nil {
 		ack.Ret = -1
-		return &ack, nil
 	}
-	w := bufio.NewWriter(f)
-	_, err = w.Write(in.Databuf)
-	if err != nil {
-		ack.Ret = -1
-		return &ack, nil
-	}
-
-	err = w.Flush()
-	if err != nil {
-		ack.Ret = -1
-		return &ack, nil
-	}
-
-	ack.Ret = 0
 	return &ack, nil
+}
+
+// On Master
+// C2MRepl ...
+func (s *DataNodeServer) C2MRepl(stream dp.DataNode_C2MReplServer) error {
+
+	clientStreamID := atomic.AddUint64(&s.ClientStreamID, 1)
+
+	logger.Debug("C2MRepl init ,clientStreamID %v", clientStreamID)
+
+	C2MReplServerStream := &C2MReplServerStream{stream: stream}
+	s.C2MReplServerStreamCacheLocker.Lock()
+	s.C2MReplServerStreamCache[clientStreamID] = C2MReplServerStream
+	s.C2MReplServerStreamCacheLocker.Unlock()
+
+	defer func() {
+		logger.Debug("C2MRepl out ,clientStreamID %v", clientStreamID)
+		s.C2MReplServerStreamCacheLocker.Lock()
+		delete(s.C2MReplServerStreamCache, clientStreamID)
+		s.C2MReplServerStreamCacheLocker.Unlock()
+	}()
+
+	for {
+		in, err := C2MReplServerStream.stream.Recv()
+		if err == io.EOF {
+			logger.Debug("C2MRepl C2MStream Recv EOF")
+			return nil
+		}
+		if err != nil {
+			logger.Error("C2MRepl C2MStream Recv err %v", err)
+			return err
+		}
+		if C2MReplServerStream.NeedBreak {
+			return errors.New("C2MReplServerStream NeedBreak")
+		}
+
+		C2MReplServerStream.BlockGroupID = in.BlockGroupID
+
+		// save to localdisk
+		if err := s.writeDisk(in.Master.BlockID, in.ChunkID, in.Databuf); err != nil {
+			logger.Error("C2MRepl writeDisk err %v", err)
+			return err
+		}
+
+		in.StreamID = clientStreamID
+
+		s.M2SReplClientStreamCacheLocker.RLock()
+		M2SReplClientStream, ok := s.M2SReplClientStreamCache[in.BlockGroupID]
+		s.M2SReplClientStreamCacheLocker.RUnlock()
+
+		if ok && M2SReplClientStream != nil && M2SReplClientStream.stream != nil {
+
+			logger.Debug("C2MRepl Get M2SReplClientStream ok ...")
+
+			M2SReplClientStream.Lock()
+			if err := M2SReplClientStream.stream.Send(in); err != nil {
+				M2SReplClientStream.Unlock()
+
+				M2SReplClientStream = s.CreateM2SReplClientStream(in.Slave.Host, in.BlockGroupID)
+				if M2SReplClientStream == nil {
+					return errors.New("CreateM2SRepl err")
+				}
+
+				M2SReplClientStream.Lock()
+				if err := M2SReplClientStream.stream.Send(in); err != nil {
+					M2SReplClientStream.Unlock()
+					return err
+				}
+			}
+			M2SReplClientStream.Unlock()
+
+		} else {
+
+			M2SReplClientStream = s.CreateM2SReplClientStream(in.Slave.Host, in.BlockGroupID)
+			if M2SReplClientStream == nil {
+				return errors.New("CreateM2SRepl err")
+			}
+
+			M2SReplClientStream.Lock()
+			if err := M2SReplClientStream.stream.Send(in); err != nil {
+				M2SReplClientStream.Unlock()
+				return err
+			}
+			M2SReplClientStream.Unlock()
+
+		}
+
+	}
+}
+
+func (s *DataNodeServer) CreateM2SReplClientStream(slaveHost string, blockGroupID uint64) *M2SReplClientStream {
+
+	s.M2SReplClientStreamCacheLocker.Lock()
+	delete(s.M2SReplClientStreamCache, blockGroupID)
+	s.M2SReplClientStreamCacheLocker.Unlock()
+
+	M2Sconn, err := grpc.Dial(slaveHost, grpc.WithInsecure(), grpc.WithBlock(), grpc.FailOnNonTempDialError(true))
+	if err != nil {
+		logger.Error("CreateM2SStream failed Dial slave %v err %v", slaveHost, err)
+		return nil
+	}
+	M2Sclient := dp.NewDataNodeClient(M2Sconn)
+	stream, err := M2Sclient.M2SRepl(context.Background())
+	if err != nil {
+		logger.Error("CreateM2SStream failed rpc slave %v err %v", slaveHost, err)
+		return nil
+	}
+
+	M2SReplClientStream := &M2SReplClientStream{stream: stream, s: s, BlockGroupID: blockGroupID}
+	s.M2SReplClientStreamCacheLocker.Lock()
+	s.M2SReplClientStreamCache[blockGroupID] = M2SReplClientStream
+	s.M2SReplClientStreamCacheLocker.Unlock()
+
+	go M2SReplClientStream.BackWard()
+
+	logger.Debug("CreateM2SStream success ...")
+
+	return M2SReplClientStream
+}
+
+func (mss *M2SReplClientStream) BackWard() {
+
+	logger.Debug("Starting M2SRecv init ...")
+
+	defer func() {
+
+		mss.s.C2MReplServerStreamCacheLocker.Lock()
+		for _, v := range mss.s.C2MReplServerStreamCache {
+			if v.BlockGroupID == mss.BlockGroupID {
+				v.NeedBreak = true
+			}
+		}
+		mss.s.C2MReplServerStreamCacheLocker.Unlock()
+
+	}()
+
+	for {
+		in, err := mss.stream.Recv()
+		if err == io.EOF {
+			logger.Debug("M2SRecv M2SStream.Recv EOF")
+			break
+		}
+		if err != nil {
+			logger.Error("M2SRecv M2SStream.Recv err %v", err)
+			break
+		}
+
+		mss.s.C2MReplServerStreamCacheLocker.RLock()
+		C2MReplServerStream, ok := mss.s.C2MReplServerStreamCache[in.StreamID]
+		mss.s.C2MReplServerStreamCacheLocker.RUnlock()
+
+		if ok && C2MReplServerStream != nil {
+			logger.Error("M2SRecv get StreamID %v C2MReplServerStream success", in.StreamID)
+			C2MReplServerStream.Lock()
+			if err := C2MReplServerStream.stream.Send(in); err != nil {
+				logger.Error("M2SRecv get StreamID %v C2MReplServerStream success but send err %v", in.StreamID, err)
+				C2MReplServerStream.Unlock()
+				C2MReplServerStream.NeedBreak = true
+				return
+			}
+			C2MReplServerStream.Unlock()
+
+		} else {
+			logger.Error("M2SRecv get StreamID %v C2MReplServerStream err", in.StreamID)
+		}
+
+	}
+
+}
+
+func (s *DataNodeServer) M2SRepl(stream dp.DataNode_M2SReplServer) error {
+
+	var S2BReplClientStream *S2BReplClientStream
+
+	defer func() {
+		if S2BReplClientStream != nil {
+			S2BReplClientStream.stream.CloseSend()
+			S2BReplClientStream = nil
+		}
+	}()
+
+	M2SReplServerStream := &M2SReplServerStream{stream: stream}
+
+	for {
+		in, err := M2SReplServerStream.stream.Recv()
+		if err == io.EOF {
+			logger.Debug("M2SRepl  stream.Recv EOF")
+			return nil
+		}
+		if err != nil {
+			logger.Error("M2SRepl  stream.Recv err %v", err)
+			return err
+		}
+
+		if M2SReplServerStream.NeedBreak {
+			return errors.New("M2SReplServerStream NeedBreak")
+		}
+
+		if S2BReplClientStream == nil {
+			S2BReplClientStream = s.CreateS2BStream(in.Backup.Host, M2SReplServerStream)
+			if S2BReplClientStream == nil {
+				return err
+			}
+		}
+
+		// save to localdisk
+		if err := s.writeDisk(in.Slave.BlockID, in.ChunkID, in.Databuf); err != nil {
+			logger.Error("M2SRepl writeDisk failed %v", err)
+			return err
+		}
+
+		if err := S2BReplClientStream.stream.Send(in); err != nil {
+			logger.Error("M2SRepl S2BReplClientStream.Send failed %v", err)
+			ack := dp.StreamWriteAck{CommitID: in.CommitID, DataLen: in.DataLen, ChunkID: in.ChunkID, BlockGroupID: in.BlockGroupID, StreamID: in.StreamID, Ret: -1}
+			stream.Send(&ack)
+			return err
+		}
+
+	}
+
+}
+
+func (s *DataNodeServer) CreateS2BStream(backUpHost string, M2SReplServerStream *M2SReplServerStream) *S2BReplClientStream {
+
+	S2Bconn, err := grpc.Dial(backUpHost, grpc.WithInsecure(), grpc.WithBlock(), grpc.FailOnNonTempDialError(true))
+	if err != nil {
+		logger.Error("StreamM2SWrite first create S2Bconn S2BReplClientStream Dail to Backup failed %v", err)
+		return nil
+	}
+	S2Bclient := dp.NewDataNodeClient(S2Bconn)
+
+	S2BReplClientStream := &S2BReplClientStream{}
+	S2BReplClientStream.stream, err = S2Bclient.S2BRepl(context.Background())
+	if err != nil {
+		logger.Error("StreamM2SWrite first create S2BReplClientStream S2BRepl rpc to Backup failed %v", err)
+		return nil
+	}
+
+	go S2BReplClientStream.BackWard(M2SReplServerStream)
+	return S2BReplClientStream
+}
+
+func (sbs *S2BReplClientStream) BackWard(M2SReplServerStream *M2SReplServerStream) {
+
+	for {
+		in, err := sbs.stream.Recv()
+		if err == io.EOF {
+			logger.Debug("S2BReplClientStream BackWard  S2BReplClientStream.Recv EOF")
+			M2SReplServerStream.NeedBreak = true
+			break
+		}
+		if err != nil {
+			logger.Error("S2BReplClientStream BackWard  S2BReplClientStream.Recv err %v", err)
+			M2SReplServerStream.NeedBreak = true
+			break
+		}
+		if err := M2SReplServerStream.stream.Send(in); err != nil {
+			logger.Error("S2BReplClientStream BackWard  M2SReplServerStream.Send err %v", err)
+			M2SReplServerStream.NeedBreak = true
+			break
+		}
+
+	}
+
+}
+
+// On BackUP
+
+// S2BRepl ...
+
+func (s *DataNodeServer) S2BRepl(stream dp.DataNode_S2BReplServer) error {
+
+	for {
+		in, err := stream.Recv()
+		if err == io.EOF {
+			logger.Debug("S2BRepl  stream.Recv EOF")
+			return nil
+		}
+		if err != nil {
+			logger.Debug("S2BRepl  stream.Recv err %v", err)
+			return err
+		}
+
+		ack := dp.StreamWriteAck{CommitID: in.CommitID, DataLen: in.DataLen, ChunkID: in.ChunkID, BlockGroupID: in.BlockGroupID, StreamID: in.StreamID, Ret: 0}
+		// save to localdisk
+		if err := s.writeDisk(in.Backup.BlockID, in.ChunkID, in.Databuf); err != nil {
+			logger.Error("S2BRepl  writeDisk err %v", err)
+			ack.Ret = -1
+		}
+
+		if err := stream.Send(&ack); err != nil {
+			logger.Error("S2BRepl  stream.Send err %v", err)
+			return err
+		}
+
+	}
+
 }
 
 // StreamReadChunk ...
@@ -273,7 +581,7 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 
 		if totalsize >= readsize {
 
-			n = n - int((totalsize - readsize))
+			n = n - int(totalsize-readsize)
 			ack.Databuf = buf[:n]
 			if err := stream.Send(&ack); err != nil {
 				logger.Error("Send stream data to fuse error:%v", err)
@@ -299,19 +607,12 @@ func (s *DataNodeServer) RecvMigrateMsg(ctx context.Context, in *dp.RecvMigrateR
 	sid := in.SrcBlkID
 	smount := in.SrcMount
 	did := in.DstBlkID
-	dip := in.DstIP
-	dport := in.DstPort
+	dhost := in.DstHost
 	dmount := in.DstMount
 
-	dDnAddr := dip + fmt.Sprintf(":%d", dport)
-	/*
-		conn, err := grpc.Dial(dDnAddr, grpc.WithInsecure(), grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Timeout: 5 * time.Minute,
-		}))
-	*/
-	conn, err := grpc.Dial(dDnAddr, grpc.WithInsecure())
+	conn, err := grpc.Dial(dhost, grpc.WithInsecure())
 	if err != nil {
-		logger.Error("Migrate failed : Dial to DestDataNode:%v failed:%v !", dDnAddr, err)
+		logger.Error("Migrate failed : Dial to DestDataNode:%v failed:%v !", dhost, err)
 		ack.Ret = -1
 		return &ack, err
 	}
@@ -322,7 +623,7 @@ func (s *DataNodeServer) RecvMigrateMsg(ctx context.Context, in *dp.RecvMigrateR
 
 	stream, err := dc.SendMigrateData(ctxtmp)
 	if err != nil {
-		logger.Error("SendMigrate to DestDataNode:%v err:%v", dDnAddr, err)
+		logger.Error("SendMigrate to DestDataNode:%v err:%v", dhost, err)
 		ack.Ret = -1
 		return &ack, err
 	}
@@ -483,11 +784,11 @@ func (s *DataNodeServer) NodeMonitor(ctx context.Context, in *dp.NodeMonitorReq)
 		diskio.IoTime = v.IoTime
 		diskio.IopsInProgress = v.IopsInProgress
 		diskio.Name = v.Name
-		diskio.ReadBytes = diskio.ReadBytes
-		diskio.ReadCount = diskio.ReadCount
-		diskio.WeightedIO = diskio.WeightedIO
-		diskio.WriteBytes = diskio.WriteBytes
-		diskio.WriteCount = diskio.WriteCount
+		diskio.ReadBytes = v.ReadBytes
+		diskio.ReadCount = v.ReadCount
+		diskio.WeightedIO = v.WeightedIO
+		diskio.WriteBytes = v.WriteBytes
+		diskio.WriteCount = v.WriteCount
 		ack.NodeInfo.DiskIOs = append(ack.NodeInfo.DiskIOs, &diskio)
 	}
 
@@ -569,7 +870,7 @@ func init() {
 	var loglevel string
 	var port int
 
-	flag.StringVar(&DataNodeServerAddr.IPStr, "host", "127.0.0.1", "ContainerFS DataNode Host")
+	flag.StringVar(&DataNodeServerAddr.Host, "host", "127.0.0.1:8001", "ContainerFS DataNode Host")
 	flag.IntVar(&port, "port", 8000, "ContainerFS DataNode Port")
 	flag.StringVar(&DataNodeServerAddr.Tier, "tier", "sas", "ContainerFS DataNode Storage Medium")
 	flag.StringVar(&DataNodeServerAddr.Path, "datapath", "", "ContainerFS DataNode Data Path")
@@ -580,11 +881,6 @@ func init() {
 	flag.Parse()
 	MetaNodePeers = strings.Split(*addr, ",")
 
-	DataNodeServerAddr.Port = int32(port)
-	ipnr := net.ParseIP(DataNodeServerAddr.IPStr)
-	DataNodeServerAddr.Ipnr = ipnr
-	ipint := utils.InetAton(ipnr)
-	DataNodeServerAddr.IPInt = ipint
 	DataNodeServerAddr.Flag = DataNodeServerAddr.Path + "/.registryflag"
 
 	logger.SetConsole(true)

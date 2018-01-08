@@ -1,67 +1,133 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	pbproto "github.com/golang/protobuf/proto"
-	"github.com/tigcode/containerfs/logger"
-	ns "github.com/tigcode/containerfs/metanode/namespace"
-	"github.com/tigcode/containerfs/metanode/raftopt"
-	dp "github.com/tigcode/containerfs/proto/dp"
-	mp "github.com/tigcode/containerfs/proto/mp"
-	"github.com/tigcode/containerfs/utils"
+	"github.com/tiglabs/containerfs/logger"
+	ns "github.com/tiglabs/containerfs/metanode/namespace"
+	"github.com/tiglabs/containerfs/metanode/raftopt"
+	"github.com/tiglabs/containerfs/proto/dp"
+	"github.com/tiglabs/containerfs/proto/mp"
+	"github.com/tiglabs/containerfs/utils"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"math/rand"
 	"strconv"
+	"strings"
 	"time"
 )
 
-// for Datanode registry
-func (s *MetaNodeServer) DatanodeRegistry(ctx context.Context, in *mp.Datanode) (*mp.DatanodeRegistryAck, error) {
-	ack := mp.DatanodeRegistryAck{}
+func GetAllDataNode() ([]*mp.DataNode, error) {
 	ret, nameSpace := ns.GetNameSpace("Cluster")
 	if ret != 0 {
-		logger.Error("Get Cluster MetaNode NameSpace err for DatanodeRegistry")
-		ack.Ret = ret
-		return &ack, nil
+		logger.Error("Get Cluster MetaNode NameSpace err for GetAllDataNode")
+		return []*mp.DataNode{}, nil
 	}
-	ack.Ret = nameSpace.DatanodeRegistry(in)
-	return &ack, nil
+	v, _ := nameSpace.RaftGroup.DataNodeGetAll(1)
+	var datanodes []*mp.DataNode
+
+	for _, vv := range v {
+		datanode := mp.DataNode{}
+		err := pbproto.Unmarshal(vv.V, &datanode)
+		if err != nil {
+			return []*mp.DataNode{}, err
+		}
+		datanodes = append(datanodes, &datanode)
+	}
+	return datanodes, nil
+
 }
 
-func (s *MetaNodeServer) GetAllDatanode(ctx context.Context, in *mp.GetAllDatanodeReq) (*mp.GetAllDatanodeAck, error) {
-	ack := mp.GetAllDatanodeAck{}
+func delDataNode(host string) error {
 	ret, nameSpace := ns.GetNameSpace("Cluster")
 	if ret != 0 {
-		logger.Error("Get Cluster MetaNode NameSpace err for GetAllDatanode")
+		logger.Error("Get Cluster MetaNode NameSpace err for DelDataNode")
+		return errors.New("not exist")
+	}
+	v, err := nameSpace.RaftGroup.BlockGetRange(1, host)
+	if err != nil {
+		return err
+	}
+
+	for _, vv := range v {
+		block := mp.Block{}
+		pbproto.Unmarshal(vv.V, &block)
+		key := host + "-" + strconv.FormatUint(block.BlkID, 10)
+		nameSpace.RaftGroup.BlockDel(1, key)
+	}
+
+	err = nameSpace.RaftGroup.DelDataNode(1, host)
+	if err != nil {
+		err := nameSpace.RaftGroup.DelDataNode(1, host)
+		if err != nil {
+			logger.Error("Delete DataNode raftgrpid:%v,key:%v,err:%v", 1, host, err)
+			return err
+		}
+	}
+	return nil
+}
+
+func GetAllVolume() ([]*mp.Volume, error) {
+	ret, nameSpace := ns.GetNameSpace("Cluster")
+	if ret != 0 {
+		logger.Error("Get Cluster MetaNode NameSpace err for GetAllVolume")
+		return []*mp.Volume{}, nil
+	}
+	v, _ := nameSpace.RaftGroup.VolsGetAll(1)
+	var vols []*mp.Volume
+
+	for _, vv := range v {
+		volume := mp.Volume{}
+		err := pbproto.Unmarshal(vv.V, &volume)
+		if err != nil {
+			return []*mp.Volume{}, err
+		}
+		vols = append(vols, &volume)
+	}
+	return vols, nil
+}
+
+// for DataNode registry
+func (s *MetaNodeServer) DataNodeRegistry(ctx context.Context, in *mp.DataNode) (*mp.DataNodeRegistryAck, error) {
+	ack := mp.DataNodeRegistryAck{}
+	ret, nameSpace := ns.GetNameSpace("Cluster")
+	if ret != 0 {
+		logger.Error("Get Cluster MetaNode NameSpace err for DataNodeRegistry")
 		ack.Ret = ret
 		return &ack, nil
 	}
 
-	v, err := nameSpace.GetAllDatanode()
+	k := in.Host
+	v, _ := pbproto.Marshal(in)
+	err := nameSpace.RaftGroup.DataNodeSet(1, k, v)
 	if err != nil {
-		logger.Error("GetAllDatanode Info failed:%v", err)
+		logger.Error("DataNode(%v) Register to MetaNode failed:%v", in.Host, err)
 		return &ack, err
 	}
 
-	ack.Datanodes = v
+	logger.Debug("DataNode(%v) Register to MetaNode success", in.Host)
+	return &ack, nil
+}
+
+func (s *MetaNodeServer) GetDataNode(ctx context.Context, in *mp.GetAllDataNodeReq) (*mp.GetAllDataNodeAck, error) {
+	ack := mp.GetAllDataNodeAck{}
+	v, err := GetAllDataNode()
+	if err != nil {
+		logger.Error("GetAllDataNode Info failed:%v", err)
+		return &ack, err
+	}
+
+	ack.DataNodes = v
 	ack.Ret = 0
 	return &ack, nil
 }
 
-func (s *MetaNodeServer) DelDatanode(ctx context.Context, in *mp.DelDatanodeReq) (*mp.DelDatanodeAck, error) {
-	ack := mp.DelDatanodeAck{}
-	ret, nameSpace := ns.GetNameSpace("Cluster")
-	if ret != 0 {
-		logger.Error("Get Cluster MetaNode NameSpace err for DelDatanode")
-		ack.Ret = ret
-		return &ack, nil
-	}
-
-	port, _ := strconv.Atoi(in.Port)
-	err := nameSpace.DataNodeDel(in.Ip, port)
+func (s *MetaNodeServer) DelDataNode(ctx context.Context, in *mp.DelDataNodeReq) (*mp.DelDataNodeAck, error) {
+	ack := mp.DelDataNodeAck{}
+	err := delDataNode(in.Host)
 	if err != nil {
-		logger.Error("Delete DataNode(%v:%v) failed, err:%v", in.Ip, port, err)
+		logger.Error("Delete DataNode(%v) failed, err:%v", in.Host, err)
 		return &ack, err
 	}
 	ack.Ret = 0
@@ -125,19 +191,19 @@ func (s *MetaNodeServer) CreateVol(ctx context.Context, in *mp.CreateVolReq) (*m
 		return &ack, nil
 	}
 
-	rgID, err := nameSpace.AllocateRGID()
+	rgID, err := nameSpace.RaftGroup.RGIDGET(1)
 	if err != nil {
 		logger.Error("Create Volume name:%v uuid:%v raftGroupID error:%v", voluuid, in.VolName, err)
 		return &ack, err
 	}
 
-	vv, err := nameSpace.GetAllDatanode()
+	vv, err := GetAllDataNode()
 	if err != nil {
-		logger.Error("GetAllDatanode Info failed:%v for CreateVol", err)
+		logger.Error("GetAllDataNode Info failed:%v for CreateVol", err)
 		return &ack, err
 	}
 
-	inuseNodes := make(map[string][]*mp.Datanode)
+	inuseNodes := make(map[string][]*mp.DataNode)
 	allip := make([]string, 0)
 
 	// pass bad status and free not enough datanodes
@@ -145,7 +211,8 @@ func (s *MetaNodeServer) CreateVol(ctx context.Context, in *mp.CreateVolReq) (*m
 		if v.Status != 0 || v.Free < 30 || v.Tier != in.Tier {
 			continue
 		}
-		k := v.Ip
+		tmp := strings.Split(v.Host, ":")
+		k := tmp[0]
 		inuseNodes[k] = append(inuseNodes[k], v)
 	}
 
@@ -154,13 +221,13 @@ func (s *MetaNodeServer) CreateVol(ctx context.Context, in *mp.CreateVolReq) (*m
 	}
 
 	if len(allip) < 3 {
-		logger.Error("Create Volume:%v Tier:%v but datanode nums:%v less than 3, so forbid CreateVol", voluuid, in.Tier, len(allip))
+		logger.Error("Create Volume:%v Tier:%v but DataNode nums:%v less than 3, so forbid CreateVol", voluuid, in.Tier, len(allip))
 		ack.Ret = -1
 		return &ack, nil
 	}
 
 	for i := int32(0); i < blkgrpnum; i++ {
-		bgID, err := nameSpace.AllocateBGID()
+		bgID, err := nameSpace.RaftGroup.BGIDGET(1)
 		if err != nil {
 			logger.Error("AllocateBGID for CreateVol failed, err:%v", err)
 			return &ack, err
@@ -181,19 +248,18 @@ func (s *MetaNodeServer) CreateVol(ctx context.Context, in *mp.CreateVolReq) (*m
 				return &ack, nil
 			}
 
-			blockID, err := nameSpace.AllocateBlockID()
+			blockID, err := nameSpace.RaftGroup.BlockIDGET(1)
 			if err != nil {
 				logger.Error("AllocateBlockID for CreateVol failed, err:%v", err)
 				return &ack, err
 			}
 			block.BlkID = blockID
-			block.Ip = inuseNodes[ipkey][idx[0]].Ip
-			block.Port = inuseNodes[ipkey][idx[0]].Port
+			block.Host = inuseNodes[ipkey][idx[0]].Host
 			block.Path = inuseNodes[ipkey][idx[0]].MountPoint
 			block.Status = inuseNodes[ipkey][idx[0]].Status
 			block.BGID = bgID
 			block.VolID = voluuid
-			k := block.Ip + fmt.Sprintf(":%d", block.Port) + fmt.Sprintf("-%d", block.BlkID)
+			k := block.Host + fmt.Sprintf("-%d", block.BlkID)
 			v, _ := pbproto.Marshal(&block)
 			err = nameSpace.RaftGroup.BlockSet(1, k, v)
 			if err != nil {
@@ -203,11 +269,23 @@ func (s *MetaNodeServer) CreateVol(ctx context.Context, in *mp.CreateVolReq) (*m
 			bg.Blocks = append(bg.Blocks, &block)
 			//update this datanode freesize
 			inuseNodes[ipkey][idx[0]].Free = inuseNodes[ipkey][idx[0]].Free - 5
-			key := ipkey + fmt.Sprintf(":%d", block.Port)
+			key := block.Host
 			val, _ := pbproto.Marshal(inuseNodes[ipkey][idx[0]])
 			nameSpace.RaftGroup.DataNodeSet(1, key, val)
 
 		}
+		/*
+			conn, err := grpc.Dial(bg.Blocks[0].Host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
+			dc := dp.NewDataNodeClient(conn)
+
+			req := dp.CreateBlockGroupStreamReq{SlaveHost: bg.Blocks[1].Host, BlockGroupID: bgID}
+
+			ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+			_, err = dc.CreateBlockGroupStream(ctx, &req)
+			if err != nil {
+				return &ack, err
+			}
+		*/
 		key := voluuid + fmt.Sprintf("-%d", bgID)
 		val, _ := pbproto.Marshal(bg)
 		err = nameSpace.RaftGroup.BGPSet(1, key, val)
@@ -353,13 +431,13 @@ func (s *MetaNodeServer) ExpandVolRS(ctx context.Context, in *mp.ExpandVolRSReq)
 		blkgrpnum = 6
 	}
 
-	vv, err := cnameSpace.GetAllDatanode()
+	vv, err := GetAllDataNode()
 	if err != nil {
-		logger.Error("GetAllDatanode Info failed:%v for ExpandVolRS", err)
+		logger.Error("GetAllDataNode Info failed:%v for ExpandVolRS", err)
 		return &ack, err
 	}
 
-	inuseNodes := make(map[string][]*mp.Datanode)
+	inuseNodes := make(map[string][]*mp.DataNode)
 	allip := make([]string, 0)
 
 	// pass bad status and free not enough datanodes
@@ -367,7 +445,8 @@ func (s *MetaNodeServer) ExpandVolRS(ctx context.Context, in *mp.ExpandVolRSReq)
 		if v.Status != 0 || v.Free < 30 || v.Tier != tier {
 			continue
 		}
-		k := v.Ip
+		tmp := strings.Split(v.Host, ":")
+		k := tmp[0]
 		inuseNodes[k] = append(inuseNodes[k], v)
 	}
 
@@ -376,7 +455,7 @@ func (s *MetaNodeServer) ExpandVolRS(ctx context.Context, in *mp.ExpandVolRSReq)
 	}
 
 	if len(allip) < 3 {
-		logger.Error("Expand Volume:%v Tier:%v but datanode nums:%v less than 3, so forbid ExpandVol", in.VolID, tier, len(allip))
+		logger.Error("Expand Volume:%v Tier:%v but DataNode nums:%v less than 3, so forbid ExpandVol", in.VolID, tier, len(allip))
 		ack.Ret = -1
 		return &ack, nil
 	}
@@ -384,7 +463,7 @@ func (s *MetaNodeServer) ExpandVolRS(ctx context.Context, in *mp.ExpandVolRSReq)
 	bgps := []*mp.BGP{}
 
 	for i := int32(0); i < blkgrpnum; i++ {
-		bgID, err := cnameSpace.AllocateBGID()
+		bgID, err := cnameSpace.RaftGroup.BGIDGET(1)
 		if err != nil {
 			logger.Error("AllocateBGID for ExpandVolRS failed, err:%v", err)
 			return &ack, err
@@ -404,19 +483,18 @@ func (s *MetaNodeServer) ExpandVolRS(ctx context.Context, in *mp.ExpandVolRSReq)
 				ack.Ret = -1
 				return &ack, nil
 			}
-			blockID, err := cnameSpace.AllocateBlockID()
+			blockID, err := cnameSpace.RaftGroup.BlockIDGET(1)
 			if err != nil {
 				logger.Error("AllocateBlockID for ExpandVolRS failed, err:%v", err)
 				return &ack, err
 			}
 			block.BlkID = blockID
-			block.Ip = inuseNodes[ipkey][idx[0]].Ip
-			block.Port = inuseNodes[ipkey][idx[0]].Port
+			block.Host = inuseNodes[ipkey][idx[0]].Host
 			block.Path = inuseNodes[ipkey][idx[0]].MountPoint
 			block.Status = inuseNodes[ipkey][idx[0]].Status
 			block.BGID = bgID
 			block.VolID = in.VolID
-			k := block.Ip + fmt.Sprintf(":%d", block.Port) + fmt.Sprintf("-%d", block.BlkID)
+			k := block.Host + fmt.Sprintf("-%d", block.BlkID)
 			v, _ := pbproto.Marshal(&block)
 			err = cnameSpace.RaftGroup.BlockSet(1, k, v)
 			if err != nil {
@@ -426,11 +504,23 @@ func (s *MetaNodeServer) ExpandVolRS(ctx context.Context, in *mp.ExpandVolRSReq)
 			bg.Blocks = append(bg.Blocks, &block)
 			//update this datanode freesize
 			inuseNodes[ipkey][idx[0]].Free = inuseNodes[ipkey][idx[0]].Free - 5
-			key := ipkey + fmt.Sprintf(":%d", block.Port)
+			key := block.Host
 			val, _ := pbproto.Marshal(inuseNodes[ipkey][idx[0]])
 			cnameSpace.RaftGroup.DataNodeSet(1, key, val)
 
 		}
+		/*
+			conn, err := grpc.Dial(bg.Blocks[0].Host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
+			dc := dp.NewDataNodeClient(conn)
+
+			req := dp.CreateBlockGroupStreamReq{SlaveHost: bg.Blocks[1].Host, BlockGroupID: bgID}
+
+			ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+			_, err = dc.CreateBlockGroupStream(ctx, &req)
+			if err != nil {
+				return &ack, err
+			}
+		*/
 		key := in.VolID + fmt.Sprintf("-%d", bgID)
 		val, _ := pbproto.Marshal(bg)
 		err = cnameSpace.RaftGroup.BGPSet(1, key, val)
@@ -465,28 +555,28 @@ func (s *MetaNodeServer) DelVolRSForExpand(ctx context.Context, in *mp.DelVolRSF
 	for _, v := range in.BGPS {
 		delBlkBadNum := 0
 		for _, vv := range v.Blocks {
-			blkKey := vv.Ip + fmt.Sprintf(":%d-%d", vv.Port, vv.BlkID)
+			blkKey := vv.Host + fmt.Sprintf("-%d", vv.BlkID)
 			err := nameSpace.RaftGroup.BlockDel(1, blkKey)
 			if err != nil {
 				delBlkBadNum += 1
 				continue
 			}
 
-			tmpDatanode := &mp.Datanode{}
-			datanodeKey := vv.Ip + fmt.Sprintf(":%d", vv.Port)
-			v, err := nameSpace.RaftGroup.DatanodeGet(1, datanodeKey)
+			tmpDataNode := &mp.DataNode{}
+			datanodeKey := vv.Host
+			v, err := nameSpace.RaftGroup.DataNodeGet(1, datanodeKey)
 			if err != nil {
 				delBlkBadNum += 1
 				continue
 			}
-			err = pbproto.Unmarshal(v, tmpDatanode)
+			err = pbproto.Unmarshal(v, tmpDataNode)
 			if err != nil {
 				delBlkBadNum += 1
 				continue
 			}
 
-			tmpDatanode.Free = tmpDatanode.Free + 5
-			val, err := pbproto.Marshal(tmpDatanode)
+			tmpDataNode.Free = tmpDataNode.Free + 5
+			val, err := pbproto.Marshal(tmpDataNode)
 			if err != nil {
 				delBlkBadNum += 1
 				continue
@@ -545,7 +635,7 @@ func (s *MetaNodeServer) DeleteVol(ctx context.Context, in *mp.DeleteVolReq) (*m
 
 		delBlkBadNum := 0
 		for _, vv := range bgp.Blocks {
-			blkKey := vv.Ip + fmt.Sprintf(":%d-%d", vv.Port, vv.BlkID)
+			blkKey := vv.Host + fmt.Sprintf("-%d", vv.BlkID)
 			err := nameSpace.RaftGroup.BlockDel(1, blkKey)
 			if err != nil {
 				logger.Error("Delete Block:%v map from Cluster MetaNodeAddr for DeleteVol failed, err:%v", blkKey, err)
@@ -553,22 +643,22 @@ func (s *MetaNodeServer) DeleteVol(ctx context.Context, in *mp.DeleteVolReq) (*m
 				continue
 			}
 
-			tmpDatanode := &mp.Datanode{}
-			datanodeKey := vv.Ip + fmt.Sprintf(":%d", vv.Port)
-			v, err := nameSpace.RaftGroup.DatanodeGet(1, datanodeKey)
+			tmpDataNode := &mp.DataNode{}
+			datanodeKey := vv.Host
+			v, err := nameSpace.RaftGroup.DataNodeGet(1, datanodeKey)
 			if err != nil {
 				logger.Error("Get DataNode:%v map from Cluster MetaNodeAddr for Update Free+5:%v failed for DeleteVol, err:%v", datanodeKey, err)
 				delBlkBadNum += 1
 				continue
 			}
-			err = pbproto.Unmarshal(v, tmpDatanode)
+			err = pbproto.Unmarshal(v, tmpDataNode)
 			if err != nil {
 				delBlkBadNum += 1
 				continue
 			}
 
-			tmpDatanode.Free = tmpDatanode.Free + 5
-			val, err := pbproto.Marshal(tmpDatanode)
+			tmpDataNode.Free = tmpDataNode.Free + 5
+			val, err := pbproto.Marshal(tmpDataNode)
 			if err != nil {
 				delBlkBadNum += 1
 				continue
@@ -601,8 +691,6 @@ func (s *MetaNodeServer) Migrate(ctx context.Context, in *mp.MigrateReq) (*mp.Mi
 	ack := mp.MigrateAck{}
 
 	go func() {
-		dnIP := in.DataNodeIP
-		dnPort := in.DataNodePort
 		ret, nameSpace := ns.GetNameSpace("Cluster")
 		if ret != 0 {
 			logger.Error("Get Cluster NameSpace for Migrate failed, ret:%v", ret)
@@ -610,14 +698,14 @@ func (s *MetaNodeServer) Migrate(ctx context.Context, in *mp.MigrateReq) (*mp.Mi
 			return
 		}
 
-		minKey := dnIP + fmt.Sprintf(":%d", dnPort)
+		minKey := in.DataNodeHost
 
-		v, err := nameSpace.RaftGroup.DatanodeGet(1, minKey)
+		v, err := nameSpace.RaftGroup.DataNodeGet(1, minKey)
 		if err != nil {
-			logger.Error("Get Datanode Tier info for ExpandVolRS failed, err:%v", err)
+			logger.Error("Get DataNode Tier info for ExpandVolRS failed, err:%v", err)
 			return
 		}
-		datanode := mp.Datanode{}
+		datanode := mp.DataNode{}
 		err = pbproto.Unmarshal(v, &datanode)
 		if err != nil {
 			return
@@ -626,7 +714,7 @@ func (s *MetaNodeServer) Migrate(ctx context.Context, in *mp.MigrateReq) (*mp.Mi
 
 		result, err := nameSpace.RaftGroup.BlockGetRange(1, minKey)
 		if err != nil {
-			logger.Error("Get Datanode %v Need Migrate Blocks failed, err:%v", minKey, err)
+			logger.Error("Get DataNode %v Need Migrate Blocks failed, err:%v", minKey, err)
 			return
 		}
 		totalNum := len(result)
@@ -634,7 +722,7 @@ func (s *MetaNodeServer) Migrate(ctx context.Context, in *mp.MigrateReq) (*mp.Mi
 		var successNum int
 		var failedNum int
 
-		logger.Debug("Migrating DataNode(%v:%v) Blocks Start ---------->>>>>>>>>>>>>>> Total nums:%v", dnIP, dnPort, totalNum)
+		logger.Debug("Migrating DataNode(%v) Blocks Start ---------->>>>>>>>>>>>>>> Total nums:%v", in.DataNodeHost, totalNum)
 
 		for i, v := range result {
 			tBlk := &mp.Block{}
@@ -646,14 +734,14 @@ func (s *MetaNodeServer) Migrate(ctx context.Context, in *mp.MigrateReq) (*mp.Mi
 			ret := s.BeginMigrate(tBlk, tier)
 			if ret != 0 {
 				failedNum++
-				logger.Error("Migrating DataNode(%v:%v) Block:%v failed ----->>>>>  Total num:%v , cur index:%v", dnIP, dnPort, tBlk, totalNum, i)
+				logger.Error("Migrating DataNode(%v) Block:%v failed ----->>>>>  Total num:%v , cur index:%v", in.DataNodeHost, tBlk, totalNum, i)
 			} else {
 				successNum++
-				logger.Debug("Migrating DataNode(%v:%v) Block:%v success ----->>>>>  Total num:%v , cur index:%v", dnIP, dnPort, tBlk, totalNum, i)
+				logger.Debug("Migrating DataNode(%v) Block:%v success ----->>>>>  Total num:%v , cur index:%v", in.DataNodeHost, tBlk, totalNum, i)
 			}
 		}
 
-		logger.Debug("Migrating DataNode(%v:%v) Blocks Done ----------<<<<<<<<<<<<<<<<< Total num:%v , Success num:%v , Failed num:%v", dnIP, dnPort, totalNum, successNum, failedNum)
+		logger.Debug("Migrating DataNode(%v) Blocks Done ----------<<<<<<<<<<<<<<<<< Total num:%v , Success num:%v , Failed num:%v", in.DataNodeHost, totalNum, successNum, failedNum)
 
 	}()
 
@@ -697,21 +785,25 @@ func (s *MetaNodeServer) BeginMigrate(in *mp.Block, tier string) int {
 		return -1
 	}
 
-	datanodes, err := nameSpace.GetAllDatanode()
+	datanodes, err := GetAllDataNode()
 	if err != nil {
-		logger.Error("GetAllDatanode Info failed:%v for Migrate Block", err)
+		logger.Error("GetAllDataNode Info failed:%v for Migrate Block", err)
 		return -1
 	}
 
-	inuseNodes := make(map[string][]*mp.Datanode)
+	inuseNodes := make(map[string][]*mp.DataNode)
 	allip := make([]string, 0)
 
 	// pass bad status and free not enough datanodes
 	for _, v := range datanodes {
-		if v.Status != 0 || v.Free < 10 || v.Tier != tier || v.Ip == blks[0].Ip {
+
+		tmp1 := strings.Split(v.Host, ":")
+		tmp2 := strings.Split(blks[0].Host, ":")
+
+		if v.Status != 0 || v.Free < 10 || v.Tier != tier || tmp1[0] == tmp2[0] {
 			continue
 		}
-		k := v.Ip
+		k := tmp1[0]
 		inuseNodes[k] = append(inuseNodes[k], v)
 	}
 
@@ -736,15 +828,14 @@ func (s *MetaNodeServer) BeginMigrate(in *mp.Block, tier string) int {
 	}
 
 	newBlk := mp.Block{}
-	blockID, err := nameSpace.AllocateBlockID()
+	blockID, err := nameSpace.RaftGroup.BlockIDGET(1)
 	newBlk.BlkID = blockID
-	newBlk.Ip = inuseNodes[ipkey][idx[0]].Ip
-	newBlk.Port = inuseNodes[ipkey][idx[0]].Port
+	newBlk.Host = inuseNodes[ipkey][idx[0]].Host
 	newBlk.Path = inuseNodes[ipkey][idx[0]].MountPoint
 	newBlk.Status = inuseNodes[ipkey][idx[0]].Status
 	newBlk.BGID = in.BGID
 	newBlk.VolID = in.VolID
-	k := newBlk.Ip + fmt.Sprintf(":%d", newBlk.Port) + fmt.Sprintf("-%d", newBlk.BlkID)
+	k := newBlk.Host + fmt.Sprintf("-%d", newBlk.BlkID)
 	val, _ := pbproto.Marshal(&newBlk)
 	err = nameSpace.RaftGroup.BlockSet(1, k, val)
 	if err != nil {
@@ -753,7 +844,7 @@ func (s *MetaNodeServer) BeginMigrate(in *mp.Block, tier string) int {
 
 	//update this datanode freesize
 	inuseNodes[ipkey][idx[0]].Free = inuseNodes[ipkey][idx[0]].Free - 5
-	key := ipkey + fmt.Sprintf(":%d", newBlk.Port)
+	key := newBlk.Host
 	val, _ = pbproto.Marshal(inuseNodes[ipkey][idx[0]])
 	nameSpace.RaftGroup.DataNodeSet(1, key, val)
 
@@ -763,14 +854,14 @@ func (s *MetaNodeServer) BeginMigrate(in *mp.Block, tier string) int {
 			continue
 		}
 		logger.Debug("Migrate Block:%v copydata from BackBlock:%v to NewBlock:%v", in, v, newBlk)
-		ret := beginMigrateBlk(v.BlkID, v.Ip, v.Port, v.Path, newBlk.BlkID, newBlk.Ip, newBlk.Port, newBlk.Path)
+		ret := beginMigrateBlk(v.BlkID, v.Host, v.Path, newBlk.BlkID, newBlk.Host, newBlk.Path)
 		if ret == 0 {
 			blks = append(blks, &newBlk)
 			pbg := &mp.BGP{}
 			pbg.Blocks = blks
 			val, _ := pbproto.Marshal(pbg)
 			err1 := nameSpace.RaftGroup.BGPSet(1, bgKey, val)
-			oldblkKey := in.Ip + fmt.Sprintf(":%d", in.Port) + fmt.Sprintf("-%d", in.BlkID)
+			oldblkKey := in.Host + fmt.Sprintf("-%d", in.BlkID)
 			err2 := nameSpace.RaftGroup.BlockDel(1, oldblkKey)
 			if err1 == nil && err2 == nil {
 				logger.Debug("Migrate OldBlock:%v to NewBlock:%v Copydata from BackBlock:%v Success -- migrateUpdateMeta Success -- migrateUpdateDb Success!", in, newBlk, v)
@@ -792,8 +883,8 @@ func (s *MetaNodeServer) BeginMigrate(in *mp.Block, tier string) int {
 	}
 }
 
-func beginMigrateBlk(sid uint64, sip string, sport int32, smount string, did uint64, dip string, dport int32, dmount string) int32 {
-	sDnAddr := sip + fmt.Sprintf(":%d", sport)
+func beginMigrateBlk(sid uint64, shost string, smount string, did uint64, dhost string, dmount string) int32 {
+	sDnAddr := shost
 	conn, err := grpc.Dial(sDnAddr, grpc.WithInsecure())
 
 	if err != nil {
@@ -805,8 +896,7 @@ func beginMigrateBlk(sid uint64, sip string, sport int32, smount string, did uin
 	tRecvMigrateReq := &dp.RecvMigrateReq{
 		SrcBlkID: sid,
 		SrcMount: smount,
-		DstIP:    dip,
-		DstPort:  dport,
+		DstHost:  dhost,
 		DstBlkID: did,
 		DstMount: dmount,
 	}
@@ -822,77 +912,72 @@ func beginMigrateBlk(sid uint64, sip string, sport int32, smount string, did uin
 }
 
 func DetectDataNodes(metaServer *MetaNodeServer) {
-	ret, nameSpace := ns.GetNameSpace("Cluster")
-	if ret != 0 {
-		logger.Error("Get Cluster MetaNode NameSpace err for detectDataNodes")
-		return
-	}
 
-	vv, err := nameSpace.GetAllDatanode()
+	vv, err := GetAllDataNode()
 	if err != nil {
-		logger.Error("GetAllDatanode Info failed:%v for detectDatanodes", err)
+		logger.Error("GetAllDataNode Info failed:%v for detectDataNodes", err)
 		return
 	}
 
 	for _, v := range vv {
-		go DetectDatanode(metaServer, v)
+		go DetectDataNode(metaServer, v)
 	}
 }
 
-func DetectDatanode(metaServer *MetaNodeServer, v *mp.Datanode) {
-	dnAddr := v.Ip + fmt.Sprintf(":%d", v.Port)
+func DetectDataNode(metaServer *MetaNodeServer, v *mp.DataNode) {
+	dnAddr := v.Host
 	conn, err := grpc.Dial(dnAddr, grpc.WithInsecure())
 	if err != nil {
 		if v.Status == 0 {
-			logger.Error("Detect DataNode:%v failed : Dial to datanode failed !", dnAddr)
+			logger.Error("Detect DataNode:%v failed : Dial to DataNode failed !", dnAddr)
 			v.Status = 1
-			SetDatanodeMap(v)
-			logger.Debug("Detect Datanode(%v) status from good to bad, set datanode map success", dnAddr)
+			SetDataNodeMap(v)
+			logger.Debug("Detect Datanode(%v) status from good to bad, set DataNode map success", dnAddr)
 			//UpdateBlock(metaServer, v.Ip, v.Port, 1)
 		}
 		return
 	}
 	defer conn.Close()
 	c := dp.NewDataNodeClient(conn)
-	var DatanodeHealthCheckReq dp.DatanodeHealthCheckReq
-	pDatanodeHealthCheckAck, err := c.DatanodeHealthCheck(context.Background(), &DatanodeHealthCheckReq)
+	var DataNodeHealthCheckReq dp.DataNodeHealthCheckReq
+	pDataNodeHealthCheckAck, err := c.DataNodeHealthCheck(context.Background(), &DataNodeHealthCheckReq)
 	if err != nil {
 		if v.Status == 0 {
 			v.Status = 1
-			SetDatanodeMap(v)
-			logger.Debug("Detect Datanode(%v) status from good to bad, set datanode map success", dnAddr)
+			SetDataNodeMap(v)
+			logger.Debug("Detect DataNode(%v) status from good to bad, set DataNode map success", dnAddr)
 			//UpdateBlock(metaServer, v.Ip, v.Port, 1)
 		}
 		return
 	}
 
-	if pDatanodeHealthCheckAck.Status != 0 {
+	if pDataNodeHealthCheckAck.Status != 0 {
 		if v.Status == 0 {
-			v.Status = pDatanodeHealthCheckAck.Status
-			v.Used = pDatanodeHealthCheckAck.Used
-			SetDatanodeMap(v)
-			logger.Debug("Detect Datanode(%v) status from good to bad, set datanode map success", dnAddr)
+			v.Status = pDataNodeHealthCheckAck.Status
+			v.Used = pDataNodeHealthCheckAck.Used
+			SetDataNodeMap(v)
+			logger.Debug("Detect DataNode(%v) status from good to bad, set DataNode map success", dnAddr)
 			//UpdateBlock(metaServer, v.Ip, v.Port, 1)
 		}
 		return
 	}
 	if v.Status != 0 {
 		v.Status = 0
-		logger.Debug("Detect Datanode(%v) status from bad to good, set datanode map success", dnAddr)
+		logger.Debug("Detect DataNode(%v) status from bad to good, set DataNode map success", dnAddr)
 		//UpdateBlock(metaServer, v.Ip, v.Port, 0)
 	}
-	v.Used = pDatanodeHealthCheckAck.Used
-	SetDatanodeMap(v)
+	v.Used = pDataNodeHealthCheckAck.Used
+	SetDataNodeMap(v)
 	return
 }
 
-func SetDatanodeMap(v *mp.Datanode) int {
+func SetDataNodeMap(v *mp.DataNode) int {
 	ret, nameSpace := ns.GetNameSpace("Cluster")
 	if ret != 0 {
 		logger.Error("Get Cluster MetaNode NameSpace err for SetDatanodeMap")
 		return -1
 	}
-	key := v.Ip + fmt.Sprintf(":%d", v.Port)
+	key := v.Host
 	val, _ := pbproto.Marshal(v)
 	err := nameSpace.RaftGroup.DataNodeSet(1, key, val)
 	if err != nil {

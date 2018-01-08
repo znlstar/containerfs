@@ -7,9 +7,13 @@ service DataNode {
     rpc SeekWriteChunk(SeekWriteChunkReq) returns (WriteChunkAck){};
     rpc StreamReadChunk(StreamReadChunkReq) returns (stream StreamReadChunkAck){};
     rpc DeleteChunk(DeleteChunkReq) returns (DeleteChunkAck){};
-    rpc DatanodeHealthCheck(DatanodeHealthCheckReq) returns (DatanodeHealthCheckAck){};
+    rpc DataNodeHealthCheck(DataNodeHealthCheckReq) returns (DataNodeHealthCheckAck){};
     rpc RecvMigrateMsg(RecvMigrateReq) returns (RecvMigrateAck){};
     rpc SendMigrateData(stream FInfo) returns (SendAck){};
+
+    rpc C2MRepl(stream StreamWriteReq) returns (stream StreamWriteAck) {}
+    rpc M2SRepl(stream StreamWriteReq) returns (stream StreamWriteAck) {}
+    rpc S2BRepl(stream StreamWriteReq) returns (stream StreamWriteAck) {}
 
     rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
 }
@@ -17,17 +21,58 @@ service DataNode {
 message WriteChunkReq{
     uint64 ChunkID = 1;
     uint64 BlockID = 2;
-    bytes Databuf = 3;
+    bytes  Databuf = 3;
+    uint64 CommitID = 4;
 }
+
 message SeekWriteChunkReq{
     uint64 ChunkID = 1;
     uint64 BlockID = 2;
     bytes Databuf = 3;
     int64 ChunkOffset = 4;
 }
+
 message WriteChunkAck{
     int32 Ret = 1;
+    uint64 CommitID = 2;
 }
+
+message Block{
+    string host = 1;
+    uint64 BlockID = 2;
+}
+
+message CreateBlockGroupStreamReq{
+    string SlaveHost = 1;
+    uint64 BlockGroupID = 2;
+}
+
+message CreateBlockGroupStreamAck{
+    int32 ret = 1;
+}
+
+
+message StreamWriteReq{
+    uint64 ChunkID = 1;
+    bytes  Databuf = 2;
+    uint32 DataLen = 3;
+    uint64 CommitID = 4;
+    Block Master = 5;
+    Block Slave = 6;
+    Block Backup = 7;
+    uint64 BlockGroupID = 8; 
+    uint64 StreamID = 9;
+}
+
+message StreamWriteAck{
+    int32 Ret = 1;
+    uint64 ChunkID = 2;
+    uint64 CommitID = 3;
+    uint32 DataLen = 4;
+    uint64 BlockGroupID = 5; 
+    uint64 StreamID = 6;
+}
+
 
 message StreamReadChunkReq{
     uint64 ChunkID = 1;
@@ -49,10 +94,10 @@ message DeleteChunkAck{
     int32 Ret = 1;
 }
 
-message DatanodeHealthCheckReq{
+message DataNodeHealthCheckReq{
 }
 
-message DatanodeHealthCheckAck{
+message DataNodeHealthCheckAck{
     int32 Ret = 1;
     int32 Used = 2;
     int32 Status = 3;   
@@ -62,8 +107,7 @@ message RecvMigrateReq{
     uint64 SrcBlkID = 1;
     string SrcMount = 2;
     uint64 DstBlkID = 3;
-    string DstIP = 4;
-    int32  DstPort = 5;
+    string DstHost = 4;
     string DstMount = 6;
 }
 

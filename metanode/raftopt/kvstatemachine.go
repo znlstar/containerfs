@@ -4,11 +4,11 @@ import (
 	"errors"
 	"fmt"
 	pbproto "github.com/golang/protobuf/proto"
-	"github.com/tigcode/containerfs/logger"
-	btree "github.com/tigcode/containerfs/metanode/raftopt/BTree"
-	kvp "github.com/tigcode/containerfs/proto/kvp"
-	"github.com/tigcode/raft"
-	"github.com/tigcode/raft/proto"
+	"github.com/tiglabs/containerfs/logger"
+	"github.com/tiglabs/containerfs/metanode/raftopt/BTree"
+	"github.com/tiglabs/containerfs/proto/kvp"
+	"github.com/tiglabs/raft"
+	"github.com/tiglabs/raft/proto"
 	"io"
 	"strconv"
 	"strings"
@@ -457,7 +457,7 @@ func (ms *KvStateMachine) InodeIDGET(raftGroupID uint64) (uint64, error) {
 	return inodeID, nil
 }
 
-func (ms *KvStateMachine) DatanodeGetAll(raftGroupID uint64) ([]btree.DataNodeKV, error) {
+func (ms *KvStateMachine) DataNodeGetAll(raftGroupID uint64) ([]btree.DataNodeKV, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
 	}
@@ -500,7 +500,7 @@ func (ms *KvStateMachine) DataNodeGetRange(raftGroupID uint64, minKey string) ([
 	return v, nil
 }
 
-func (ms *KvStateMachine) DatanodeGet(raftGroupID uint64, key string) ([]byte, error) {
+func (ms *KvStateMachine) DataNodeGet(raftGroupID uint64, key string) ([]byte, error) {
 	var item btree.DataNodeKV
 	item.K = key
 	newItem := ms.dataNodeData.Get(item)
@@ -534,7 +534,7 @@ func (ms *KvStateMachine) DataNodeSet(raftGroupID uint64, key string, value []by
 }
 
 //DentryDel ...
-func (ms *KvStateMachine) DataNodeDel(raftGroupID uint64, key string) error {
+func (ms *KvStateMachine) DelDataNode(raftGroupID uint64, key string) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
 	}

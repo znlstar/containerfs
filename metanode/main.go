@@ -4,12 +4,12 @@ import (
 	"flag"
 	"fmt"
 	pbproto "github.com/golang/protobuf/proto"
-	"github.com/tigcode/containerfs/logger"
-	ns "github.com/tigcode/containerfs/metanode/namespace"
-	"github.com/tigcode/containerfs/metanode/raftopt"
-	mp "github.com/tigcode/containerfs/proto/mp"
-	"github.com/tigcode/raft"
-	"github.com/tigcode/raft/proto"
+	"github.com/tiglabs/containerfs/logger"
+	ns "github.com/tiglabs/containerfs/metanode/namespace"
+	"github.com/tiglabs/containerfs/metanode/raftopt"
+	"github.com/tiglabs/containerfs/proto/mp"
+	"github.com/tiglabs/raft"
+	"github.com/tiglabs/raft/proto"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -91,11 +91,11 @@ func (s *MetaNodeServer) ExpandNameSpace(ctx context.Context, in *mp.ExpandNameS
 	return &ack, nil
 }
 
-// SnapShootNameSpace ...
-func (s *MetaNodeServer) SnapShootNameSpace(ctx context.Context, in *mp.SnapShootNameSpaceReq) (*mp.SnapShootNameSpaceAck, error) {
-	ack := mp.SnapShootNameSpaceAck{}
-	ack.Ret = ns.SnapShootNameSpace(s.RaftServer, in.VolID, MetaNodeServerAddr.waldir)
-	// send to follower metadatas to SnapShoot
+// SnapShotNameSpace ...
+func (s *MetaNodeServer) SnapShotNameSpace(ctx context.Context, in *mp.SnapShotNameSpaceReq) (*mp.SnapShotNameSpaceAck, error) {
+	ack := mp.SnapShotNameSpaceAck{}
+	ack.Ret = ns.SnapShotNameSpace(s.RaftServer, in.VolID, MetaNodeServerAddr.waldir)
+	// send to follower metadatas to SnapShot
 	if in.Type == 0 {
 		for _, addr := range raftopt.AddrDatabase {
 			if addr.Grpc == s.Addr.Grpc {
@@ -103,22 +103,22 @@ func (s *MetaNodeServer) SnapShootNameSpace(ctx context.Context, in *mp.SnapShoo
 			}
 			conn2, err2 := grpc.Dial(addr.Grpc, grpc.WithInsecure())
 			if err2 != nil {
-				logger.Error("told peers to SnapShoot NameSpace Failed ...")
+				logger.Error("told peers to SnapShot NameSpace Failed ...")
 				continue
 			}
 			defer conn2.Close()
 			mc := mp.NewMetaNodeClient(conn2)
-			pmSnapShootNameSpaceReq := &mp.SnapShootNameSpaceReq{
+			pmSnapShotNameSpaceReq := &mp.SnapShotNameSpaceReq{
 				VolID: in.VolID,
 				Type:  1,
 			}
-			pmSnapShootNameSpaceAck, ret := mc.SnapShootNameSpace(context.Background(), pmSnapShootNameSpaceReq)
+			pmSnapShotNameSpaceAck, ret := mc.SnapShotNameSpace(context.Background(), pmSnapShotNameSpaceReq)
 			if ret != nil {
-				logger.Error("told peers to SnapShoot NameSpace Failed ...")
+				logger.Error("told peers to SnapShot NameSpace Failed ...")
 				continue
 			}
-			if pmSnapShootNameSpaceAck.Ret != 0 {
-				logger.Error("told peers to SnapShoot NameSpace Failed ...")
+			if pmSnapShotNameSpaceAck.Ret != 0 {
+				logger.Error("told peers to SnapShot NameSpace Failed ...")
 				continue
 			}
 		}
@@ -288,17 +288,20 @@ func (s *MetaNodeServer) GetFileChunksDirect(ctx context.Context, in *mp.GetFile
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
 		ack.Ret = ret
+		logger.Error("GetFileChunksDirect GetNameSpace err ... ")
 		return &ack, nil
 	}
 	ok, chunkInfos, inode := nameSpace.GetFileChunksDirect(in.PInode, in.Name)
 	if ok != 0 {
 		ack.Ret = ok
+		logger.Error("GetFileChunksDirect nameSpace.GetFileChunksDirect err %v", ok)
 		return &ack, nil
 	}
 
 	ret, nameSpace = ns.GetNameSpace("Cluster")
 	if ret != 0 {
 		ack.Ret = ret
+		logger.Error("GetFileChunksDirect GetNameSpace(Cluster) err ret %v", ret)
 		return &ack, nil
 	}
 	for _, v := range chunkInfos {
@@ -311,6 +314,7 @@ func (s *MetaNodeServer) GetFileChunksDirect(ctx context.Context, in *mp.GetFile
 		blockGroup, err := nameSpace.RaftGroup.BGPGet(1, bgKey)
 		if err != nil {
 			ack.Ret = 1
+			logger.Error("GetFileChunksDirect nameSpace.RaftGroup.BGPGet(1, bgKey) err %v", err)
 			return &ack, nil
 		}
 
@@ -362,6 +366,18 @@ func (s *MetaNodeServer) SyncChunk(ctx context.Context, in *mp.SyncChunkReq) (*m
 		return &ack, nil
 	}
 	ack.Ret = nameSpace.SyncChunk(in.ParentInodeID, in.Name, chunkinfo)
+	return &ack, nil
+}
+
+// AsyncChunk ...
+func (s *MetaNodeServer) AsyncChunk(ctx context.Context, in *mp.AsyncChunkReq) (*mp.AsyncChunkAck, error) {
+	ack := mp.AsyncChunkAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ack.Ret = nameSpace.AsyncChunk(in.ParentInodeID, in.Name, in.ChunkID, in.CommitSize, in.BlockGroupID)
 	return &ack, nil
 }
 

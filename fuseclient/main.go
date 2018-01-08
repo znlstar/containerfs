@@ -5,8 +5,8 @@ import (
 	"bazil.org/fuse/fs"
 	"flag"
 	"fmt"
-	cfs "github.com/tigcode/containerfs/fs"
-	"github.com/tigcode/containerfs/logger"
+	"github.com/tiglabs/containerfs/fs"
+	"github.com/tiglabs/containerfs/logger"
 	"golang.org/x/net/context"
 	"math"
 	"os"
@@ -109,7 +109,6 @@ var _ fs.NodeForgetter = (*dir)(nil)
 var _ fs.NodeMkdirer = (*dir)(nil)
 var _ fs.NodeRemover = (*dir)(nil)
 var _ fs.NodeRenamer = (*dir)(nil)
-var _ fs.NodeFsyncer = (*dir)(nil)
 var _ fs.NodeStringLookuper = (*dir)(nil)
 var _ fs.HandleReadDirAller = (*dir)(nil)
 
@@ -388,18 +387,10 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ret, inodeType, _ := d.fs.cfs.StatDirect(newDir.(*dir).inode, req.NewName)
+	ret, _, _ := d.fs.cfs.StatDirect(newDir.(*dir).inode, req.NewName)
 	if ret == 0 {
-		logger.Debug("newName in newDir is already exsit, inodeType: %v", inodeType)
-		if false == inodeType {
-			logger.Error("Rename newName %v in newDir %v is an exsit dir, un-supportted rename", req.NewName, d.name)
-			return fuse.Errno(syscall.EPERM)
-		}
-		ret = d.fs.cfs.DeleteFileDirect(newDir.(*dir).inode, req.NewName)
-		if ret != 0 {
-			logger.Error("Rename Delete the exist newName %v in newDir %v failed!", req.NewName, d.name)
-			return fuse.Errno(syscall.EPERM)
-		}
+		logger.Error("Rename Failed , newName in newDir is already exsit")
+		return fuse.Errno(syscall.EPERM)
 	}
 
 	if newDir != d {
@@ -456,12 +447,6 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	return nil
 }
 
-// Fsync ...
-func (d *dir) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
-
-	return nil
-}
-
 type node interface {
 	fs.Node
 	setName(name string)
@@ -502,6 +487,8 @@ func (f *File) setParentInode(pdir *dir) {
 // Attr ...
 func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 
+	logger.Debug("File Attr")
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -514,6 +501,9 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Mtime = time.Unix(inodeInfo.ModifiTime, 0)
 	a.Atime = time.Unix(inodeInfo.AccessTime, 0)
 	a.Size = uint64(inodeInfo.FileSize)
+	if f.cfile != nil && a.Size < uint64(f.cfile.FileSizeInCache) {
+		a.Size = uint64(f.cfile.FileSizeInCache)
+	}
 	a.Inode = uint64(inode)
 
 	a.BlockSize = 4 * 1024
@@ -521,10 +511,6 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Mode = 0666
 	a.Valid = time.Minute
 
-	if f.cfile != nil {
-		a.Size = uint64(f.cfile.FileSize)
-	}
-	logger.Debug("File Attr %v size %v", f.name, a.Size)
 	return nil
 }
 
@@ -586,19 +572,22 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.handles--
-
+	var err error
 	if int(req.Flags)&os.O_WRONLY != 0 || int(req.Flags)&os.O_RDWR != 0 {
 		f.writers--
+		if ret := f.cfile.CloseWrite(); ret != 0 {
+			logger.Error("Release CloseWrite err ...")
+			err = fuse.Errno(syscall.EIO)
+		}
 	}
-
+	f.handles--
 	if f.handles == 0 {
+		f.cfile.Close()
 		f.cfile = nil
 	}
-
 	logger.Debug("Release end : name %v pinode %v pname %v", f.name, f.parent.inode, f.parent.name)
 
-	return nil
+	return err
 }
 
 var _ = fs.HandleReader(&File{})
@@ -609,7 +598,8 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if req.Offset == f.cfile.FileSize {
+	if req.Offset == f.cfile.FileSizeInCache {
+
 		logger.Debug("Request Read file offset equal filesize")
 		return nil
 	}
@@ -785,11 +775,6 @@ func closeConns(fs *cfs.CFS) {
 
 	if fs.Conn != nil {
 		fs.Conn.Close()
-	}
-	for _, v := range fs.DataConn {
-		if v != nil {
-			v.Close()
-		}
 	}
 
 }
