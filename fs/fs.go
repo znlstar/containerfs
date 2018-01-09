@@ -281,6 +281,29 @@ func Migrate(host string) int32 {
 	return 0
 }
 
+//
+func VolumeInfos() (int32, []*mp.Volume) {
+	conn, err := DialMeta("Cluster")
+	if err != nil {
+		logger.Error("GetAllDatanode failed,Dial to metanode fail :%v", err)
+		return -1, nil
+	}
+	defer conn.Close()
+	mc := mp.NewMetaNodeClient(conn)
+	pVolumeInfosReq := &mp.VolumeInfosReq{}
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pVolumeInfosAck, err := mc.VolumeInfos(ctx, pVolumeInfosReq)
+	if err != nil {
+		logger.Error("VolumeInfos failed,grpc func err :%v", err)
+		return -1, nil
+	}
+	if pVolumeInfosAck.Ret != 0 {
+		logger.Error("VolumeInfos failed,grpc func ret :%v", pVolumeInfosAck.Ret)
+		return -1, nil
+	}
+	return 0, pVolumeInfosAck.Volumes
+}
+
 // GetVolInfo volume info
 func GetVolInfo(name string) (int32, *mp.GetVolInfoAck) {
 	conn, err := DialMeta("Cluster")
