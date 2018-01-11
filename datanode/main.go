@@ -181,6 +181,53 @@ func (s *DataNodeServer) writeDisk(blockID uint64, chunkID uint64, databuf []byt
 	return nil
 }
 
+// SeekWriteChunk ...
+func (s *DataNodeServer) SeekWriteChunk(ctx context.Context, in *dp.SeekWriteChunkReq) (*dp.WriteChunkAck, error) {
+	var f *os.File
+	var err error
+	var sret int64
+	var ret int
+
+	ack := dp.WriteChunkAck{}
+	chunkID := in.ChunkID
+	blockID := in.BlockID
+	chunkOffset := in.ChunkOffset
+
+	path := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID))
+	if ok, err := utils.LocalPathExists(path); !ok && err == nil {
+		os.MkdirAll(path, 0777)
+	}
+
+	chunkFileName := path + "/chunk-" + strconv.Itoa(int(chunkID))
+
+	logger.Debug("write file %v with offset %v and len %v", chunkFileName, chunkOffset, len(in.Databuf))
+
+	f, err = os.OpenFile(chunkFileName, os.O_RDWR|os.O_CREATE, 0660)
+	defer f.Close()
+	if err != nil {
+		logger.Error("Openfile:%v  error:%v ", chunkFileName, err)
+		ack.Ret = -1
+		return &ack, nil
+	}
+
+	sret, err = f.Seek(chunkOffset, 0)
+	if sret != chunkOffset || err != nil {
+		logger.Error("%v Seek to:%v ret:%v error:%v ", chunkFileName, chunkOffset, sret, err)
+		ack.Ret = -1
+		return &ack, nil
+	}
+
+	ret, err = f.Write(in.Databuf)
+	if ret != len(in.Databuf) || err != nil {
+		logger.Error("%v Write len:%v ret:%v error:%v ", chunkFileName, len(in.Databuf), ret, err)
+		ack.Ret = -1
+		return &ack, nil
+	}
+
+	ack.Ret = 0
+	return &ack, nil
+}
+
 // WriteChunk ...
 func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (*dp.WriteChunkAck, error) {
 
@@ -493,7 +540,7 @@ func (s *DataNodeServer) S2BRepl(stream dp.DataNode_S2BReplServer) error {
 func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.DataNode_StreamReadChunkServer) error {
 	chunkID := in.ChunkID
 	blockID := in.BlockID
-	//offset := in.Offset
+	offset := in.Offset
 	readsize := in.Readsize
 
 	chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
@@ -503,9 +550,19 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 		return err
 	}
 
+	sret, err := f.Seek(offset, 0)
+	if sret != offset || err != nil {
+		logger.Error("%v Seek to:%v ret:%v error:%v ", chunkFileName, offset, sret, err)
+		return err
+	}
+
 	var ack dp.StreamReadChunkAck
 	var totalsize int64
-	buf := make([]byte, 2*1024*1024)
+	bufsize := readsize
+	if bufsize > 2*1024*1024 {
+		bufsize = 2 * 1024 * 1024
+	}
+	buf := make([]byte, bufsize)
 
 	bfRd := bufio.NewReader(f)
 	for {

@@ -109,6 +109,7 @@ var _ fs.NodeForgetter = (*dir)(nil)
 var _ fs.NodeMkdirer = (*dir)(nil)
 var _ fs.NodeRemover = (*dir)(nil)
 var _ fs.NodeRenamer = (*dir)(nil)
+var _ fs.NodeFsyncer = (*dir)(nil)
 var _ fs.NodeStringLookuper = (*dir)(nil)
 var _ fs.HandleReadDirAller = (*dir)(nil)
 
@@ -387,10 +388,18 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ret, _, _ := d.fs.cfs.StatDirect(newDir.(*dir).inode, req.NewName)
+	ret, inodeType, _ := d.fs.cfs.StatDirect(newDir.(*dir).inode, req.NewName)
 	if ret == 0 {
-		logger.Error("Rename Failed , newName in newDir is already exsit")
-		return fuse.Errno(syscall.EPERM)
+		logger.Debug("newName in newDir is already exsit, inodeType: %v", inodeType)
+		if false == inodeType {
+			logger.Error("Rename newName %v in newDir %v is an exsit dir, un-supportted rename", req.NewName, d.name)
+			return fuse.Errno(syscall.EPERM)
+		}
+		ret = d.fs.cfs.DeleteFileDirect(newDir.(*dir).inode, req.NewName)
+		if ret != 0 {
+			logger.Error("Rename Delete the exist newName %v in newDir %v failed!", req.NewName, d.name)
+			return fuse.Errno(syscall.EPERM)
+		}
 	}
 
 	if newDir != d {
@@ -443,6 +452,12 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	}
 
 	logger.Debug("Rename end d.inode %v, req.OldName %v, newDir.(*dir).inode %v , req.NewName %v", d.inode, req.OldName, newDir.(*dir).inode, req.NewName)
+
+	return nil
+}
+
+// Fsync ...
+func (d *dir) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 
 	return nil
 }
@@ -501,6 +516,9 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Mtime = time.Unix(inodeInfo.ModifiTime, 0)
 	a.Atime = time.Unix(inodeInfo.AccessTime, 0)
 	a.Size = uint64(inodeInfo.FileSize)
+	if f.cfile != nil && a.Size < uint64(f.cfile.FileSizeInCache) {
+		a.Size = uint64(f.cfile.FileSizeInCache)
+	}
 	a.Inode = uint64(inode)
 
 	a.BlockSize = 4 * 1024
@@ -579,6 +597,7 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	}
 	f.handles--
 	if f.handles == 0 {
+		f.cfile.Close()
 		f.cfile = nil
 	}
 	logger.Debug("Release end : name %v pinode %v pname %v", f.name, f.parent.inode, f.parent.name)
@@ -593,18 +612,14 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if _, ok := f.cfile.ReaderMap[req.Handle]; !ok {
-		rdinfo := cfs.ReaderInfo{}
-		rdinfo.LastOffset = int64(0)
-		f.cfile.ReaderMap[req.Handle] = &rdinfo
-	}
-	if req.Offset == f.cfile.FileSize {
+
+	if req.Offset == f.cfile.FileSizeInCache {
 
 		logger.Debug("Request Read file offset equal filesize")
 		return nil
 	}
 
-	length := f.cfile.Read(req.Handle, &resp.Data, req.Offset, int64(req.Size))
+	length := f.cfile.Read(&resp.Data, req.Offset, int64(req.Size))
 	if length != int64(req.Size) {
 		logger.Debug("== Read reqsize:%v, but return datasize:%v ==\n", req.Size, length)
 	}
@@ -623,7 +638,7 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	w := f.cfile.Write(req.Data, int32(len(req.Data)))
+	w := f.cfile.Write(req.Data, req.Offset, int32(len(req.Data)))
 	if w != int32(len(req.Data)) {
 		if w == -1 {
 			logger.Error("Write Failed Err:ENOSPC")
