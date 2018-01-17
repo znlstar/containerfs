@@ -132,7 +132,12 @@ func main() {
 		}
 		ret, vi := fs.GetVolInfo(flag.Arg(0))
 		if ret == 0 {
-			fmt.Println(vi)
+			for _, v := range vi.BGPS {
+				fmt.Printf("BG: %v -->\n", v.Blocks[0].BGID)
+				for _, vv := range v.Blocks {
+					fmt.Println(vv)
+				}
+			}
 		} else {
 			fmt.Printf("get volume info failed , ret :%d", ret)
 		}
