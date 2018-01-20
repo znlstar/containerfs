@@ -7,14 +7,14 @@ else
   rm -rf ./output/*
 fi
 
-for dir in ./proto/mp ./proto/dp ./proto/kvp
+for dir in ./proto/mp ./proto/dp ./proto/kvp ./proto/vp
 do
   pushd $dir
   make
   popd
 done
 
-for dir in CLI fuseclient metanode datanode
+for dir in CLI fuseclient metanode datanode volmgr
 do
   pushd $dir
   go get

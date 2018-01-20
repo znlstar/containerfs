@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"github.com/tiglabs/containerfs/logger"
 	"github.com/tiglabs/containerfs/proto/dp"
-	"github.com/tiglabs/containerfs/proto/mp"
+	"github.com/tiglabs/containerfs/proto/vp"
 	"github.com/tiglabs/containerfs/utils"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -17,6 +17,7 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"path"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -31,6 +32,8 @@ import (
 	"github.com/shirou/gopsutil/mem"
 	utilnet "github.com/shirou/gopsutil/net"
 )
+
+var VolMgrHosts []string
 
 // Master Struct
 type C2MReplServerStream struct {
@@ -95,16 +98,16 @@ func startDataService() {
 	}
 }
 
-func registryToMeta() {
-	conn, err := DialMeta("Cluster")
+func registryToVolMgr() {
+	_, conn, err := utils.DialVolMgr(VolMgrHosts)
 	if err != nil {
-		logger.Error("registryToMeta: Dail Meta Failed err:%v", err)
+		logger.Error("registryToVolMgr: Dail VolMgr Failed err:%v", err)
 		os.Exit(1)
 	}
 	defer conn.Close()
-	mc := mp.NewMetaNodeClient(conn)
+	vc := vp.NewVolMgrClient(conn)
 
-	var datanodeRegistryReq mp.DataNode
+	var datanodeRegistryReq vp.DataNode
 	datanodeRegistryReq.Host = DataNodeServerAddr.Host
 	diskInfo := utils.DiskUsage(DataNodeServerAddr.Path)
 	datanodeRegistryReq.Capacity = int32(float64(diskInfo.All) / float64(1024*1024*1024))
@@ -114,14 +117,13 @@ func registryToMeta() {
 	datanodeRegistryReq.Tier = DataNodeServerAddr.Tier
 	datanodeRegistryReq.Status = 0
 
-	ack, err := mc.DataNodeRegistry(context.Background(), &datanodeRegistryReq)
+	ack, err := vc.DataNodeRegistry(context.Background(), &datanodeRegistryReq)
 	if err != nil {
 		logger.Debug("datanode statup failed : registry to metanode failed ! err %v", err)
 		os.Exit(1)
 	}
 	if ack.Ret == 0 {
 		logger.Debug("registry this datanode to metanode success!")
-		os.Create(DataNodeServerAddr.Flag)
 	} else {
 		logger.Debug("datanode statup failed : registry to metanode failed !")
 		os.Exit(1)
@@ -151,14 +153,14 @@ func (s *DataNodeServer) DataNodeHealthCheck(ctx context.Context, in *dp.DataNod
 	return &ack, nil
 }
 
-func (s *DataNodeServer) writeDisk(blockID uint64, chunkID uint64, databuf []byte) error {
+func (s *DataNodeServer) writeDisk(blockGroupID uint64, chunkID uint64, databuf []byte) error {
 
-	path := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID))
-	if ok, err := utils.LocalPathExists(path); !ok && err == nil {
-		os.MkdirAll(path, 0777)
+	bpath := path.Join(DataNodeServerAddr.Path, "blockgroup-"+strconv.FormatUint(blockGroupID, 10))
+	if ok, err := utils.LocalPathExists(bpath); !ok && err == nil {
+		os.MkdirAll(bpath, 0777)
 	}
 
-	chunkFileName := path + "/chunk-" + strconv.Itoa(int(chunkID))
+	chunkFileName := path.Join(bpath, "chunk-"+strconv.FormatUint(chunkID, 10))
 
 	f, err := os.OpenFile(chunkFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0660)
 	if err != nil {
@@ -189,18 +191,15 @@ func (s *DataNodeServer) SeekWriteChunk(ctx context.Context, in *dp.SeekWriteChu
 	var ret int
 
 	ack := dp.WriteChunkAck{}
-	chunkID := in.ChunkID
-	blockID := in.BlockID
-	chunkOffset := in.ChunkOffset
 
-	path := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID))
-	if ok, err := utils.LocalPathExists(path); !ok && err == nil {
-		os.MkdirAll(path, 0777)
+	bpath := path.Join(DataNodeServerAddr.Path, "blockgroup-"+strconv.FormatUint(in.BlockGroupID, 10))
+	if ok, err := utils.LocalPathExists(bpath); !ok && err == nil {
+		os.MkdirAll(bpath, 0777)
 	}
 
-	chunkFileName := path + "/chunk-" + strconv.Itoa(int(chunkID))
+	chunkFileName := path.Join(bpath, "chunk-"+strconv.FormatUint(in.ChunkID, 10))
 
-	logger.Debug("write file %v with offset %v and len %v", chunkFileName, chunkOffset, len(in.Databuf))
+	logger.Debug("write file %v with offset %v and len %v", chunkFileName, in.ChunkOffset, len(in.Databuf))
 
 	f, err = os.OpenFile(chunkFileName, os.O_RDWR|os.O_CREATE, 0660)
 	defer f.Close()
@@ -210,9 +209,9 @@ func (s *DataNodeServer) SeekWriteChunk(ctx context.Context, in *dp.SeekWriteChu
 		return &ack, nil
 	}
 
-	sret, err = f.Seek(chunkOffset, 0)
-	if sret != chunkOffset || err != nil {
-		logger.Error("%v Seek to:%v ret:%v error:%v ", chunkFileName, chunkOffset, sret, err)
+	sret, err = f.Seek(in.ChunkOffset, 0)
+	if sret != in.ChunkOffset || err != nil {
+		logger.Error("%v Seek to:%v ret:%v error:%v ", chunkFileName, in.ChunkOffset, sret, err)
 		ack.Ret = -1
 		return &ack, nil
 	}
@@ -233,7 +232,7 @@ func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (
 
 	ack := dp.WriteChunkAck{}
 	ack.CommitID = in.CommitID
-	if err := s.writeDisk(in.BlockID, in.ChunkID, in.Databuf); err != nil {
+	if err := s.writeDisk(in.BlockGroupID, in.ChunkID, in.Databuf); err != nil {
 		ack.Ret = -1
 	}
 	return &ack, nil
@@ -276,7 +275,7 @@ func (s *DataNodeServer) C2MRepl(stream dp.DataNode_C2MReplServer) error {
 		C2MReplServerStream.BlockGroupID = in.BlockGroupID
 
 		// save to localdisk
-		if err := s.writeDisk(in.Master.BlockID, in.ChunkID, in.Databuf); err != nil {
+		if err := s.writeDisk(in.BlockGroupID, in.ChunkID, in.Databuf); err != nil {
 			logger.Error("C2MRepl writeDisk err %v", err)
 			return err
 		}
@@ -295,7 +294,7 @@ func (s *DataNodeServer) C2MRepl(stream dp.DataNode_C2MReplServer) error {
 			if err := M2SReplClientStream.stream.Send(in); err != nil {
 				M2SReplClientStream.Unlock()
 
-				M2SReplClientStream = s.CreateM2SReplClientStream(in.Slave.Host, in.BlockGroupID)
+				M2SReplClientStream = s.CreateM2SReplClientStream(in.Slave, in.BlockGroupID)
 				if M2SReplClientStream == nil {
 					return errors.New("CreateM2SRepl err")
 				}
@@ -310,7 +309,7 @@ func (s *DataNodeServer) C2MRepl(stream dp.DataNode_C2MReplServer) error {
 
 		} else {
 
-			M2SReplClientStream = s.CreateM2SReplClientStream(in.Slave.Host, in.BlockGroupID)
+			M2SReplClientStream = s.CreateM2SReplClientStream(in.Slave, in.BlockGroupID)
 			if M2SReplClientStream == nil {
 				return errors.New("CreateM2SRepl err")
 			}
@@ -436,14 +435,14 @@ func (s *DataNodeServer) M2SRepl(stream dp.DataNode_M2SReplServer) error {
 		}
 
 		if S2BReplClientStream == nil {
-			S2BReplClientStream = s.CreateS2BStream(in.Backup.Host, M2SReplServerStream)
+			S2BReplClientStream = s.CreateS2BStream(in.Backup, M2SReplServerStream)
 			if S2BReplClientStream == nil {
 				return err
 			}
 		}
 
 		// save to localdisk
-		if err := s.writeDisk(in.Slave.BlockID, in.ChunkID, in.Databuf); err != nil {
+		if err := s.writeDisk(in.BlockGroupID, in.ChunkID, in.Databuf); err != nil {
 			logger.Error("M2SRepl writeDisk failed %v", err)
 			return err
 		}
@@ -522,7 +521,7 @@ func (s *DataNodeServer) S2BRepl(stream dp.DataNode_S2BReplServer) error {
 
 		ack := dp.StreamWriteAck{CommitID: in.CommitID, DataLen: in.DataLen, ChunkID: in.ChunkID, BlockGroupID: in.BlockGroupID, StreamID: in.StreamID, Ret: 0}
 		// save to localdisk
-		if err := s.writeDisk(in.Backup.BlockID, in.ChunkID, in.Databuf); err != nil {
+		if err := s.writeDisk(in.BlockGroupID, in.ChunkID, in.Databuf); err != nil {
 			logger.Error("S2BRepl  writeDisk err %v", err)
 			ack.Ret = -1
 		}
@@ -538,27 +537,29 @@ func (s *DataNodeServer) S2BRepl(stream dp.DataNode_S2BReplServer) error {
 
 // StreamReadChunk ...
 func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.DataNode_StreamReadChunkServer) error {
-	chunkID := in.ChunkID
-	blockID := in.BlockID
-	offset := in.Offset
-	readsize := in.Readsize
 
-	chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
+	bpath := path.Join(DataNodeServerAddr.Path, "blockgroup-"+strconv.FormatUint(in.BlockGroupID, 10))
+	if ok, err := utils.LocalPathExists(bpath); !ok && err == nil {
+		return err
+	}
+
+	chunkFileName := path.Join(bpath, "chunk-"+strconv.FormatUint(in.ChunkID, 10))
+
 	f, err := os.Open(chunkFileName)
 	defer f.Close()
 	if err != nil {
 		return err
 	}
 
-	sret, err := f.Seek(offset, 0)
-	if sret != offset || err != nil {
-		logger.Error("%v Seek to:%v ret:%v error:%v ", chunkFileName, offset, sret, err)
+	sret, err := f.Seek(in.Offset, 0)
+	if sret != in.Offset || err != nil {
+		logger.Error("%v Seek to:%v ret:%v error:%v ", chunkFileName, in.Offset, sret, err)
 		return err
 	}
 
 	var ack dp.StreamReadChunkAck
 	var totalsize int64
-	bufsize := readsize
+	bufsize := in.Readsize
 	if bufsize > 2*1024*1024 {
 		bufsize = 2 * 1024 * 1024
 	}
@@ -579,9 +580,9 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 
 		totalsize += int64(n)
 
-		if totalsize >= readsize {
+		if totalsize >= in.Readsize {
 
-			n = n - int(totalsize-readsize)
+			n = n - int(totalsize-in.Readsize)
 			ack.Databuf = buf[:n]
 			if err := stream.Send(&ack); err != nil {
 				logger.Error("Send stream data to fuse error:%v", err)
@@ -604,11 +605,8 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 
 func (s *DataNodeServer) RecvMigrateMsg(ctx context.Context, in *dp.RecvMigrateReq) (*dp.RecvMigrateAck, error) {
 	ack := dp.RecvMigrateAck{}
-	sid := in.SrcBlkID
-	smount := in.SrcMount
-	did := in.DstBlkID
+	sid := in.BlockGroupID
 	dhost := in.DstHost
-	dmount := in.DstMount
 
 	conn, err := grpc.Dial(dhost, grpc.WithInsecure())
 	if err != nil {
@@ -628,15 +626,15 @@ func (s *DataNodeServer) RecvMigrateMsg(ctx context.Context, in *dp.RecvMigrateR
 		return &ack, err
 	}
 
-	blkpath := smount + fmt.Sprintf("/block-%d", sid)
-	if ok, err := utils.LocalPathExists(blkpath); !ok && err == nil {
+	bgpath := path.Join(DataNodeServerAddr.Path, fmt.Sprintf("/blockgroup-%d", sid))
+	if ok, err := utils.LocalPathExists(bgpath); !ok && err == nil {
 		logger.Debug("The Block:%v no chunkdata, so dont need copydata for Migrate", sid)
 		ack.Ret = 0
 		return &ack, nil
 	}
-	dirs, err := ioutil.ReadDir(blkpath)
+	dirs, err := ioutil.ReadDir(bgpath)
 	if err != nil {
-		logger.Error("List SrcBlk:%v failed:%v for Migrate", blkpath, err)
+		logger.Error("List SrcBlk:%v failed:%v for Migrate", bgpath, err)
 		ack.Ret = -1
 		return &ack, err
 	}
@@ -647,9 +645,8 @@ func (s *DataNodeServer) RecvMigrateMsg(ctx context.Context, in *dp.RecvMigrateR
 		}
 		fInfo := dp.FInfo{}
 		fInfo.FName = v.Name()
-		fInfo.DstBlkID = did
-		fInfo.DstMount = dmount
-		fPath := blkpath + "/" + v.Name()
+		fInfo.BlockGroupID = sid
+		fPath := bgpath + "/" + v.Name()
 
 		fd, err := os.Open(fPath)
 		if err != nil {
@@ -690,7 +687,7 @@ func (s *DataNodeServer) RecvMigrateMsg(ctx context.Context, in *dp.RecvMigrateR
 
 	_, err = stream.CloseAndRecv()
 	if err != nil {
-		logger.Error("CloseAndRecv SrcBlkPath:%v to DstBlk failed:%v for Migrate", blkpath, err)
+		logger.Error("CloseAndRecv SrcBlkPath:%v to DstBlk failed:%v for Migrate", bgpath, err)
 		ack.Ret = -1
 		return &ack, err
 	}
@@ -710,12 +707,12 @@ func (s *DataNodeServer) SendMigrateData(stream dp.DataNode_SendMigrateDataServe
 			return err
 		}
 
-		path := finfo.DstMount + fmt.Sprintf("/block-%d", finfo.DstBlkID)
-		if ok, err := utils.LocalPathExists(path); !ok && err == nil {
-			os.MkdirAll(path, 0777)
+		bgpath := path.Join(DataNodeServerAddr.Path, fmt.Sprintf("/blockgroup-%d", finfo.BlockGroupID))
+		if ok, err := utils.LocalPathExists(bgpath); !ok && err == nil {
+			os.MkdirAll(bgpath, 0777)
 		}
 
-		chunkFileName := path + "/" + finfo.FName
+		chunkFileName := bgpath + "/" + finfo.FName
 		f, err := os.OpenFile(chunkFileName, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0660)
 		defer f.Close()
 		if err != nil {
@@ -730,7 +727,7 @@ func (s *DataNodeServer) SendMigrateData(stream dp.DataNode_SendMigrateDataServe
 		if err != nil {
 			return err
 		}
-		logger.Debug("Write Blk:%v One ChunkFile:%v for Migrate BLK Success!", finfo.DstBlkID, chunkFileName)
+		logger.Debug("Write Blk:%v One ChunkFile:%v for Migrate BLK Success!", finfo.BlockGroupID, chunkFileName)
 	}
 }
 
@@ -739,10 +736,8 @@ func (s *DataNodeServer) DeleteChunk(ctx context.Context, in *dp.DeleteChunkReq)
 	var err error
 
 	ack := dp.DeleteChunkAck{}
-	chunkID := in.ChunkID
-	blockID := in.BlockID
 
-	chunkFileName := DataNodeServerAddr.Path + "/block-" + strconv.Itoa(int(blockID)) + "/chunk-" + strconv.Itoa(int(chunkID))
+	chunkFileName := path.Join(DataNodeServerAddr.Path, "blockgroup-"+strconv.FormatUint(in.BlockGroupID, 10), "chunk-"+strconv.FormatUint(in.ChunkID, 10))
 
 	err = os.Remove(chunkFileName)
 	if err != nil {
@@ -812,74 +807,21 @@ func (s *DataNodeServer) NodeMonitor(ctx context.Context, in *dp.NodeMonitorReq)
 	return &ack, nil
 }
 
-// GetLeader Get Cluster Metadata Leader Node
-func GetLeader(volumeID string) (string, error) {
-	var leader string
-	var flag bool
-	for _, ip := range MetaNodePeers {
-		conn, err := grpc.Dial(ip, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
-		if err != nil {
-			continue
-		}
-		defer conn.Close()
-		mc := mp.NewMetaNodeClient(conn)
-		pmGetMetaLeaderReq := &mp.GetMetaLeaderReq{
-			VolID: volumeID,
-		}
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-		pmGetMetaLeaderAck, err1 := mc.GetMetaLeader(ctx, pmGetMetaLeaderReq)
-		if err1 != nil {
-			continue
-		}
-		if pmGetMetaLeaderAck.Ret != 0 {
-			continue
-		}
-		leader = pmGetMetaLeaderAck.Leader
-		flag = true
-		break
-	}
-	if !flag {
-		return "", errors.New("Get leader failed")
-	}
-	return leader, nil
-
-}
-
-// DialMeta ...
-func DialMeta(volumeID string) (*grpc.ClientConn, error) {
-	var conn *grpc.ClientConn
-	var err error
-
-	MetaNodeAddr, _ = GetLeader("Cluster")
-	conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
-	if err != nil {
-		time.Sleep(500 * time.Millisecond)
-		MetaNodeAddr, _ = GetLeader(volumeID)
-		conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
-		if err != nil {
-			time.Sleep(500 * time.Millisecond)
-			MetaNodeAddr, _ = GetLeader(volumeID)
-			conn, err = grpc.Dial(MetaNodeAddr, grpc.WithInsecure(), grpc.FailOnNonTempDialError(true))
-		}
-	}
-	return conn, err
-}
-
 func init() {
 
 	var loglevel string
-	var port int
+	var volMgrHosts string
 
-	flag.StringVar(&DataNodeServerAddr.Host, "host", "127.0.0.1:8001", "ContainerFS DataNode Host")
-	flag.IntVar(&port, "port", 8000, "ContainerFS DataNode Port")
+	flag.StringVar(&DataNodeServerAddr.Host, "host", "127.0.0.1:8801", "ContainerFS DataNode Host")
 	flag.StringVar(&DataNodeServerAddr.Tier, "tier", "sas", "ContainerFS DataNode Storage Medium")
 	flag.StringVar(&DataNodeServerAddr.Path, "datapath", "", "ContainerFS DataNode Data Path")
 	flag.StringVar(&DataNodeServerAddr.Log, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Log Path")
 	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS Log Level")
-	addr := flag.String("metanode", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS metanode hosts")
+	flag.StringVar(&volMgrHosts, "volmgr", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS VolMgr hosts")
 
 	flag.Parse()
-	MetaNodePeers = strings.Split(*addr, ",")
+
+	VolMgrHosts = strings.Split(volMgrHosts, ",")
 
 	DataNodeServerAddr.Flag = DataNodeServerAddr.Path + "/.registryflag"
 
@@ -903,12 +845,7 @@ func init() {
 		os.Exit(1)
 	}
 
-	if ok, _ := utils.LocalPathExists(DataNodeServerAddr.Flag); !ok {
-		registryToMeta()
-		logger.Debug("registry to metanode success")
-	} else {
-		logger.Debug("already registied")
-	}
+	registryToVolMgr()
 
 }
 

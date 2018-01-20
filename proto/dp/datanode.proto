@@ -20,14 +20,14 @@ service DataNode {
 
 message WriteChunkReq{
     uint64 ChunkID = 1;
-    uint64 BlockID = 2;
+    uint64 BlockGroupID = 2;
     bytes  Databuf = 3;
     uint64 CommitID = 4;
 }
 
 message SeekWriteChunkReq{
     uint64 ChunkID = 1;
-    uint64 BlockID = 2;
+    uint64 BlockGroupID = 2;
     bytes Databuf = 3;
     int64 ChunkOffset = 4;
 }
@@ -37,10 +37,7 @@ message WriteChunkAck{
     uint64 CommitID = 2;
 }
 
-message Block{
-    string host = 1;
-    uint64 BlockID = 2;
-}
+
 
 message CreateBlockGroupStreamReq{
     string SlaveHost = 1;
@@ -57,9 +54,9 @@ message StreamWriteReq{
     bytes  Databuf = 2;
     uint32 DataLen = 3;
     uint64 CommitID = 4;
-    Block Master = 5;
-    Block Slave = 6;
-    Block Backup = 7;
+    string Master = 5;
+    string Slave = 6;
+    string Backup = 7;
     uint64 BlockGroupID = 8; 
     uint64 StreamID = 9;
 }
@@ -76,7 +73,7 @@ message StreamWriteAck{
 
 message StreamReadChunkReq{
     uint64 ChunkID = 1;
-    uint64 BlockID = 2;
+    uint64 BlockGroupID = 2;
     int64 Offset = 3;
     int64 Readsize = 4;
 }
@@ -88,7 +85,7 @@ message StreamReadChunkAck{
 
 message DeleteChunkReq{
     uint64 ChunkID = 1;
-    uint64 BlockID = 2;
+    uint64 BlockGroupID = 2;
 }
 message DeleteChunkAck{
     int32 Ret = 1;
@@ -104,11 +101,8 @@ message DataNodeHealthCheckAck{
 }
 
 message RecvMigrateReq{
-    uint64 SrcBlkID = 1;
-    string SrcMount = 2;
-    uint64 DstBlkID = 3;
-    string DstHost = 4;
-    string DstMount = 6;
+    uint64 BlockGroupID = 1;
+    string DstHost = 2;
 }
 
 message RecvMigrateAck{
@@ -116,10 +110,9 @@ message RecvMigrateAck{
 }
 
 message FInfo{
-    uint64 DstBlkID = 1;
-    string DstMount = 2;
-    string FName = 3;
-    bytes DataBuf = 4;
+    uint64 BlockGroupID = 1;
+    string FName = 2;
+    bytes DataBuf = 3;
 }
 
 message SendAck {
