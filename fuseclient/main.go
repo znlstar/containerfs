@@ -10,11 +10,13 @@ import (
 	"golang.org/x/net/context"
 	"math"
 	"os"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	"net/http"
+	_ "net/http/pprof"
 )
 
 var uuid string
@@ -73,7 +75,7 @@ func (fs *FS) Root() (fs.Node, error) {
 
 // Statfs ...
 func (fs *FS) Statfs(ctx context.Context, req *fuse.StatfsRequest, resp *fuse.StatfsResponse) error {
-	err, ret := cfs.GetFSInfo(fs.cfs.VolID)
+	err, ret := fs.cfs.GetFSInfo()
 	if err != 0 {
 		return fuse.Errno(syscall.EIO)
 	}
@@ -700,7 +702,10 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 
 func main() {
 
-	addr2 := flag.String("metanode", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS metanode hosts")
+	var peers string
+
+	flag.StringVar(&peers, "volmgr", "127.0.0.1:7703,127.0.0.1:7713,127.0.0.1:7723", "ContainerFS VolMgr Host")
+
 	buffertype := flag.Int("buffertype", 0, "ContainerFS per file buffertype : 0 512KB 1 256KB 2 128KB")
 	uuid := flag.String("uuid", "xxx", "ContainerFS Volume UUID")
 	mountPoint := flag.String("mountpoint", "/mnt", "ContainerFS MountPoint")
@@ -710,7 +715,7 @@ func main() {
 
 	flag.Parse()
 
-	cfs.MetaNodePeers = strings.Split(*addr2, ",")
+	cfs.VolMgrHosts = strings.Split(peers, ",")
 
 	switch *buffertype {
 	case 0:
@@ -738,46 +743,35 @@ func main() {
 		logger.SetLevel(logger.ERROR)
 	}
 
-	defer func() {
-		if err := recover(); err != nil {
-			logger.Error("panic !!! :%v", err)
-			logger.Error("stacks:%v", string(debug.Stack()))
-		}
-	}()
+	/*
+		//allocate volume blkgrp
+		tic := time.NewTicker(30 * time.Second)
+		go func() {
+			for range tic.C {
+				ok, ret := cfs.GetFSInfo(*uuid)
+				if ok != 0 {
+					logger.Error("ExpandVol once volume:%v failed, GetFSInfo error", *uuid)
+					continue
+				}
+				if float64(ret.FreeSpace)/float64(ret.TotalSpace) > 0.1 {
+					continue
+				}
 
-	cfs.MetaNodeAddr, _ = cfs.GetLeader(*uuid)
-	fmt.Printf("Leader:%v\n", cfs.MetaNodeAddr)
-	ticker := time.NewTicker(time.Second * 60)
+				logger.Debug("Need ExpandVol once volume:%v -- totalsize:%v -- freesize:%v", *uuid, ret.TotalSpace, ret.FreeSpace)
+				ok = cfs.ExpandVolRS(*uuid, *mountPoint)
+				if ok == -1 {
+					logger.Error("Expand volume: %v one time error", *uuid)
+				} else if ok == -2 {
+					logger.Error("Expand volume: %v by another client, so this client not need expand", *uuid)
+				} else if ok == 1 {
+					logger.Debug("Expand volume: %v one time sucess", *uuid)
+				}
+			}
+		}()
+	*/
+
 	go func() {
-		for range ticker.C {
-			cfs.MetaNodeAddr, _ = cfs.GetLeader(*uuid)
-			fmt.Printf("Leader:%v\n", cfs.MetaNodeAddr)
-		}
-	}()
-
-	//allocate volume blkgrp
-	tic := time.NewTicker(30 * time.Second)
-	go func() {
-		for range tic.C {
-			ok, ret := cfs.GetFSInfo(*uuid)
-			if ok != 0 {
-				logger.Error("ExpandVol once volume:%v failed, GetFSInfo error", *uuid)
-				continue
-			}
-			if float64(ret.FreeSpace)/float64(ret.TotalSpace) > 0.1 {
-				continue
-			}
-
-			logger.Debug("Need ExpandVol once volume:%v -- totalsize:%v -- freesize:%v", *uuid, ret.TotalSpace, ret.FreeSpace)
-			ok = cfs.ExpandVolRS(*uuid, *mountPoint)
-			if ok == -1 {
-				logger.Error("Expand volume: %v one time error", *uuid)
-			} else if ok == -2 {
-				logger.Error("Expand volume: %v by another client, so this client not need expand", *uuid)
-			} else if ok == 1 {
-				logger.Debug("Expand volume: %v one time sucess", *uuid)
-			}
-		}
+		http.ListenAndServe(":10000", nil)
 	}()
 
 	err := mount(*uuid, *mountPoint, *isReadOnly)
@@ -786,10 +780,10 @@ func main() {
 	}
 }
 
-func closeConns(fs *cfs.CFS) {
+func closeConns(c *cfs.CFS) {
 
-	if fs.Conn != nil {
-		fs.Conn.Close()
+	if c.MetaNodeConn != nil {
+		c.MetaNodeConn.Close()
 	}
 
 }
