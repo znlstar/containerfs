@@ -13,7 +13,8 @@
 二、集群搭建
 
 0、组件分配：
-    volmgr   : 192.168.100.16 192.168.100.17 192.168.100.18
+
+    volmgr   : 192.168.100.16 192.168.100.17 192.168.100.18 
 	metanode : 192.168.100.16 192.168.100.17 192.168.100.18
 	datanode : 192.168.100.16 192.168.100.17 192.168.100.18 
 
@@ -23,13 +24,13 @@
     /home/cfs/cfs-metanode -volmgr 192.168.100.17 -nodeid 2 -nodepeer 1,2,3 -nodeips 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/volmgr/data     
     /home/cfs/cfs-metanode -volmgr 192.168.100.18 -nodeid 3 -nodepeer 1,2,3 -nodeips 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/volmgr/data  
 
-1、在 192.168.100.16 192.168.100.17 192.168.100.18 启动 metanode： 
+2、在 192.168.100.16 192.168.100.17 192.168.100.18 启动 metanode： 
 
 	/home/cfs/cfs-metanode -host 192.168.100.16 -nodeid 1 -volmgr 192.168.100.16:9903,192.168.100.17:9913,192.168.100.18:9923 -wal /home/containerfs/metanode/data 
 	/home/cfs/cfs-metanode -host 192.168.100.17 -nodeid 2 -volmgr 192.168.100.16:9903,192.168.100.17:9913,192.168.100.18:9923 -wal /home/containerfs/metanode/data 
 	/home/cfs/cfs-metanode -host 192.168.100.18 -nodeid 3 -volmgr 192.168.100.16:9903,192.168.100.17:9913,192.168.100.18:9923 -wal /home/containerfs/metanode/data 
 
-2、在 192.168.100.216 192.168.100.17 192.168.100.19 启动 datanode：
+3、在 192.168.100.216 192.168.100.17 192.168.100.19 启动 datanode：
 
 	/home/cfs/cfs-datanode -host 192.168.100.16:8801 -tier sas -volmgr 192.168.100.16:9903,192.168.100.17:9913,192.168.100.18:9923 -datapath /home/containerfs/datanode1/data
 	/home/cfs/cfs-datanode -host 192.168.100.17:8801 -tier sas -volmgr 192.168.100.16:9903,192.168.100.17:9913,192.168.100.18:9923 -datapath /home/containerfs/datanode1/data
@@ -37,14 +38,14 @@
 
 	-tier参数说明：cfs支持多种类型的存储介质混部, datanode启动带上-tier参数表示该datanode的磁盘介质类型是哪种, 如sata、sas、ssd、nvme等磁盘类型, 不带该参数默认为sas盘
 
-3、在某台机器，使用命令行工具，创建一个 volume： 
+4、在某台机器，使用命令行工具，创建一个 volume： 
 
 	/home/cfs/cfs-CLI -volmgr 192.168.100.16:9903,192.168.100.17:9913,192.168.100.18:9923  -action createvol test 10 sas
 	101d18db4043fa26808fce9dc93a6d9f 
 
 	说明：创建volume时支持选择不同存储介质，如sas表示将该volume的data存储到sas盘的datanode上
 
-4、在某客户机，安装 fuse (yum install fuse -y) ,然后挂载步骤5创建的volume：
+5、在某客户机，安装 fuse (yum install fuse -y) ,然后挂载步骤5创建的volume：
 
 	/home/cfs/cfs-fuseclient -uuid 101d18db4043fa26808fce9dc93a6d9f -buffertype 1 -volmgr 192.168.100.16:9903,192.168.100.17:9913,192.168.100.18:9923 -mountpoint /mnt/mytest -readonly 0
 
