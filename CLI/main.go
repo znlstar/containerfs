@@ -5,6 +5,7 @@ import (
 	"fmt"
 	fs "github.com/tiglabs/containerfs/fs"
 	"github.com/tiglabs/containerfs/logger"
+	"github.com/tiglabs/containerfs/utils"
 	"os"
 	"strconv"
 	"strings"
@@ -17,16 +18,17 @@ func main() {
 	var peers string
 	var cmd string
 
-	flag.StringVar(&peers, "metanode", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS MetaNode Host")
+	flag.StringVar(&peers, "volmgr", "127.0.0.1:7703,127.0.0.1:7713,127.0.0.1:7723", "ContainerFS VolMgr Host")
 	flag.StringVar(&logpath, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Log Path")
 	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS Log Level")
 	flag.StringVar(&cmd, "action", "", `
 		createvol [volumename ] size [sata/sas/ssd/nvme...]
 		expandvol [volumeuuid ] size
-		migrate [datanodeIP] [datanodePort]
+		migrate [host]
 		deletevol [volumeuuid ]
-		snapshotvol [volumeuuid ]
-		getvolleader [volumeuuid ]
+		snapshootvol [volumeuuid ]
+		getvolmetaleader [volumeuuid ]
+		getvolmgrleader
 		getvolinfo [volumeuuid ]
 		getvols
 		getinodeinfo [volumeuuid ] parentinodeid name
@@ -35,8 +37,7 @@ func main() {
 
 	flag.Parse()
 
-	fs.MetaNodePeers = strings.Split(peers, ",")
-	fs.MetaNodeAddr = fs.MetaNodePeers[0]
+	fs.VolMgrHosts = strings.Split(peers, ",")
 	fs.BufferSize = 1024 * 1024
 
 	logger.SetConsole(true)
@@ -64,29 +65,29 @@ func main() {
 
 		var ret int32
 		if argNum == 2 {
-			ret = fs.CreateVolbyMeta(flag.Arg(0), flag.Arg(1), "sas")
+			ret = fs.CreateVol(flag.Arg(0), flag.Arg(1), "sas")
 		} else if argNum == 3 {
-			ret = fs.CreateVolbyMeta(flag.Arg(0), flag.Arg(1), flag.Arg(2))
+			ret = fs.CreateVol(flag.Arg(0), flag.Arg(1), flag.Arg(2))
 		}
 		if ret != 0 {
 			fmt.Println("failed")
 		}
-
-	case "expandvol":
-		argNum := flag.NArg()
-		if argNum != 2 {
-			fmt.Println("expandvol [volUUID] [space GB]")
-			os.Exit(1)
-		}
-		ret := fs.ExpandVolTS(flag.Arg(0), flag.Arg(1))
-		if ret != 0 {
-			fmt.Println("failed")
-		}
-
+		/*
+			case "expandvol":
+				argNum := flag.NArg()
+				if argNum != 2 {
+					fmt.Println("expandvol [volUUID] [space GB]")
+					os.Exit(1)
+				}
+				ret := fs.ExpandVolTS(flag.Arg(0), flag.Arg(1))
+				if ret != 0 {
+					fmt.Println("failed")
+				}
+		*/
 	case "migrate":
 		argNum := flag.NArg()
-		if argNum != 2 {
-			fmt.Println("migrate [datanodeIP:Port]")
+		if argNum != 1 {
+			fmt.Println("migrate host")
 			os.Exit(1)
 		}
 		ret := fs.Migrate(flag.Arg(0))
@@ -106,23 +107,28 @@ func main() {
 		if ret != 0 {
 			fmt.Println("failed")
 		}
-	case "snapshotvol":
+		/*
+			case "snapshootvol":
+				argNum := flag.NArg()
+				if argNum != 1 {
+					fmt.Println("snapshootvol [voluuid]")
+					os.Exit(1)
+				}
+				ret := fs.SnapShotVol(flag.Arg(0))
+				if ret != 0 {
+					fmt.Println("failed")
+				}
+		*/
+	case "getvolmetaleader":
 		argNum := flag.NArg()
 		if argNum != 1 {
-			fmt.Println("snapshotvol [voluuid]")
+			fmt.Println("getvolmetaleader [voluuid]")
 			os.Exit(1)
 		}
-		ret := fs.SnapShotVol(flag.Arg(0))
-		if ret != 0 {
-			fmt.Println("failed")
-		}
-	case "getvolleader":
-		argNum := flag.NArg()
-		if argNum != 1 {
-			fmt.Println("getvolleader [voluuid]")
-			os.Exit(1)
-		}
-		leader := fs.GetVolumeLeader(flag.Arg(0))
+		leader, _ := fs.GetVolMetaLeader(flag.Arg(0))
+		fmt.Println(leader)
+	case "getvolmgrleader":
+		leader, _ := utils.GetVolMgrLeader(fs.VolMgrHosts)
 		fmt.Println(leader)
 	case "getvolinfo":
 		argNum := flag.NArg()
@@ -132,12 +138,7 @@ func main() {
 		}
 		ret, vi := fs.GetVolInfo(flag.Arg(0))
 		if ret == 0 {
-			for _, v := range vi.BGPS {
-				fmt.Printf("BG: %v -->\n", v.Blocks[0].BGID)
-				for _, vv := range v.Blocks {
-					fmt.Println(vv)
-				}
-			}
+			fmt.Println(vi)
 		} else {
 			fmt.Printf("get volume info failed , ret :%d", ret)
 		}
@@ -147,7 +148,7 @@ func main() {
 			fmt.Println("getvols")
 			os.Exit(1)
 		}
-		ret, vi := fs.VolumeInfos()
+		ret, vi := fs.GetAllVolumeInfos()
 		if ret == 0 {
 			for _, v := range vi {
 				fmt.Println(v)
@@ -155,6 +156,7 @@ func main() {
 		} else {
 			fmt.Printf("get all volumes info failed , ret :%d", ret)
 		}
+
 	case "getinodeinfo":
 		argNum := flag.NArg()
 		if argNum != 3 {
@@ -191,7 +193,7 @@ func main() {
 			fmt.Println("getdatanodes")
 			os.Exit(1)
 		}
-		ret, vi := fs.GetAllDataNode()
+		ret, vi := fs.GetAllDatanode()
 		if ret == 0 {
 			for _, v := range vi {
 				fmt.Println(v)
@@ -203,10 +205,10 @@ func main() {
 	case "deldatanode":
 		argNum := flag.NArg()
 		if argNum != 2 {
-			fmt.Println("deldatanode ip:port")
+			fmt.Println("deldatanode ip port")
 			os.Exit(1)
 		}
-		ret := fs.DelDataNode(flag.Arg(0))
+		ret := fs.DelDatanode(flag.Arg(0))
 		if ret == 0 {
 			fmt.Printf("del success")
 		} else {

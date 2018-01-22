@@ -4,21 +4,11 @@ package mp;
 
 service MetaNode {
 
-    // cluster opt
-    rpc DataNodeRegistry(DataNode) returns (DataNodeRegistryAck){};
-    rpc	DelDataNode(DelDataNodeReq) returns (DelDataNodeAck){};
-    rpc CreateVol(CreateVolReq) returns (CreateVolAck){};
-    rpc ExpandVolTS(ExpandVolTSReq) returns (ExpandVolTSAck){};
-    rpc ExpandVolRS(ExpandVolRSReq) returns (ExpandVolRSAck){};
-    rpc DelVolRSForExpand(DelVolRSForExpandReq) returns (DelVolRSForExpandAck){};
-    rpc DeleteVol(DeleteVolReq) returns (DeleteVolAck){};
-    rpc Migrate(MigrateReq) returns (MigrateAck){};
-
     // namespace opt
     rpc GetMetaLeader(GetMetaLeaderReq) returns (GetMetaLeaderAck){};
     rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
     rpc ExpandNameSpace(ExpandNameSpaceReq) returns (ExpandNameSpaceAck){};
-    rpc SnapShotNameSpace(SnapShotNameSpaceReq) returns (SnapShotNameSpaceAck){};
+    rpc SnapShootNameSpace(SnapShootNameSpaceReq) returns (SnapShootNameSpaceAck){};
     rpc DeleteNameSpace(DeleteNameSpaceReq) returns (DeleteNameSpaceAck){};
     rpc GetFSInfo(GetFSInfoReq) returns (GetFSInfoAck){};
 
@@ -35,136 +25,8 @@ service MetaNode {
     rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
     rpc SyncChunk(SyncChunkReq) returns (SyncChunkAck){};
     rpc AsyncChunk(AsyncChunkReq) returns (AsyncChunkAck){};
-
-
-    // Web Info
-    rpc ClusterInfo(ClusterInfoReq) returns (ClusterInfoAck){};
-    rpc GetDataNode(GetAllDataNodeReq) returns (GetAllDataNodeAck){};
-    rpc MetaNodeInfo(MetaNodeInfoReq) returns (MetaNodeInfoAck){};
-    rpc VolumeInfos(VolumeInfosReq) returns (VolumeInfosAck){};
-    rpc GetVolInfo(GetVolInfoReq) returns (GetVolInfoAck){};
-    rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
-
 }
 
-message NULL{
-}
-
-message DataNode {
-    string Host = 1;
-    string MountPoint = 2 ;
-    string Tier = 3;
-    int32 Capacity = 4; //GB
-    int32 Used = 5;
-    int32 Free = 6;
-    int32 Status = 7;
-}
-
-message DataNodeRegistryAck {
-    int32 Ret = 1;
-}
-
-message UpdateBlkDBAck {
-    int32 Ret = 1;
-}
-
-message GetAllDataNodeReq {
-}
-message GetAllDataNodeAck {
-    int32 Ret = 1;
-    repeated DataNode DataNodes = 2;
-}
-message DelDataNodeReq {
-    string Host = 1;
-}
-message DelDataNodeAck {
-    int32 Ret = 1;
-}
-
-message Volume {
-	string UUID = 1;
-	string Name = 2;
-    string Tier = 3;
-	int32  TotalSize = 4;
-	int32  AllocatedSize = 5;
-	uint64 RGID = 6;
-}
-
-message Vols {
-	repeated Volume Volumes=1;
-}
-
-message Block {
-    uint64 BlkID = 1;
-    string Host = 2;
-    string Path = 3;
-    int32 Status = 4;
-    uint64 BGID = 5;
-    string VolID = 6;
-}
-
-message BGP {
-    repeated Block Blocks = 1;
-}
-
-message CreateVolReq {
-    string VolName = 1 ;
-    int32  SpaceQuota = 2 ;
-    string Tier = 3;
-}
-message CreateVolAck {
-    int32 Ret = 1;
-    string UUID = 2;
-    uint64 RaftGroupID = 3;
-}
-
-message ExpandVolTSReq {
-    string VolID = 1 ;
-    int32  ExpandQuota = 2 ;
-}
-message ExpandVolTSAck {
-    int32 Ret = 1;
-}
-
-message ExpandVolRSReq {
-    string VolID = 1 ;
-}
-message ExpandVolRSAck {
-    int32 Ret = 1;
-    repeated BGP BGPS = 2;
-}
-
-message DelVolRSForExpandReq {
-    string UUID=1;
-    repeated BGP BGPS = 2;
-}
-message DelVolRSForExpandAck {
-    int32 Ret=1;
-}
-message DeleteVolReq {
-    string UUID = 1 ;
-}
-message DeleteVolAck {
-    int32 Ret = 1;
-}
-
-message GetVolInfoReq {
-    string UUID = 1 ;
-}
-
-message GetVolInfoAck {
-    int32 Ret = 1;
-    //Volume VolInfo=2;
-    repeated BGP BGPS = 2;
-}
-
-message MigrateReq {
-    string DataNodeHost = 1;
-}
-
-message MigrateAck {
-    int32 Ret = 1;
-}
 
 message GetMetaLeaderReq{
     string VolID = 1;
@@ -176,9 +38,20 @@ message GetMetaLeaderAck{
 
 message CreateNameSpaceReq{
     string VolID = 1;
-    int32  Type = 2;
-    uint64 RaftGroupID = 3;
+    VolumeValue Volume = 4;
 }
+
+message VolumeValue{
+    uint64 RaftGroupID = 1;
+    repeated VolumePeer VolumePeers = 2;
+    repeated BlockGroup BlockGroups = 3;
+}
+
+message VolumePeer{
+    uint64 NodeID = 1;
+    string Host = 2;
+}
+
 
 message CreateNameSpaceAck{
     int32 Ret = 1;
@@ -193,11 +66,11 @@ message ExpandNameSpaceAck{
     int32 Ret = 1;
 }
 
-message SnapShotNameSpaceReq{
+message SnapShootNameSpaceReq{
     string VolID = 1;
     int32  Type =2 ;
 }
-message SnapShotNameSpaceAck{
+message SnapShootNameSpaceAck{
     int32 Ret = 1;
 }
 message DeleteNameSpaceReq{
@@ -331,7 +204,6 @@ message SyncChunkAck {
     int32 Ret = 1;
 }
 
-
 message AsyncChunkReq {
     string VolID = 1;
     uint64 ParentInodeID = 2;
@@ -344,12 +216,6 @@ message AsyncChunkAck {
     int32 Ret = 1;
 }
 
-
-message BlkInfo {
-    uint64 BgpID  = 1;
-    uint64 BlockID = 2;
-    int32 Status = 3;
-}
 
 
 message InodeInfo{
@@ -378,6 +244,12 @@ message BlockGroup{
     int32 Status = 3;
 }
 
+message BlockGroupWithHost{
+    uint64 BlockGroupID = 1;
+    repeated string Hosts = 2;
+}
+
+
 message ChunkInfo{
     uint64 ChunkID = 1;
     int32 ChunkSize = 2;
@@ -387,93 +259,5 @@ message ChunkInfo{
 message ChunkInfoWithBG{
     uint64 ChunkID = 1;
     int32 ChunkSize = 2;
-    BGP BGP = 3;
-}
-
-
-
-// Web
-
-// web -> leader metanode
-message ClusterInfoReq {
-}
-message ClusterInfoAck {
-    int32 Ret = 1;
-    int32 MetaNum = 2;
-    int32 DataNum = 3;
-    int32 VolNum = 4;
-    int32 ClusterSpace = 5;
-    int32 ClusterFreeSpace = 6;
-    int32 IO = 7;
-    int32 IOPS = 8;
-}
-
-// web -> each metanode
-message MetaNodeInfoReq {
-}
-message MetaNodeInfoAck {
-    int32 Ret = 1;
-    uint64 MetaID = 2;
-    bool  IsLeader = 3;
-    uint64 AppliedIndex = 4;
-}
-
-
-// web -> leader metanode
-message DataNodeInfoReq {
-}
-message DataNodeInfoAck {
-    int32 Ret = 1;
-    repeated DataNode DataNodes = 2;
-}
-
-// web -> cluster leader metanode
-message VolumeInfosReq {
-}
-message VolumeInfosAck {
-    int32 Ret = 1;
-    repeated Volume Volumes = 2;
-}
-
-// web -> the datanode or metanode (ip:port)
-message NodeMonitorReq {
-}
-message NodeMonitorAck {
-    int32 Ret = 1;
-    NodeInfo NodeInfo = 2;
-}
-message NodeInfo {
-    double CpuUsage = 1;
-    double CpuLoad = 2;
-    uint64 FreeMem = 3;
-    uint64 TotalMem = 4;
-    double  MemUsedPercent = 5;
-    uint64  PathTotal = 6;
-    uint64  PathFree = 7;
-    double  PathUsedPercent = 8;
-    repeated DiskIO DiskIOs = 9;
-    repeated NetIO NetIOs = 10;
-}
-
-message DiskIO {
-    uint64 ReadCount = 1;
-    uint64 WriteCount = 2;
-    uint64 ReadBytes = 3;
-    uint64 WriteBytes = 4;
-    uint64 IopsInProgress = 5;
-    uint64 IoTime = 6;
-    uint64 WeightedIO = 7;
-    string Name = 8;
-}
-
-message NetIO {
-    uint64 BytesSent = 1;
-    uint64 BytesRecv = 2;
-    uint64 PacketsSent = 3;
-    uint64 PacketsRecv = 4;
-    uint64 Errin = 5;
-    uint64 Errout = 6;
-    uint64 Dropin = 7;
-    uint64 Dropout = 8;
-    string Name = 9;
+    BlockGroupWithHost BlockGroupWithHost = 3;
 }

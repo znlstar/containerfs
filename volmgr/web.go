@@ -1,10 +1,8 @@
 package main
 
 import (
-	pbproto "github.com/golang/protobuf/proto"
 	"github.com/tiglabs/containerfs/logger"
-	ns "github.com/tiglabs/containerfs/metanode/namespace"
-	"github.com/tiglabs/containerfs/proto/mp"
+	"github.com/tiglabs/containerfs/proto/vp"
 	"golang.org/x/net/context"
 	"time"
 
@@ -16,11 +14,11 @@ import (
 )
 
 // rpc ClusterInfo(ClusterInfoReq) returns (ClusterInfoAck){};
-func (s *MetaNodeServer) ClusterInfo(ctx context.Context, in *mp.ClusterInfoReq) (*mp.ClusterInfoAck, error) {
-	ack := mp.ClusterInfoAck{}
+func (s *VolMgrServer) ClusterInfo(ctx context.Context, in *vp.ClusterInfoReq) (*vp.ClusterInfoAck, error) {
+	ack := vp.ClusterInfoAck{}
 	ack.MetaNum = 3
 
-	v, err := GetAllDataNode()
+	v, err := s.Cluster.RaftGroup.DataNodeGetAll(1)
 	if err != nil {
 		logger.Error("GetAllDataNode Info failed:%v for ClusterInfo", err)
 		ack.Ret = 1
@@ -39,7 +37,7 @@ func (s *MetaNodeServer) ClusterInfo(ctx context.Context, in *mp.ClusterInfoReq)
 	ack.ClusterSpace = total
 	ack.ClusterFreeSpace = free
 
-	volumes, err := GetAllVolume()
+	volumes, err := s.Cluster.RaftGroup.VolumeGetAll(1)
 	if err != nil {
 		logger.Error("GetAllVolume Info failed:%v for ClusterInfo", err)
 		ack.Ret = -1
@@ -53,20 +51,39 @@ func (s *MetaNodeServer) ClusterInfo(ctx context.Context, in *mp.ClusterInfoReq)
 	return &ack, nil
 }
 
+//todo: not implemented yet
+func (s *VolMgrServer) GetMetaNode(ctx context.Context, in *vp.GetAllMetaNodeReq) (*vp.GetAllMetaNodeAck, error) {
+	ack := vp.GetAllMetaNodeAck{}
+	if mns, err := s.Cluster.RaftGroup.MetaNodeGetAll(1); err != nil {
+		ack.Ret = -1
+		return &ack, err
+	} else {
+		ack.MetaNodes = mns
+	}
+	return &ack, nil
+}
+
+// todo: not implemented yet
 // rpc MetaNodeInfo(MetaNodeInfoReq) returns (MetaNodeInfoAck){};
-func (s *MetaNodeServer) MetaNodeInfo(ctx context.Context, in *mp.MetaNodeInfoReq) (*mp.MetaNodeInfoAck, error) {
-	ack := mp.MetaNodeInfoAck{}
-	ack.MetaID = s.NodeID
+func (s *VolMgrServer) MetaNodeInfo(ctx context.Context, in *vp.MetaNodeInfoReq) (*vp.MetaNodeInfoAck, error) {
+	ack := vp.MetaNodeInfoAck{}
+
+	return &ack, nil
+}
+
+// rpc VolMgrInfo(VolMgrInfoReq) returns (VolMgrInfoAck){};
+func (s *VolMgrServer) VolMgrInfo(ctx context.Context, in *vp.VolMgrInfoReq) (*vp.VolMgrInfoAck, error) {
+	ack := vp.VolMgrInfoAck{}
+	ack.VolMgrID = s.NodeID
 	ack.IsLeader = s.RaftServer.IsLeader(s.NodeID)
-	ack.AppliedIndex = s.RaftServer.AppliedIndex(s.NodeID)
 	return &ack, nil
 }
 
 // rpc VolumeInfo(VolumeInfoReq) returns (VolumeInfoAck){};
-func (s *MetaNodeServer) VolumeInfos(ctx context.Context, in *mp.VolumeInfosReq) (*mp.VolumeInfosAck, error) {
-	ack := mp.VolumeInfosAck{}
+func (s *VolMgrServer) VolumeInfos(ctx context.Context, in *vp.VolumeInfosReq) (*vp.VolumeInfosAck, error) {
+	ack := vp.VolumeInfosAck{}
 
-	v, err := GetAllVolume()
+	v, err := s.Cluster.RaftGroup.VolumeGetAll(1)
 	if err != nil {
 		logger.Error("GetAllVolume Info failed:%v for VolumeInfo", err)
 		ack.Ret = -1
@@ -74,7 +91,7 @@ func (s *MetaNodeServer) VolumeInfos(ctx context.Context, in *mp.VolumeInfosReq)
 	}
 
 	for _, vv := range v {
-		volume := mp.Volume{}
+		volume := vp.Volume{}
 		volume.RGID = vv.RGID
 		volume.TotalSize = vv.TotalSize
 		volume.AllocatedSize = vv.AllocatedSize
@@ -90,56 +107,23 @@ func (s *MetaNodeServer) VolumeInfos(ctx context.Context, in *mp.VolumeInfosReq)
 	return &ack, nil
 }
 
-func (s *MetaNodeServer) GetVolInfo(ctx context.Context, in *mp.GetVolInfoReq) (*mp.GetVolInfoAck, error) {
-	ack := mp.GetVolInfoAck{}
-	ret, nameSpace := ns.GetNameSpace("Cluster")
-	if ret != 0 {
-		logger.Error("Get Cluster NameSpace for GetVolInfo failed, ret:%v", ret)
-		ack.Ret = ret
+func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*vp.GetVolInfoAck, error) {
+	ack := vp.GetVolInfoAck{}
+
+	volume, err := s.Cluster.RaftGroup.VolumeGet(1, in.UUID)
+	if err != nil {
 		return &ack, nil
 	}
 
-	/*
-		v, err := nameSpace.RaftGroup.VOLGet(1, in.UUID)
-		if err != nil {
-			logger.Error("Get Volume:%v info failed for GetVolInfo, err:%v", in.UUID, err)
-			return &ack, err
-		}
-		volume := mp.Volume{}
-		err = pbproto.Unmarshal(v, &volume)
-		if err != nil {
-			return &ack, err
-		}
-		ack.VolInfo = &volume
-	*/
-	value, err := nameSpace.RaftGroup.BGPGetRange(1, in.UUID)
-	if err != nil {
-		logger.Error("Get Volume:%v BGPS info failed for GetVolInfo, err:%v", in.UUID, err)
-		return &ack, err
-	}
-
-	tBGPS := make([]*mp.BGP, 0)
-	for _, v := range value {
-		bgp := &mp.BGP{}
-
-		err := pbproto.Unmarshal(v.V, bgp)
-		if err != nil {
-			return &ack, err
-		}
-		tBGPS = append(tBGPS, bgp)
-	}
-
-	ack.BGPS = tBGPS
+	ack.Volume = volume
 	ack.Ret = 0
-
-	logger.Debug("GetVolInfo: %v", ack.BGPS)
 
 	return &ack, nil
 }
 
 // rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
-func (s *MetaNodeServer) NodeMonitor(ctx context.Context, in *mp.NodeMonitorReq) (*mp.NodeMonitorAck, error) {
-	ack := mp.NodeMonitorAck{NodeInfo: &mp.NodeInfo{}}
+func (s *VolMgrServer) NodeMonitor(ctx context.Context, in *vp.NodeMonitorReq) (*vp.NodeMonitorAck, error) {
+	ack := vp.NodeMonitorAck{NodeInfo: &vp.NodeInfo{}}
 
 	cpuUsage, err := cpu.Percent(time.Millisecond*500, false)
 	if err == nil {
@@ -156,14 +140,14 @@ func (s *MetaNodeServer) NodeMonitor(ctx context.Context, in *mp.NodeMonitorReq)
 	ack.NodeInfo.FreeMem = memv.Free
 	ack.NodeInfo.MemUsedPercent = memv.UsedPercent
 
-	diskUsage, _ := disk.Usage(MetaNodeServerAddr.waldir)
+	diskUsage, _ := disk.Usage(VolMgrServerAddr.waldir)
 	ack.NodeInfo.PathUsedPercent = diskUsage.UsedPercent
 	ack.NodeInfo.PathTotal = diskUsage.Total
 	ack.NodeInfo.PathFree = diskUsage.Free
 
 	disksIO, _ := disk.IOCounters()
 	for _, v := range disksIO {
-		diskio := mp.DiskIO{}
+		diskio := vp.DiskIO{}
 		diskio.IoTime = v.IoTime
 		diskio.IopsInProgress = v.IopsInProgress
 		diskio.Name = v.Name
@@ -177,7 +161,7 @@ func (s *MetaNodeServer) NodeMonitor(ctx context.Context, in *mp.NodeMonitorReq)
 
 	NetsIO, _ := net.IOCounters(true)
 	for _, v := range NetsIO {
-		netio := mp.NetIO{}
+		netio := vp.NetIO{}
 		netio.BytesRecv = v.BytesRecv
 		netio.BytesSent = v.BytesSent
 		netio.Dropin = v.Dropin
