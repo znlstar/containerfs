@@ -8,11 +8,12 @@ A cluster filesystem for the containers. Please see http://containerfs.io/ for c
 # Roadmap
 * 2017Q4  
 1. WEB UI ✔
-2. ReplGroup for DataNode  ✔
+2. ReplGroup Stream Write for DataNodes  ✔
  
 * 2018Q1
-1. RaftGroup for MetaNode  ✔
-2. Full Posix Interface 
+1. Choose RaftGroup in MetaNode Pool ✔
+2. MetaNode Auto Registry Add ✔
+3. Full Posix Interface 
 
 * 2018Q2
 1. Kernel Client
