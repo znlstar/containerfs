@@ -20,9 +20,9 @@
 
 1、在 192.168.100.16 192.168.100.17 192.168.100.18 启动 volmgr： 
 
-	/home/cfs/cfs-volmgr -volmgr 192.168.100.16 -nodeid 1 -nodepeer 1,2,3 -nodeips 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/volmgr/data  
-    /home/cfs/cfs-volmgr -volmgr 192.168.100.17 -nodeid 2 -nodepeer 1,2,3 -nodeips 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/volmgr/data     
-    /home/cfs/cfs-volmgr -volmgr 192.168.100.18 -nodeid 3 -nodepeer 1,2,3 -nodeips 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/volmgr/data  
+	/home/cfs/cfs-volmgr -host 192.168.100.16 -nodeid 1 -nodepeer 1,2,3 -nodeips 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/volmgr/data  
+    /home/cfs/cfs-volmgr -host 192.168.100.17 -nodeid 2 -nodepeer 1,2,3 -nodeips 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/volmgr/data     
+    /home/cfs/cfs-volmgr -host 192.168.100.18 -nodeid 3 -nodepeer 1,2,3 -nodeips 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/volmgr/data  
 
 2、在 192.168.100.16 192.168.100.17 192.168.100.18 启动 metanode： 
 

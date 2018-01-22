@@ -77,7 +77,7 @@ func (vs *VolMgrServer) load() error {
 
 func init() {
 
-	flag.StringVar(&VolMgrServerAddr.host, "volmgr", "127.0.0.1", "ContainerFS VolMgr Host")
+	flag.StringVar(&VolMgrServerAddr.host, "host", "127.0.0.1", "ContainerFS VolMgr Host")
 	nodeid := flag.Int64("nodeid", 1, "ContainerFS VolMgr ID")
 	peers := flag.String("nodepeer", "1,2,3", "ContainerFS VolMgr peers")
 	ips := flag.String("nodeips", "127.0.0.1,127.0.0.1,127.0.0.1", "ContainerFS VolMgr ips")
