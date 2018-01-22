@@ -345,7 +345,7 @@ func SnapShotVol(uuid string) int32 {
 
 		conn, err := utils.Dial(v)
 		if err != nil {
-			logger.Error("SnapShotVol failed,Dial to MetaNodeHosts %v fail :%v", v,err)
+			logger.Error("SnapShotVol failed,Dial to MetaNodeHosts %v fail :%v", v, err)
 			return -1
 		}
 
@@ -356,7 +356,7 @@ func SnapShotVol(uuid string) int32 {
 			VolID: uuid,
 		}
 		ctx, _ := context.WithTimeout(context.Background(), 100*time.Second)
-		pmSnapShootNameSpaceAck, err := mc.SnapShotNameSpace(ctx, pmSnapShotNameSpaceReq)
+		pmSnapShotNameSpaceAck, err := mc.SnapShotNameSpace(ctx, pmSnapShotNameSpaceReq)
 		if err != nil {
 			logger.Error("SnapShotVol failed,grpc func err :%v", err)
 			return -1
@@ -370,7 +370,6 @@ func SnapShotVol(uuid string) int32 {
 
 	return 0
 }
-
 
 // DeleteVol function
 func DeleteVol(uuid string) int32 {
