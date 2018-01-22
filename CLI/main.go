@@ -107,18 +107,16 @@ func main() {
 		if ret != 0 {
 			fmt.Println("failed")
 		}
-		/*
-			case "snapshootvol":
-				argNum := flag.NArg()
-				if argNum != 1 {
-					fmt.Println("snapshootvol [voluuid]")
-					os.Exit(1)
-				}
-				ret := fs.SnapShotVol(flag.Arg(0))
-				if ret != 0 {
-					fmt.Println("failed")
-				}
-		*/
+	case "snapshotvol":
+		argNum := flag.NArg()
+		if argNum != 1 {
+			fmt.Println("snapshotvol [voluuid]")
+			os.Exit(1)
+		}
+		ret := fs.SnapShotVol(flag.Arg(0))
+		if ret != 0 {
+			fmt.Println("failed")
+		}
 	case "getvolmetaleader":
 		argNum := flag.NArg()
 		if argNum != 1 {

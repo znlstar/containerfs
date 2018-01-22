@@ -186,17 +186,10 @@ func CreateNameSpace(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir
 }
 
 //SnapShootNameSpace ...
-func SnapShootNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
+func SnapShotNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
 
 	defer catchPanic()
-
-	if UUID != "Cluster" {
-		ret, nameSpace := GetNameSpace(UUID)
-		if ret != 0 {
-			return ret
-		}
-		raftopt.TakeVolumeKvSnapShot(nameSpace.RaftGroup, nameSpace.RaftStorage, path.Join(dir, UUID, "wal", "snap"))
-	}
+	raftopt.TakeVolumeKvSnapShot(nameSpace.RaftGroup, nameSpace.RaftStorage, path.Join(dir, UUID, "wal", "snap"))
 	return 0
 }
 

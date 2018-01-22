@@ -786,6 +786,10 @@ func closeConns(c *cfs.CFS) {
 		c.MetaNodeConn.Close()
 	}
 
+	if c.VolMgrConn != nil {
+		c.VolMgrConn.Close()
+	}
+
 }
 
 func mount(uuid, mountPoint string, isReadOnly int) error {
