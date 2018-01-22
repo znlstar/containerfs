@@ -102,7 +102,7 @@ func CreateVol(name string, capacity string, tier string) int32 {
 
 	_, conn, err := utils.DialVolMgr(VolMgrHosts)
 	if err != nil {
-		logger.Error("GetAllDatanode failed,Dial to VolMgrHosts fail :%v", err)
+		logger.Error("CreateVol failed,Dial to VolMgrHosts fail :%v", err)
 		return -1
 	}
 	defer conn.Close()
@@ -372,7 +372,7 @@ func DeleteVol(uuid string) int32 {
 
 	_, conn, err := utils.DialVolMgr(VolMgrHosts)
 	if err != nil {
-		logger.Error("GetAllDatanode failed,Dial to VolMgrHosts fail :%v", err)
+		logger.Error("DeleteVol failed,Dial to VolMgrHosts fail :%v", err)
 		return -1
 	}
 	defer conn.Close()
@@ -565,17 +565,22 @@ func (cfs *CFS) GetFSInfo() (int32, *mp.GetFSInfoAck) {
 	return 0, pGetFSInfoAck
 }
 
+func (cfs *CFS) checkMetaConn() int32 {
+	for i := 0; cfs.MetaNodeConn == nil && i < 10; i++ {
+		time.Sleep(300 * time.Millisecond)
+	}
+
+	if cfs.MetaNodeConn == nil {
+		return -1
+	}
+	return 0
+}
+
 // CreateDirDirect ...
 func (cfs *CFS) CreateDirDirect(pinode uint64, name string) (int32, uint64) {
 
-	for i := 0; i < 10; i++ {
-		if cfs.MetaNodeConn != nil {
-			break
-		}
-		time.Sleep(300 * time.Millisecond)
-		continue
-	}
-	if cfs.MetaNodeConn == nil {
+	ret := cfs.checkMetaConn()
+	if ret != 0 {
 		return -1, 0
 	}
 
@@ -591,14 +596,8 @@ func (cfs *CFS) CreateDirDirect(pinode uint64, name string) (int32, uint64) {
 
 		time.Sleep(time.Second)
 
-		for i := 0; i < 10; i++ {
-			if cfs.MetaNodeConn != nil {
-				break
-			}
-			time.Sleep(300 * time.Millisecond)
-			continue
-		}
-		if cfs.MetaNodeConn == nil {
+		ret := cfs.checkMetaConn()
+		if ret != 0 {
 			return -1, 0
 		}
 
@@ -616,14 +615,8 @@ func (cfs *CFS) CreateDirDirect(pinode uint64, name string) (int32, uint64) {
 // GetInodeInfoDirect ...
 func (cfs *CFS) GetInodeInfoDirect(pinode uint64, name string) (int32, uint64, *mp.InodeInfo) {
 
-	for i := 0; i < 10; i++ {
-		if cfs.MetaNodeConn != nil {
-			break
-		}
-		time.Sleep(300 * time.Millisecond)
-		continue
-	}
-	if cfs.MetaNodeConn == nil {
+	ret := cfs.checkMetaConn()
+	if ret != 0 {
 		return -1, 0, nil
 	}
 
@@ -639,14 +632,8 @@ func (cfs *CFS) GetInodeInfoDirect(pinode uint64, name string) (int32, uint64, *
 
 		time.Sleep(time.Second)
 
-		for i := 0; i < 10; i++ {
-			if cfs.MetaNodeConn != nil {
-				break
-			}
-			time.Sleep(300 * time.Millisecond)
-			continue
-		}
-		if cfs.MetaNodeConn == nil {
+		ret := cfs.checkMetaConn()
+		if ret != 0 {
 			return -1, 0, nil
 		}
 
@@ -664,14 +651,8 @@ func (cfs *CFS) GetInodeInfoDirect(pinode uint64, name string) (int32, uint64, *
 // StatDirect ...
 func (cfs *CFS) StatDirect(pinode uint64, name string) (int32, bool, uint64) {
 
-	for i := 0; i < 10; i++ {
-		if cfs.MetaNodeConn != nil {
-			break
-		}
-		time.Sleep(300 * time.Millisecond)
-		continue
-	}
-	if cfs.MetaNodeConn == nil {
+	ret := cfs.checkMetaConn()
+	if ret != 0 {
 		return -1, false, 0
 	}
 
@@ -687,14 +668,8 @@ func (cfs *CFS) StatDirect(pinode uint64, name string) (int32, bool, uint64) {
 
 		time.Sleep(time.Second)
 
-		for i := 0; i < 10; i++ {
-			if cfs.MetaNodeConn != nil {
-				break
-			}
-			time.Sleep(300 * time.Millisecond)
-			continue
-		}
-		if cfs.MetaNodeConn == nil {
+		ret := cfs.checkMetaConn()
+		if ret != 0 {
 			return -1, false, 0
 		}
 
@@ -711,14 +686,8 @@ func (cfs *CFS) StatDirect(pinode uint64, name string) (int32, bool, uint64) {
 // ListDirect ...
 func (cfs *CFS) ListDirect(pinode uint64) (int32, []*mp.DirentN) {
 
-	for i := 0; i < 10; i++ {
-		if cfs.MetaNodeConn != nil {
-			break
-		}
-		time.Sleep(300 * time.Millisecond)
-		continue
-	}
-	if cfs.MetaNodeConn == nil {
+	ret := cfs.checkMetaConn()
+	if ret != 0 {
 		return -1, nil
 	}
 
@@ -745,14 +714,8 @@ func (cfs *CFS) DeleteDirDirect(pinode uint64, name string) int32 {
 		return 0
 	}
 
-	for i := 0; i < 10; i++ {
-		if cfs.MetaNodeConn != nil {
-			break
-		}
-		time.Sleep(300 * time.Millisecond)
-		continue
-	}
-	if cfs.MetaNodeConn == nil {
+	ret = cfs.checkMetaConn()
+	if ret != 0 {
 		return -1
 	}
 
@@ -808,14 +771,8 @@ func (cfs *CFS) DeleteDirDirect(pinode uint64, name string) int32 {
 // RenameDirect ...
 func (cfs *CFS) RenameDirect(oldpinode uint64, oldname string, newpinode uint64, newname string) int32 {
 
-	for i := 0; i < 10; i++ {
-		if cfs.MetaNodeConn != nil {
-			break
-		}
-		time.Sleep(300 * time.Millisecond)
-		continue
-	}
-	if cfs.MetaNodeConn == nil {
+	ret := cfs.checkMetaConn()
+	if ret != 0 {
 		return -1
 	}
 
@@ -919,14 +876,8 @@ func (cfs *CFS) UpdateOpenFileDirect(pinode uint64, name string, cfile *CFile, f
 // createFileDirect ...
 func (cfs *CFS) createFileDirect(pinode uint64, name string) (int32, uint64) {
 
-	for i := 0; i < 10; i++ {
-		if cfs.MetaNodeConn != nil {
-			break
-		}
-		time.Sleep(300 * time.Millisecond)
-		continue
-	}
-	if cfs.MetaNodeConn == nil {
+	ret := cfs.checkMetaConn()
+	if ret != 0 {
 		return -1, 0
 	}
 
@@ -942,14 +893,8 @@ func (cfs *CFS) createFileDirect(pinode uint64, name string) (int32, uint64) {
 
 		time.Sleep(time.Second)
 
-		for i := 0; i < 10; i++ {
-			if cfs.MetaNodeConn != nil {
-				break
-			}
-			time.Sleep(300 * time.Millisecond)
-			continue
-		}
-		if cfs.MetaNodeConn == nil {
+		ret := cfs.checkMetaConn()
+		if ret != 0 {
 			return -1, 0
 		}
 
@@ -1008,14 +953,8 @@ func (cfs *CFS) DeleteFileDirect(pinode uint64, name string) int32 {
 		}
 	}
 
-	for i := 0; i < 10; i++ {
-		if cfs.MetaNodeConn != nil {
-			break
-		}
-		time.Sleep(300 * time.Millisecond)
-		continue
-	}
-	if cfs.MetaNodeConn == nil {
+	ret = cfs.checkMetaConn()
+	if ret != 0 {
 		return -1
 	}
 
@@ -1030,17 +969,10 @@ func (cfs *CFS) DeleteFileDirect(pinode uint64, name string) int32 {
 	if err != nil || mpDeleteFileDirectAck.Ret != 0 {
 		time.Sleep(time.Second)
 
-		for i := 0; i < 10; i++ {
-			if cfs.MetaNodeConn != nil {
-				break
-			}
-			time.Sleep(300 * time.Millisecond)
-			continue
-		}
-		if cfs.MetaNodeConn == nil {
+		ret := cfs.checkMetaConn()
+		if ret != 0 {
 			return -1
 		}
-
 		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
 		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
 		mpDeleteFileDirectAck, err = mc.DeleteFileDirect(ctx, mpDeleteFileDirectReq)
@@ -1056,14 +988,9 @@ func (cfs *CFS) DeleteFileDirect(pinode uint64, name string) int32 {
 // GetFileChunksDirect ...
 func (cfs *CFS) GetFileChunksDirect(pinode uint64, name string) (int32, []*mp.ChunkInfoWithBG, uint64) {
 
-	for i := 0; i < 10; i++ {
-		if cfs.MetaNodeConn != nil {
-			break
-		}
-		time.Sleep(300 * time.Millisecond)
-		continue
-	}
-	if cfs.MetaNodeConn == nil {
+	ret := cfs.checkMetaConn()
+	if ret != 0 {
+		logger.Error("GetFileChunksDirect cfs.Conn nil ...")
 		return -1, nil, 0
 	}
 
@@ -1079,14 +1006,9 @@ func (cfs *CFS) GetFileChunksDirect(pinode uint64, name string) (int32, []*mp.Ch
 
 		time.Sleep(time.Second)
 
-		for i := 0; i < 10; i++ {
-			if cfs.MetaNodeConn != nil {
-				break
-			}
-			time.Sleep(300 * time.Millisecond)
-			continue
-		}
-		if cfs.MetaNodeConn == nil {
+		ret := cfs.checkMetaConn()
+		if ret != 0 {
+			logger.Error("GetFileChunksDirect cfs.Conn nil ...")
 			return -1, nil, 0
 		}
 
@@ -1641,6 +1563,7 @@ func (cfile *CFile) seekWrite(eInfo extentInfo, buf []byte) int32 {
 
 		conn[i] = cfile.newDataConn(v)
 		if conn[i] == nil {
+			logger.Error("cfile %v dial %v failed!", cfile.Name, v)
 			return -1
 		}
 	}
@@ -1663,7 +1586,7 @@ func (cfile *CFile) seekWrite(eInfo extentInfo, buf []byte) int32 {
 	cfile.wgWriteReps.Wait()
 
 	if copies < 3 {
-		cfile.Status = 1
+		cfile.Status = FileError
 		logger.Error("cfile %v seekWriteChunk copies: %v, set error!", cfile.Name, copies)
 		return -1
 	}
@@ -1699,16 +1622,17 @@ func (cfile *CFile) WriteThread() {
 		select {
 		case chanData := <-cfile.DataQueue:
 			if chanData == nil {
-				logger.Debug("WriteThread recv channel close ...")
+				logger.Debug("WriteThread file %v recv channel close, wait DataCache...", cfile.Name)
 				var ti uint32
 				for cfile.Status == FileNormal {
 					if len(cfile.DataCache) == 0 {
-						logger.Debug("WriteThread cfile.DataCache == 0 ")
 						break
 					}
 					ti++
 					time.Sleep(time.Millisecond * 5)
 				}
+				logger.Debug("WriteThread file %v wait DataCache == 0 done. loop times: %v", cfile.Name, ti)
+
 				if cfile.CurChunk != nil {
 					if cfile.CurChunk.ChunkWriteSteam != nil {
 						cfile.CurChunk.ChunkWriteSteam.CloseSend()
@@ -1726,10 +1650,8 @@ func (cfile *CFile) WriteThread() {
 				newData.Status = 1
 
 				if err := cfile.WriteHandler(newData); err != nil {
-					logger.Error("WriteThread WriteHandler err !!%v", err)
-
+					logger.Error("WriteThread file %v WriteHandler err %v !", cfile.Name, err)
 					cfile.Status = FileError
-					logger.Debug("WriteHandler send WriteErrSignal")
 					cfile.WriteErrSignal <- true
 				}
 			}
@@ -1773,10 +1695,9 @@ ALLOCATECHUNK:
 	}
 
 	if cfile.CurChunk == nil {
-		var ret int32
 		for retryCnt := 0; retryCnt < 5; retryCnt++ {
-			ret, cfile.CurChunk = cfile.AllocateChunk(true)
-			if cfile.CurChunk == nil || ret != 0 {
+			cfile.CurChunk = cfile.AllocateChunk(true)
+			if cfile.CurChunk == nil {
 				logger.Error("WriteHandler: file %v, alloc chunk failed for %v times\n", cfile.Name, retryCnt+1)
 				time.Sleep(time.Millisecond * 500)
 				continue
@@ -1825,17 +1746,14 @@ ALLOCATECHUNK:
 }
 
 // AllocateChunk ...
-func (cfile *CFile) AllocateChunk(IsStream bool) (int32, *Chunk) {
+func (cfile *CFile) AllocateChunk(IsStream bool) *Chunk {
 
-	for i := 0; i < 10; i++ {
-		if cfile.cfs.MetaNodeConn != nil {
-			break
-		}
-		time.Sleep(300 * time.Millisecond)
-		continue
-	}
-	if cfile.cfs.MetaNodeConn == nil {
-		return -1, nil
+	logger.Debug("AllocateChunk file: %v begin\n", cfile.Name)
+
+	ret := cfile.cfs.checkMetaConn()
+	if ret != 0 {
+		logger.Error("AllocateChunk file: %v failed\n", cfile.Name)
+		return nil
 	}
 
 	mc := mp.NewMetaNodeClient(cfile.cfs.MetaNodeConn)
@@ -1847,57 +1765,52 @@ func (cfile *CFile) AllocateChunk(IsStream bool) (int32, *Chunk) {
 	if err != nil || pAllocateChunkAck.Ret != 0 {
 		time.Sleep(time.Second * 2)
 
-		for i := 0; i < 10; i++ {
-			if cfile.cfs.MetaNodeConn != nil {
-				break
-			}
-			time.Sleep(300 * time.Millisecond)
-			continue
-		}
-		if cfile.cfs.MetaNodeConn == nil {
-			return -1, nil
+		ret := cfile.cfs.checkMetaConn()
+		if ret != 0 {
+			logger.Error("AllocateChunk file: %v failed\n", cfile.Name)
+			return nil
 		}
 
 		mc = mp.NewMetaNodeClient(cfile.cfs.MetaNodeConn)
 		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
 		pAllocateChunkAck, err = mc.AllocateChunk(ctx, pAllocateChunkReq)
 		if err != nil {
-			logger.Error("AllocateChunk failed,grpc func failed :%v\n", err)
-			return -1, nil
+			logger.Error("AllocateChunk file: %v failed, err: %v\n", cfile.Name, err)
+			return nil
 		}
 	}
 
 	curChunk := &Chunk{}
-
 	curChunk.CFile = cfile
 	curChunk.ChunkInfo = pAllocateChunkAck.ChunkInfo
 
-	logger.Debug("AllocateChunk curChunk : %v", curChunk)
+	logger.Debug("AllocateChunk file: %v from metanode chunk info:%v\n", cfile.Name, curChunk.ChunkInfo)
 
 	if IsStream {
 
-		tmpConn1, err := grpc.Dial(curChunk.ChunkInfo.BlockGroupWithHost.Hosts[1], grpc.WithInsecure(), grpc.WithBlock(), grpc.FailOnNonTempDialError(true))
+		err := utils.TryDial(curChunk.ChunkInfo.BlockGroupWithHost.Hosts[1])
 		if err != nil {
-			return -1, nil
-		} else {
-			tmpConn1.Close()
+			logger.Error("AllocateChunk file: %v new conn to %v failed, err: %v\n", cfile.Name, curChunk.ChunkInfo.BlockGroupWithHost.Hosts[1], err)
+			return nil
 		}
 
-		tmpConn2, err := grpc.Dial(curChunk.ChunkInfo.BlockGroupWithHost.Hosts[2], grpc.WithInsecure(), grpc.WithBlock(), grpc.FailOnNonTempDialError(true))
+		err = utils.TryDial(curChunk.ChunkInfo.BlockGroupWithHost.Hosts[2])
 		if err != nil {
-			return -1, nil
-		} else {
-			tmpConn2.Close()
+			logger.Error("AllocateChunk file: %v new conn to %v failed, err: %v\n", cfile.Name, curChunk.ChunkInfo.BlockGroupWithHost.Hosts[2], err)
+			return nil
 		}
 
-		C2Mconn, err := grpc.Dial(curChunk.ChunkInfo.BlockGroupWithHost.Hosts[0], grpc.WithInsecure(), grpc.WithBlock(), grpc.FailOnNonTempDialError(true))
-		if err != nil {
-			return -1, nil
+		C2Mconn := cfile.newDataConn(curChunk.ChunkInfo.BlockGroupWithHost.Hosts[0])
+		if C2Mconn == nil {
+			logger.Error("AllocateChunk file: %v new conn to %v failed\n", cfile.Name, curChunk.ChunkInfo.BlockGroupWithHost.Hosts[0])
+			return nil
 		}
 		C2Mclient := dp.NewDataNodeClient(C2Mconn)
 		curChunk.ChunkWriteSteam, err = C2Mclient.C2MRepl(context.Background())
 		if err != nil {
-			return -1, nil
+			cfile.delErrDataConn(curChunk.ChunkInfo.BlockGroupWithHost.Hosts[0])
+			logger.Error("AllocateChunk file: %v create stream to %v failed, err: %v\n", cfile.Name, curChunk.ChunkInfo.BlockGroupWithHost.Hosts[0], err)
+			return nil
 		}
 
 		curChunk.ChunkFreeSize = chunkSize
@@ -1906,39 +1819,47 @@ func (cfile *CFile) AllocateChunk(IsStream bool) (int32, *Chunk) {
 		go curChunk.C2MRecv()
 	}
 
-	logger.Debug("AllocateChunk success: chunk info:%v\n", pAllocateChunkAck.ChunkInfo)
+	logger.Debug("AllocateChunk file: %v success\n", cfile.Name)
 
-	return pAllocateChunkAck.Ret, curChunk
+	return curChunk
 }
 
 func (chunk *Chunk) Retry() {
 
 	chunk.CFile.DataCacheLocker.Lock()
-	defer logger.Debug("Retry Out !")
 	defer chunk.CFile.DataCacheLocker.Unlock()
 
-	flag := false
+	if len(chunk.CFile.DataCache) == 0 {
+		logger.Debug("C2MRecv thread end success for file %v chunk %v", chunk.CFile.Name, chunk.ChunkInfo.ChunkID)
+		return
+	}
+
+	logger.Debug("C2MRecv thread Retry write file %v chunk %v start", chunk.CFile.Name, chunk.ChunkInfo.ChunkID)
+
+	retrySuccess := false
 	var err error
 	for retryCnt := 0; retryCnt < 5; retryCnt++ {
 		err = chunk.WriteRetryHandle()
 		if err != nil {
-			time.Sleep(time.Millisecond * 100)
+			logger.Error("WriteRetryHandle file %v chunk %v err: %v, try again for %v times!", chunk.CFile.Name, chunk.ChunkInfo.ChunkID, err, retryCnt+1)
+			time.Sleep(time.Millisecond * 500)
 			continue
 		} else {
-			flag = true
+			retrySuccess = true
 			break
 		}
 	}
-	if !flag {
+
+	if !retrySuccess {
 		chunk.CFile.Status = FileError
-		logger.Debug("C2MRecv send WriteErrSignal")
 		chunk.CFile.WriteErrSignal <- true
+		logger.Error("C2MRecv thread Retry write file %v chunk %v failed, set FileError!", chunk.CFile.Name, chunk.ChunkInfo.ChunkID)
 	} else {
 		chunk.CFile.DataCache = make(map[uint64]*Data)
 		chunk.ChunkFreeSize = 0
 		chunk.ChunkWriteSteam = nil
+		logger.Debug("C2MRecv thread Retry write file %v chunk %v success", chunk.CFile.Name, chunk.ChunkInfo.ChunkID)
 	}
-
 }
 
 func (chunk *Chunk) C2MRecv() {
@@ -1949,52 +1870,22 @@ func (chunk *Chunk) C2MRecv() {
 	for {
 		in, err := chunk.ChunkWriteSteam.Recv()
 		if err == io.EOF {
-			logger.Debug("C2MRecv: stream %v EOF\n", chunk.ChunkWriteSteam)
+			logger.Debug("C2MRecv: file %v chunk %v stream %v EOF\n", chunk.CFile.Name, chunk.ChunkInfo.ChunkID, chunk.ChunkWriteSteam)
 			break
 		}
 		if err != nil {
-			logger.Debug("C2MRecv: stream %v error return :%v\n", chunk.ChunkWriteSteam, err)
+			logger.Debug("C2MRecv: file %v chunk %v stream %v error return : %v\n", chunk.CFile.Name, chunk.ChunkInfo.ChunkID, chunk.ChunkWriteSteam, err)
 			break
 		}
 
 		if in.Ret == -1 {
-			logger.Error("C2MRecv ack.Ret -1 , means M2S2B stream err")
+			logger.Error("C2MRecv: file %v chunk %v ack.Ret -1 , means M2S2B stream err", chunk.CFile.Name, chunk.ChunkInfo.ChunkID)
 			break
 		}
 
 		// update to metanode
 		logger.Debug("C2MRecv: Write success! try to update metadata file: %v, ID；%v, chunk: %v, len: %v\n",
 			chunk.CFile.Name, in.CommitID, in.ChunkID, in.DataLen)
-
-		/*
-
-			pAsyncChunkReq := &mp.AsyncChunkReq{
-				VolID:         chunk.CFile.cfs.VolID,
-				ParentInodeID: chunk.CFile.ParentInodeID,
-				Name:          chunk.CFile.Name,
-				ChunkID:       in.ChunkID,
-				CommitSize:    in.DataLen,
-				BlockGroupID:  in.BlockGroupID,
-			}
-
-			flag := false
-			for i := 0; i < 10; i++ {
-				mc := mp.NewMetaNodeClient(chunk.CFile.cfs.MetaNodeConn)
-				ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-				_, err2 := mc.AsyncChunk(ctx, pAsyncChunkReq)
-				if err2 != nil {
-					time.Sleep(time.Millisecond * 300)
-					continue
-				} else {
-					flag = true
-					break
-				}
-			}
-			if !flag {
-				break
-			}
-
-		*/
 
 		mc := mp.NewMetaNodeClient(chunk.CFile.cfs.MetaNodeConn)
 		pAsyncChunkReq := &mp.AsyncChunkReq{
@@ -2023,16 +1914,14 @@ func (chunk *Chunk) C2MRecv() {
 
 func (chunk *Chunk) WriteRetryHandle() error {
 
-	if len(chunk.CFile.DataCache) == 0 {
+	length := len(chunk.CFile.DataCache)
+	if length == 0 {
 		return nil
 	}
 
-	logger.Debug("WriteRetryHandle in ...")
-
-	ret, tmpchunk := chunk.CFile.AllocateChunk(false)
-	if ret != 0 {
-		logger.Error("WriteRetryHandle AllocateChunk Failed !")
-		return errors.New("error")
+	tmpchunk := chunk.CFile.AllocateChunk(false)
+	if tmpchunk == nil {
+		return errors.New("AllocateChunk error")
 	}
 
 	sortedKeys := make([]int, 0)
@@ -2041,6 +1930,7 @@ func (chunk *Chunk) WriteRetryHandle() error {
 		sortedKeys = append(sortedKeys, int(k))
 	}
 	sort.Ints(sortedKeys)
+	logger.Debug("WriteRetryHandle AllocateChunk success, begin to retry item num:%v, commitIDs: %v", length, sortedKeys)
 
 	var chunkSize int
 
@@ -2068,6 +1958,9 @@ func (chunk *Chunk) WriteRetryHandle() error {
 				return err
 			}
 		}
+
+		logger.Debug("WriteRetryHandle write CommitID %v bufLen %v success", vv, bufLen)
+		chunkSize += bufLen
 	}
 
 	mc := mp.NewMetaNodeClient(chunk.CFile.cfs.MetaNodeConn)
@@ -2085,11 +1978,9 @@ func (chunk *Chunk) WriteRetryHandle() error {
 		logger.Error("WriteRetryHandle AsyncChunk to MetaNode Failed err %v", err2)
 		return err2
 	}
+	logger.Debug("WriteRetryHandle success with ChunkID %v ChunkSize %v", tmpchunk.ChunkInfo.ChunkID, chunkSize)
 
 	chunk.CFile.updateChunkSize(tmpchunk.ChunkInfo, int32(chunkSize))
-
-	logger.Debug("WriteRetryHandle Success !")
-
 	return nil
 }
 

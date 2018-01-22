@@ -13,7 +13,7 @@ import (
 // GetLeader ...
 func GetMetaNodeLeader(hosts []string, UUID string) (string, error) {
 
-	logger.Debug("GetMetaNodeLeader hosts %v", hosts)
+	//logger.Debug("GetMetaNodeLeader hosts %v", hosts)
 
 	var leader string
 	var flag bool
@@ -48,7 +48,7 @@ func GetMetaNodeLeader(hosts []string, UUID string) (string, error) {
 
 		return "", errors.New("Get leader failed")
 	}
-	logger.Debug("GetMetaNodeLeader success ")
+	//logger.Debug("GetMetaNodeLeader success ")
 
 	return leader, nil
 
@@ -68,6 +68,16 @@ func Dial(host string) (*grpc.ClientConn, error) {
 		}
 	}
 	return conn, err
+}
+
+// TryDial: Dial and Close connection for checking network
+func TryDial(host string) error {
+	conn, err := grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
+	if err != nil {
+		return err
+	}
+	conn.Close()
+	return nil
 }
 
 // GetLeader ...
