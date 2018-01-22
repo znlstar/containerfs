@@ -7,15 +7,16 @@ A cluster filesystem for the containers. Please see http://containerfs.io/ for c
 
 # Roadmap
 * 2017Q4  
-1. WEB UI
-2. ReplGroup for Datanode
-       
+1. WEB UI ✔
+2. ReplGroup for DataNode  ✔
+ 
 * 2018Q1
-1. Kernel Client
-2. Volume meta auto split
+1. RaftGroup for MetaNode  ✔
+2. Full Posix Interface 
 
 * 2018Q2
-1. SPDK-NVME driver for Datanode
+1. Kernel Client
+2. SPDK-NVME driver for Datanode
 
 # Concepts
 
