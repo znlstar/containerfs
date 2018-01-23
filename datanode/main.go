@@ -920,11 +920,16 @@ func init() {
 	flag.StringVar(&DataNodeServerAddr.Path, "datapath", "", "ContainerFS DataNode Data Path")
 	flag.StringVar(&DataNodeServerAddr.Log, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Log Path")
 	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS Log Level")
-	flag.StringVar(&volMgrHosts, "volmgr", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS VolMgr hosts")
+	flag.StringVar(&volMgrHosts, "volmgr", "10.8.64.216,10.8.64.217,10.8.64.218", "ContainerFS VolMgr hosts")
 
 	flag.Parse()
 
-	VolMgrHosts = strings.Split(volMgrHosts, ",")
+	tmp := strings.Split(volMgrHosts, ",")
+
+	VolMgrHosts = make([]string, 3)
+	VolMgrHosts[0] = tmp[0] + ":7703"
+	VolMgrHosts[1] = tmp[1] + ":7713"
+	VolMgrHosts[2] = tmp[2] + ":7723"
 
 	DataNodeServerAddr.Flag = DataNodeServerAddr.Path + "/.registryflag"
 

@@ -398,7 +398,7 @@ func init() {
 	var loglevel string
 
 	flag.StringVar(&MetaNodeServerAddr.host, "host", "127.0.0.1", "ContainerFS Metanode Host")
-	flag.StringVar(&volmgrHostString, "volmgr", "10.8.64.216:7701,10.8.64.217:7701,110.8.64.218:7701", "ContainerFS VolMgr Host")
+	flag.StringVar(&volmgrHostString, "volmgr", "10.8.64.216,10.8.64.217,10.8.64.218", "ContainerFS VolMgr Host")
 	flag.Uint64Var(&nodeid, "nodeid", 1, "ContainerFS Metanode ID")
 	flag.StringVar(&MetaNodeServerAddr.waldir, "wal", "/export/containerfs/metanode/data", "ContainerFS Meta waldir")
 	flag.StringVar(&MetaNodeServerAddr.log, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Meta log")
@@ -406,7 +406,13 @@ func init() {
 
 	flag.Parse()
 
-	MetaNodeServerAddr.volmgrHosts = strings.Split(volmgrHostString, ",")
+	tmp := strings.Split(volmgrHostString, ",")
+
+	MetaNodeServerAddr.volmgrHosts = make([]string, 3)
+	MetaNodeServerAddr.volmgrHosts[0] = tmp[0] + ":7703"
+	MetaNodeServerAddr.volmgrHosts[1] = tmp[1] + ":7713"
+	MetaNodeServerAddr.volmgrHosts[2] = tmp[2] + ":7723"
+
 	MetaNodeServerAddr.nodeID = nodeid
 	ns.VolMgrHosts = MetaNodeServerAddr.volmgrHosts
 

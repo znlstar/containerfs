@@ -704,7 +704,7 @@ func main() {
 
 	var peers string
 
-	flag.StringVar(&peers, "volmgr", "127.0.0.1:7703,127.0.0.1:7713,127.0.0.1:7723", "ContainerFS VolMgr Host")
+	flag.StringVar(&peers, "volmgr", "10.8.64.216,10.8.64.217,10.8.64.218", "ContainerFS VolMgr Host")
 
 	buffertype := flag.Int("buffertype", 0, "ContainerFS per file buffertype : 0 512KB 1 256KB 2 128KB")
 	uuid := flag.String("uuid", "xxx", "ContainerFS Volume UUID")
@@ -715,7 +715,11 @@ func main() {
 
 	flag.Parse()
 
-	cfs.VolMgrHosts = strings.Split(peers, ",")
+	tmp := strings.Split(peers, ",")
+	cfs.VolMgrHosts = make([]string, 3)
+	cfs.VolMgrHosts[0] = tmp[0] + ":7703"
+	cfs.VolMgrHosts[1] = tmp[1] + ":7713"
+	cfs.VolMgrHosts[2] = tmp[2] + ":7723"
 
 	switch *buffertype {
 	case 0:
