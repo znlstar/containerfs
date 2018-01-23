@@ -49,6 +49,7 @@ type M2SReplClientStream struct {
 	sync.Mutex
 	BlockGroupID uint64
 	refCnt       int32
+	isErr        bool
 }
 
 // Slave Struct
@@ -256,8 +257,8 @@ func (s *DataNodeServer) getReplicaStream(blockGroupID uint64) *M2SReplClientStr
 		return nil
 	}
 
-	if ok && ReplicaStream != nil && ReplicaStream.stream == nil {
-		logger.Error("DataNode[%v]: get ReplicaStream by BGID-%v but without stream!! delete it from Cache", DataNodeServerAddr.Host, blockGroupID)
+	if ReplicaStream.stream == nil || ReplicaStream.isErr {
+		logger.Error("DataNode[%v]: get ReplicaStream by BGID-%v but without stream or isErr %v!!", DataNodeServerAddr.Host, blockGroupID, ReplicaStream.isErr)
 		return nil
 	}
 
@@ -266,20 +267,25 @@ func (s *DataNodeServer) getReplicaStream(blockGroupID uint64) *M2SReplClientStr
 }
 
 func (s *DataNodeServer) putReplicaStream(ReplicaStream *M2SReplClientStream) {
+	s.M2SReplClientStreamCacheLocker.Lock()
+	defer s.M2SReplClientStreamCacheLocker.Unlock()
+
+	tmpStream, ok := s.M2SReplClientStreamCache[ReplicaStream.BlockGroupID]
+	if ok && tmpStream.isErr {
+		delete(s.M2SReplClientStreamCache, ReplicaStream.BlockGroupID)
+	}
+
 	refCnt := atomic.AddInt32(&ReplicaStream.refCnt, -1)
 	if refCnt > 0 {
 		return
 	}
 
-	s.M2SReplClientStreamCacheLocker.RLock()
-	tmpStream, ok := s.M2SReplClientStreamCache[ReplicaStream.BlockGroupID]
-	s.M2SReplClientStreamCacheLocker.RUnlock()
-
+	tmpStream, ok = s.M2SReplClientStreamCache[ReplicaStream.BlockGroupID]
 	if ok && tmpStream == ReplicaStream {
 		return
 	}
 
-	//the last user come to free ReplicaStream
+	//the last user
 	s.closeReplicaStream(ReplicaStream)
 }
 
@@ -295,9 +301,9 @@ func (s *DataNodeServer) addReplicaStream(ReplicaStream *M2SReplClientStream) {
 	tmpStream, ok := s.M2SReplClientStreamCache[ReplicaStream.BlockGroupID]
 	if ok && tmpStream != nil {
 		delete(s.M2SReplClientStreamCache, ReplicaStream.BlockGroupID)
-		refCnt := atomic.LoadInt32(&ReplicaStream.refCnt)
+		refCnt := atomic.LoadInt32(&tmpStream.refCnt)
 		if refCnt <= 0 {
-			s.closeReplicaStream(ReplicaStream)
+			s.closeReplicaStream(tmpStream)
 		}
 	}
 
@@ -361,7 +367,7 @@ func (s *DataNodeServer) C2MRepl(stream dp.DataNode_C2MReplServer) error {
 		}
 		M2SReplClientStream := C2MReplServerStream.ReplicaStream
 
-		if M2SReplClientStream == nil {
+		if M2SReplClientStream == nil || M2SReplClientStream.isErr {
 			M2SReplClientStream = s.getReplicaStream(in.BlockGroupID)
 		}
 
@@ -377,7 +383,7 @@ func (s *DataNodeServer) C2MRepl(stream dp.DataNode_C2MReplServer) error {
 			}
 
 			//should we wait for other pending requests?
-
+			M2SReplClientStream.isErr = true
 			s.putReplicaStream(M2SReplClientStream)
 			C2MReplServerStream.ReplicaStream = nil
 			logger.Error("DataNode[%v]: ClientID-%d: C2MRepl Get M2SRepl Stream by BGID-%v but Send err %v, go create new Stream", DataNodeServerAddr.Host, clientStreamID, in.BlockGroupID, err)
@@ -396,6 +402,7 @@ func (s *DataNodeServer) C2MRepl(stream dp.DataNode_C2MReplServer) error {
 
 		if err != nil {
 			logger.Error("DataNode[%v]: ClientID-%d:  M2SRepl Stream Send err %v", DataNodeServerAddr.Host, clientStreamID, err)
+			M2SReplClientStream.isErr = true
 			return err
 		}
 	}
@@ -448,10 +455,17 @@ func (mss *M2SReplClientStream) BackWard() {
 		in, err := mss.stream.Recv()
 		if err == io.EOF {
 			logger.Error("DataNode[%v]: BackWard M2Sstream-%p: BGID-%v M2SRecv EOF", DataNodeServerAddr.Host, mss, mss.BlockGroupID)
+			mss.isErr = true
 			break
 		}
 		if err != nil {
 			logger.Error("DataNode[%v]: BackWard M2Sstream-%p: BGID-%v M2SRecv err %v", DataNodeServerAddr.Host, mss, mss.BlockGroupID, err)
+			mss.isErr = true
+			break
+		}
+		if in.Ret == -1000 {
+			logger.Error("DataNode[%v]: BackWard M2Sstream-%p: BGID-%v M2SRecv receive Slave BackWard break", DataNodeServerAddr.Host, mss, mss.BlockGroupID)
+			mss.isErr = true
 			break
 		}
 
@@ -568,13 +582,17 @@ func (sbs *S2BReplClientStream) BackWard(M2SReplServerStream *M2SReplServerStrea
 		if err == io.EOF {
 			logger.Debug("DataNode[%v]: BGID-%v BackWard  S2BReplClientStream.Recv EOF", DataNodeServerAddr.Host, sbs.BlockGroupID)
 			M2SReplServerStream.NeedBreak = true
-			break
 		}
 		if err != nil {
 			logger.Error("DataNode[%v]: BGID-%v BackWard  S2BReplClientStream.Recv err %v", DataNodeServerAddr.Host, sbs.BlockGroupID, err)
 			M2SReplServerStream.NeedBreak = true
+		}
+		if M2SReplServerStream.NeedBreak {
+			ack := dp.StreamWriteAck{Ret: -1000}
+			M2SReplServerStream.stream.Send(&ack)
 			break
 		}
+
 		if err := M2SReplServerStream.stream.Send(in); err != nil {
 			logger.Error("DataNode[%v]: BGID-%v BackWard  M2SReplServerStream.Send err %v", DataNodeServerAddr.Host, sbs.BlockGroupID, err)
 			M2SReplServerStream.NeedBreak = true

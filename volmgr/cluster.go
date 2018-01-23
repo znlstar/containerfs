@@ -587,6 +587,8 @@ func (s *VolMgrServer) DetectDataNode(v *vp.DataNode) {
 			//UpdateBlock(metaServer, v.Ip, v.Port, 1)
 		}
 		return
+	} else {
+		v.Status = 0
 	}
 
 	v.Used = pDataNodeHealthCheckAck.Used
