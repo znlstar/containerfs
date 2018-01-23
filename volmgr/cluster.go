@@ -293,10 +293,168 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	return &ack, nil
 }
 
-//todo: not implemented yet
-func (s *VolMgrServer) ExpandVolTS(ctx context.Context, in *vp.ExpandVolTSReq) (*vp.ExpandVolTSAck, error) {
-	ack := vp.ExpandVolTSAck{}
-	ack.Ret = 0
+//todo: check leader
+func (s *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp.ExpandVolAck, error) {
+
+	s.Lock()
+	defer s.Unlock()
+	ack := vp.ExpandVolAck{}
+
+	//todo: check raft leader
+	if !s.RaftServer.IsLeader(1) {
+		ack.Ret = -1
+		return &ack, errNotLeader
+	}
+
+	vol, err := s.Cluster.RaftGroup.VolumeGet(1, in.UUID)
+	if err != nil {
+		logger.Error("Get volume info[%v] faield: %v", in.UUID, err)
+		return &ack, err
+	}
+
+	//the volume need block group total numbers
+	var blkgrpnum int32
+	if in.Space%BlkSizeG == 0 {
+		blkgrpnum = in.Space / BlkSizeG
+	} else {
+		blkgrpnum = in.Space/BlkSizeG + 1
+		in.Space = blkgrpnum * BlkSizeG
+	}
+	if blkgrpnum > 6 {
+		blkgrpnum = 6
+	}
+	vol.TotalSize = vol.TotalSize + in.Space
+	vol.AllocatedSize = vol.AllocatedSize + blkgrpnum*5
+	v, err := s.Cluster.RaftGroup.DataNodeGetAll(1)
+	if err != nil {
+		logger.Error("GetAllDataNode Info failed:%v for CreateVol", err)
+		return &ack, err
+	}
+	for _, vv := range v {
+		logger.Debug("DataNode: %v", vv.Host)
+	}
+	inuseNodes := make(map[string][]*vp.DataNode)
+	allip := make([]string, 0)
+
+	// pass bad status and free not enough datanodes
+	for _, vv := range v {
+		if vv.Status != 0 || vv.Free < 30 || vv.Tier != vol.Tier {
+			continue
+		}
+		tmp := strings.Split(vv.Host, ":")
+		k := tmp[0]
+		inuseNodes[k] = append(inuseNodes[k], vv)
+	}
+
+	for k, _ := range inuseNodes {
+		allip = append(allip, k)
+	}
+
+	if len(allip) < 3 {
+		logger.Error("Expand Volume:%v Tier:%v but DataNode nums:%v less than 3, so forbid CreateVol", vol.UUID, vol.Tier, len(allip))
+		ack.Ret = -1
+		return &ack, nil
+	}
+
+	dataNodesUsedMap := make(map[string][]uint64)
+	var blockGroups []*mp.BlockGroup
+	for i := int32(0); i < blkgrpnum; i++ {
+		bgID, err := s.Cluster.RaftGroup.BGIDGET(1)
+		if err != nil {
+			logger.Error("AllocateBGID for CreateVol failed, err:%v", err)
+			return &ack, err
+		}
+
+		idxs := utils.GenerateRandomNumber(0, len(allip), 3)
+		if len(idxs) != 3 {
+			ack.Ret = -1
+			return &ack, nil
+		}
+
+		var hosts []string
+		bg := &vp.BlockGroup{BlockGroupID: bgID, FreeSize: BlockGroupSize * 1024 * 1024 * 1024}
+		for n := 0; n < 3; n++ {
+			ipkey := allip[idxs[n]]
+			idx := utils.GenerateRandomNumber(0, len(inuseNodes[ipkey]), 1)
+			if len(idx) <= 0 {
+				ack.Ret = -1
+				return &ack, nil
+			}
+			host := inuseNodes[ipkey][idx[0]].Host
+			bg.Hosts = append(bg.Hosts, host)
+			hosts = append(hosts, host)
+
+		}
+		err = s.Cluster.RaftGroup.BlockGroupSet(bgID, bg)
+		if err != nil {
+			logger.Error("Expand Volume:%v Set blockgroup:%v blocks:%v failed:%v", vol.UUID, bgID, bg, err)
+			return &ack, err
+		}
+		//to set hosts blockgroups
+		for _, host := range hosts {
+			dataNodesUsedMap[host] = append(dataNodesUsedMap[host], bgID)
+			if err = s.Cluster.RaftGroup.DataNodeBGPAddBGP(host, bgID); err != nil {
+				logger.Error("failed to add bgp to datandoe: %v", err)
+				return &ack, err
+			}
+		}
+		logger.Debug("Expand Volume:%v Tier:%v Set one blockgroup:%v blocks:%v to Cluster Map success", vol.UUID, vol.Tier, bgID, bg)
+		vol.BlockGroups = append(vol.BlockGroups, bgID)
+		blockGroup := &mp.BlockGroup{}
+		blockGroup.BlockGroupID = bgID
+		blockGroup.FreeSize = BlockGroupSize * 1024 * 1024 * 1024
+		blockGroups = append(blockGroups, blockGroup)
+	}
+
+	if err = s.Cluster.RaftGroup.VolumeSet(1, vol.UUID, vol); err != nil {
+		ack.Ret = -1
+		for host, _ := range dataNodesUsedMap {
+			s.Cluster.RaftGroup.DataNodeBGPDelBGP(host, dataNodesUsedMap[host])
+		}
+	}
+
+	metaNodeRG, err := s.Cluster.RaftGroup.MetaNodeRGGet(vol.RGID)
+	if err != nil {
+		logger.Error("MetaNodeRGGet failed: %v", err)
+		return &ack, err
+	}
+	metaNodes, err := s.getMetaNodesViaIds(metaNodeRG.MetaNodes)
+	if err != nil {
+		logger.Error("MetaNodes Get failed: %v", err)
+		return &ack, err
+	}
+	var mHosts []string
+	for _, m := range metaNodes {
+		mHosts = append(mHosts, m.Host+":9901")
+	}
+	mLeader, err := utils.GetMetaNodeLeader(mHosts, in.UUID)
+	if err != nil {
+		logger.Error("GetMetaNodeLeader[ hosts: %v] failed: %v", mHosts, err)
+		return &ack, err
+	}
+	mConn, err := utils.Dial(mLeader)
+	if err != nil {
+		logger.Error("Dial metanode leader[%v] failed: %v", mLeader, err)
+		return &ack, err
+	}
+	defer mConn.Close()
+	mc := mp.NewMetaNodeClient(mConn)
+	pExpandNameSpaceReq := mp.ExpandNameSpaceReq{
+		VolID:       in.UUID,
+		BlockGroups: blockGroups,
+	}
+	ctx, _ = context.WithTimeout(context.Background(), 5*time.Second)
+	pExpandNameSpaceAck, err := mc.ExpandNameSpace(ctx, &pExpandNameSpaceReq)
+	if err != nil {
+		logger.Error("ExpandNameSpace failed: %v", err)
+		return &ack, err
+	}
+	if pExpandNameSpaceAck.Ret != 0 {
+		if err != nil {
+			logger.Error("ExpandNameSpace failed: %v", pExpandNameSpaceAck.Ret)
+			return &ack, err
+		}
+	}
 	return &ack, nil
 }
 
@@ -559,7 +717,6 @@ func (s *VolMgrServer) DetectDataNode(v *vp.DataNode) {
 			logger.Error("Detect DataNode:%v failed : Dial to DataNode failed !", dnAddr)
 			v.Status = 1
 			s.SetDataNodeMap(v)
-			logger.Debug("Detect Datanode(%v) status from good to bad, set DataNode map success", dnAddr)
 			//UpdateBlock(metaServer, v.Ip, v.Port, 1)
 		}
 		return
@@ -573,24 +730,14 @@ func (s *VolMgrServer) DetectDataNode(v *vp.DataNode) {
 			v.Status = 1
 			s.SetDataNodeMap(v)
 			logger.Debug("Detect DataNode(%v) status from good to bad, set DataNode map success", dnAddr)
-			//UpdateBlock(metaServer, v.Ip, v.Port, 1)
 		}
 		return
 	}
 
-	if pDataNodeHealthCheckAck.Status != 0 {
-		if v.Status == 0 {
-			v.Status = pDataNodeHealthCheckAck.Status
-			v.Used = pDataNodeHealthCheckAck.Used
-			s.SetDataNodeMap(v)
-			logger.Debug("Detect DataNode(%v) status from good to bad, set DataNode map success", dnAddr)
-			//UpdateBlock(metaServer, v.Ip, v.Port, 1)
-		}
-		return
+	if v.Status != pDataNodeHealthCheckAck.Status {
+		v.Status = pDataNodeHealthCheckAck.Status
+		s.SetDataNodeMap(v)
 	}
-
-	v.Used = pDataNodeHealthCheckAck.Used
-	s.SetDataNodeMap(v)
 	return
 }
 
@@ -610,22 +757,36 @@ func (s *VolMgrServer) DetectMetaNodes() {
 func (s *VolMgrServer) DetectMetaNode(v *vp.MetaNode) {
 	conn, err := utils.Dial(v.Host + ":9901")
 	if err != nil {
+		if v.Status == 0 {
+			v.Status = 1
+			s.Cluster.RaftGroup.MetaNodeSet(1, v.Id, v)
+		}
 		logger.Error("Dial metanode host[%v] failed:%v", v.Host, err)
 		return
 	}
+	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
 	pMetaNodeHealthCheckReq := mp.MetaNodeHealthCheckReq{}
 	ack, err := mc.MetaNodeHealthCheck(context.Background(), &pMetaNodeHealthCheckReq)
 	if err != nil {
-		v.Status = 1
+		if v.Status == 0 {
+			v.Status = 1
+			s.Cluster.RaftGroup.MetaNodeSet(1, v.Id, v)
+		}
+		logger.Error("MetaNodeHealthCheck host[%v] failed:%v", v.Host, err)
+		return
 	}
 	if ack.Ret != 0 {
-		v.Status = ack.Status
+		if v.Status == 0 {
+			v.Status = 1
+			s.Cluster.RaftGroup.MetaNodeSet(1, v.Id, v)
+		}
+		logger.Error("MetaNodeHealthCheck host[%v] failed:%v", v.Host, ack.Ret)
+		return
 	}
 	if v.Status != ack.Status {
-		if err = s.Cluster.RaftGroup.MetaNodeSet(1, v.Id, v); err != nil {
-			logger.Error("MetaNodeSet failed: %v", err)
-		}
+		v.Status = ack.Status
+		s.Cluster.RaftGroup.MetaNodeSet(1, v.Id, v)
 	}
 	return
 }
