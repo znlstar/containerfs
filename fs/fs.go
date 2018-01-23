@@ -72,6 +72,27 @@ func GetAllDatanode() (int32, []*vp.DataNode) {
 	return 0, pGetDataNodeAck.DataNodes
 }
 
+func GetAllMetanode() (int32, []*vp.MetaNode) {
+	_, conn, err := utils.DialVolMgr(VolMgrHosts)
+	if err != nil {
+		logger.Error("GetAllDatanode failed,Dial to VolMgrHosts fail :%v", err)
+		return -1, nil
+	}
+	defer conn.Close()
+	vc := vp.NewVolMgrClient(conn)
+	pGetAllMetaNodeReq := &vp.GetAllMetaNodeReq{}
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pGetAllMetaNodeAck, err := vc.GetMetaNode(ctx, pGetAllMetaNodeReq)
+	if err != nil {
+		logger.Error("GetAllMetanode failed,grpc func err :%v", err)
+		return -1, nil
+	}
+	if pGetAllMetaNodeAck.Ret != 0 {
+		logger.Error("GetAllMetanode failed,grpc func ret :%v", pGetAllMetaNodeAck.Ret)
+		return -1, nil
+	}
+	return 0, pGetAllMetaNodeAck.MetaNodes
+}
 func DelDatanode(host string) int {
 	_, conn, err := utils.DialVolMgr(VolMgrHosts)
 	if err != nil {
@@ -233,38 +254,36 @@ func UpdateMetaForExpandVol(UUID string, ack *mp.ExpandVolRSAck) int {
 
 	return 0
 }
+*/
 
-// ExpandVol volume totalsize for CLI...
-func ExpandVolTS(UUID string, expandQuota string) int32 {
-	conn, err := DialMeta("Cluster")
+// CreateVol volume
+func ExpandVol(uuid string, capacity string) int32 {
+
+	_, conn, err := utils.DialVolMgr(VolMgrHosts)
 	if err != nil {
-		logger.Error("ExpandVolTS failed,Dial to Cluster leader metanode fail :%v", err)
+		logger.Error("CreateVol failed,Dial to VolMgrHosts fail :%v", err)
 		return -1
 	}
 	defer conn.Close()
-	mc := mp.NewMetaNodeClient(conn)
+	vc := vp.NewVolMgrClient(conn)
 
-	tmpExpandQuota, _ := strconv.Atoi(expandQuota)
-	pExpandVolTSReq := &mp.ExpandVolTSReq{
-		VolID:       UUID,
-		ExpandQuota: int32(tmpExpandQuota),
+	spaceQuota, _ := strconv.Atoi(capacity)
+	pExpandVolReq := &vp.ExpandVolReq{
+		UUID:  uuid,
+		Space: int32(spaceQuota),
 	}
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
-	pExpandVolTSAck, err := mc.ExpandVolTS(ctx, pExpandVolTSReq)
+	ack, err := vc.ExpandVol(ctx, pExpandVolReq)
 	if err != nil {
-		logger.Error("Expand Vol:%v TotalSize:%v but VolMgr return error:%v", UUID, expandQuota, err)
+		logger.Error("ExpandVol failed, VolMgr Leader return failed,  err:%v", err)
 		return -1
 	}
-	if pExpandVolTSAck.Ret != 0 {
-		logger.Error("Expand Vol:%v TotalSize:%v but VolMgr return -1", UUID, expandQuota)
+	if ack.Ret != 0 {
+		logger.Error("ExpandVol failed, VolMgr Leader return failed, ret:%v", ack.Ret)
 		return -1
 	}
-
 	return 0
-
 }
-
-*/
 
 // Migrate bad DataNode blocks data to some Good DataNodes
 func Migrate(host string) int32 {
@@ -337,35 +356,39 @@ func GetVolInfo(name string) (int32, *vp.GetVolInfoAck) {
 	return 0, ack
 }
 
-/*   TODO
 // SnapShootVol ...
-func SnapShootVol(uuid string) int32 {
+func SnapShotVol(uuid string) int32 {
 	// send to metadata to delete a  map
-	conn, err := DialMeta(uuid)
-	if err != nil {
-		logger.Error("SnapShootVol failed,Dial to metanode fail :%v", err)
-		return -1
-	}
-	defer conn.Close()
-	mc := mp.NewMetaNodeClient(conn)
-	pmSnapShootNameSpaceReq := &mp.SnapShootNameSpaceReq{
-		VolID: uuid,
-		Type:  0,
-	}
-	ctx, _ := context.WithTimeout(context.Background(), 100*time.Second)
-	pmSnapShootNameSpaceAck, err := mc.SnapShootNameSpace(ctx, pmSnapShootNameSpaceReq)
-	if err != nil {
-		logger.Error("SnapShootVol failed,grpc func err :%v", err)
-		return -1
+
+	for _, v := range MetaNodeHosts {
+
+		conn, err := utils.Dial(v)
+		if err != nil {
+			logger.Error("SnapShotVol failed,Dial to MetaNodeHosts %v fail :%v", v, err)
+			return -1
+		}
+
+		defer conn.Close()
+
+		mc := mp.NewMetaNodeClient(conn)
+		pmSnapShotNameSpaceReq := &mp.SnapShotNameSpaceReq{
+			VolID: uuid,
+		}
+		ctx, _ := context.WithTimeout(context.Background(), 100*time.Second)
+		pmSnapShotNameSpaceAck, err := mc.SnapShotNameSpace(ctx, pmSnapShotNameSpaceReq)
+		if err != nil {
+			logger.Error("SnapShotVol failed,grpc func err :%v", err)
+			return -1
+		}
+
+		if pmSnapShotNameSpaceAck.Ret != 0 {
+			logger.Error("SnapShotVol failed,rpc func ret:%v", pmSnapShotNameSpaceAck.Ret)
+			return -1
+		}
 	}
 
-	if pmSnapShootNameSpaceAck.Ret != 0 {
-		logger.Error("SnapShootVol failed,rpc func ret:%v", pmSnapShootNameSpaceAck.Ret)
-		return -1
-	}
 	return 0
 }
-*/
 
 // DeleteVol function
 func DeleteVol(uuid string) int32 {

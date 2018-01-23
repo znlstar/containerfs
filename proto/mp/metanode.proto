@@ -8,7 +8,7 @@ service MetaNode {
     rpc GetMetaLeader(GetMetaLeaderReq) returns (GetMetaLeaderAck){};
     rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
     rpc ExpandNameSpace(ExpandNameSpaceReq) returns (ExpandNameSpaceAck){};
-    rpc SnapShootNameSpace(SnapShootNameSpaceReq) returns (SnapShootNameSpaceAck){};
+    rpc SnapShotNameSpace(SnapShotNameSpaceReq) returns (SnapShotNameSpaceAck){};
     rpc DeleteNameSpace(DeleteNameSpaceReq) returns (DeleteNameSpaceAck){};
     rpc GetFSInfo(GetFSInfoReq) returns (GetFSInfoAck){};
 
@@ -25,6 +25,9 @@ service MetaNode {
     rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
     rpc SyncChunk(SyncChunkReq) returns (SyncChunkAck){};
     rpc AsyncChunk(AsyncChunkReq) returns (AsyncChunkAck){};
+
+    //utils:healthcheck etc
+    rpc MetaNodeHealthCheck(MetaNodeHealthCheckReq) returns (MetaNodeHealthCheckAck){};
 }
 
 
@@ -66,11 +69,11 @@ message ExpandNameSpaceAck{
     int32 Ret = 1;
 }
 
-message SnapShootNameSpaceReq{
+message SnapShotNameSpaceReq{
     string VolID = 1;
     int32  Type =2 ;
 }
-message SnapShootNameSpaceAck{
+message SnapShotNameSpaceAck{
     int32 Ret = 1;
 }
 message DeleteNameSpaceReq{
@@ -260,4 +263,12 @@ message ChunkInfoWithBG{
     uint64 ChunkID = 1;
     int32 ChunkSize = 2;
     BlockGroupWithHost BlockGroupWithHost = 3;
+}
+
+message MetaNodeHealthCheckReq{
+}
+
+message MetaNodeHealthCheckAck{
+    int32 Ret = 1;
+    int32 Status = 2;
 }

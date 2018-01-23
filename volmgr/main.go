@@ -183,14 +183,28 @@ func main() {
 		}
 	}()
 
-	t := time.NewTicker(time.Second * 1)
+	volMgrServer.startClusterHealthCheck()
+
+	startVolMgrService(&volMgrServer)
+
+}
+
+func (s *VolMgrServer) startClusterHealthCheck() {
+	td := time.NewTicker(time.Second * 1)
 	go func() {
-		for range t.C {
-			if volMgrServer.RaftServer.IsLeader(1) {
-				volMgrServer.DetectDataNodes()
+		for range td.C {
+			if s.RaftServer.IsLeader(1) {
+				s.DetectDataNodes()
 			}
 		}
 	}()
-	startVolMgrService(&volMgrServer)
 
+	tm := time.NewTicker(time.Second * 1)
+	go func() {
+		for range tm.C {
+			if s.RaftServer.IsLeader(1) {
+				s.DetectMetaNodes()
+			}
+		}
+	}()
 }
