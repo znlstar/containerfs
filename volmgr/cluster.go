@@ -763,6 +763,8 @@ func (s *VolMgrServer) DetectMetaNode(v *vp.MetaNode) {
 		}
 		logger.Error("Dial metanode host[%v] failed:%v", v.Host, err)
 		return
+	} else {
+		v.Status = 0
 	}
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
