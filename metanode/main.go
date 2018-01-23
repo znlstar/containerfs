@@ -112,10 +112,9 @@ func (s *MetaNodeServer) ExpandNameSpace(ctx context.Context, in *mp.ExpandNameS
 }
 
 // SnapShootNameSpace ...
-func (s *MetaNodeServer) SnapShootNameSpace(ctx context.Context, in *mp.SnapShootNameSpaceReq) (*mp.SnapShootNameSpaceAck, error) {
-	ack := mp.SnapShootNameSpaceAck{}
-	ack.Ret = ns.SnapShootNameSpace(s.RaftServer, in.VolID, MetaNodeServerAddr.waldir)
-	return &ack, nil
+func (s *MetaNodeServer) SnapShotNameSpace(ctx context.Context, in *mp.SnapShotNameSpaceReq) (*mp.SnapShotNameSpaceAck, error) {
+	go ns.SnapShotNameSpace(s.RaftServer, in.VolID, MetaNodeServerAddr.waldir)
+	return &mp.SnapShotNameSpaceAck{Ret:0}, nil
 }
 
 // DeleteNameSpace ...

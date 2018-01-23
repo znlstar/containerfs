@@ -8,7 +8,7 @@ service MetaNode {
     rpc GetMetaLeader(GetMetaLeaderReq) returns (GetMetaLeaderAck){};
     rpc CreateNameSpace(CreateNameSpaceReq) returns (CreateNameSpaceAck){};
     rpc ExpandNameSpace(ExpandNameSpaceReq) returns (ExpandNameSpaceAck){};
-    rpc SnapShootNameSpace(SnapShootNameSpaceReq) returns (SnapShootNameSpaceAck){};
+    rpc SnapShotNameSpace(SnapShotNameSpaceReq) returns (SnapShotNameSpaceAck){};
     rpc DeleteNameSpace(DeleteNameSpaceReq) returns (DeleteNameSpaceAck){};
     rpc GetFSInfo(GetFSInfoReq) returns (GetFSInfoAck){};
 
@@ -66,11 +66,11 @@ message ExpandNameSpaceAck{
     int32 Ret = 1;
 }
 
-message SnapShootNameSpaceReq{
+message SnapShotNameSpaceReq{
     string VolID = 1;
     int32  Type =2 ;
 }
-message SnapShootNameSpaceAck{
+message SnapShotNameSpaceAck{
     int32 Ret = 1;
 }
 message DeleteNameSpaceReq{

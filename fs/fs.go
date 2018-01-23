@@ -337,35 +337,39 @@ func GetVolInfo(name string) (int32, *vp.GetVolInfoAck) {
 	return 0, ack
 }
 
-/*   TODO
 // SnapShootVol ...
-func SnapShootVol(uuid string) int32 {
+func SnapShotVol(uuid string) int32 {
 	// send to metadata to delete a  map
-	conn, err := DialMeta(uuid)
-	if err != nil {
-		logger.Error("SnapShootVol failed,Dial to metanode fail :%v", err)
-		return -1
-	}
-	defer conn.Close()
-	mc := mp.NewMetaNodeClient(conn)
-	pmSnapShootNameSpaceReq := &mp.SnapShootNameSpaceReq{
-		VolID: uuid,
-		Type:  0,
-	}
-	ctx, _ := context.WithTimeout(context.Background(), 100*time.Second)
-	pmSnapShootNameSpaceAck, err := mc.SnapShootNameSpace(ctx, pmSnapShootNameSpaceReq)
-	if err != nil {
-		logger.Error("SnapShootVol failed,grpc func err :%v", err)
-		return -1
+
+	for _, v := range MetaNodeHosts {
+
+		conn, err := utils.Dial(v)
+		if err != nil {
+			logger.Error("SnapShotVol failed,Dial to MetaNodeHosts %v fail :%v", v, err)
+			return -1
+		}
+
+		defer conn.Close()
+
+		mc := mp.NewMetaNodeClient(conn)
+		pmSnapShotNameSpaceReq := &mp.SnapShotNameSpaceReq{
+			VolID: uuid,
+		}
+		ctx, _ := context.WithTimeout(context.Background(), 100*time.Second)
+		pmSnapShotNameSpaceAck, err := mc.SnapShotNameSpace(ctx, pmSnapShotNameSpaceReq)
+		if err != nil {
+			logger.Error("SnapShotVol failed,grpc func err :%v", err)
+			return -1
+		}
+
+		if pmSnapShotNameSpaceAck.Ret != 0 {
+			logger.Error("SnapShotVol failed,rpc func ret:%v", pmSnapShotNameSpaceAck.Ret)
+			return -1
+		}
 	}
 
-	if pmSnapShootNameSpaceAck.Ret != 0 {
-		logger.Error("SnapShootVol failed,rpc func ret:%v", pmSnapShootNameSpaceAck.Ret)
-		return -1
-	}
 	return 0
 }
-*/
 
 // DeleteVol function
 func DeleteVol(uuid string) int32 {
