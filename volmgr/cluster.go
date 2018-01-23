@@ -594,6 +594,42 @@ func (s *VolMgrServer) DetectDataNode(v *vp.DataNode) {
 	return
 }
 
+func (s *VolMgrServer) DetectMetaNodes() {
+
+	vv, err := s.Cluster.RaftGroup.MetaNodeGetAll(1)
+	if err != nil {
+		logger.Error("GetAllDataNode Info failed:%v for detectDataNodes", err)
+		return
+	}
+
+	for _, v := range vv {
+		go s.DetectMetaNode(v)
+	}
+}
+
+func (s *VolMgrServer) DetectMetaNode(v *vp.MetaNode) {
+	conn, err := utils.Dial(v.Host + ":9901")
+	if err != nil {
+		logger.Error("Dial metanode host[%v] failed:%v", v.Host, err)
+		return
+	}
+	mc := mp.NewMetaNodeClient(conn)
+	pMetaNodeHealthCheckReq := mp.MetaNodeHealthCheckReq{}
+	ack, err := mc.MetaNodeHealthCheck(context.Background(), &pMetaNodeHealthCheckReq)
+	if err != nil {
+		v.Status = 1
+	}
+	if ack.Ret != 0 {
+		v.Status = ack.Status
+	}
+	if v.Status != ack.Status {
+		if err = s.Cluster.RaftGroup.MetaNodeSet(1, v.Id, v); err != nil {
+			logger.Error("MetaNodeSet failed: %v", err)
+		}
+	}
+	return
+}
+
 func (s *VolMgrServer) SetDataNodeMap(v *vp.DataNode) int {
 	key := v.Host
 	err := s.Cluster.RaftGroup.DataNodeSet(1, key, v)
@@ -671,21 +707,6 @@ func (s *VolMgrServer) MetaNodeRegistry(ctx context.Context, in *vp.MetaNode) (*
 
 	logger.Debug("MetaNode(%v) Register to VolMgr success", in.Host)
 	return &ack, nil
-}
-
-//todo: not implemented yet
-func (s *VolMgrServer) DetectMetaNodes() {
-	return
-}
-
-//todo: not implemented yet
-func (s *VolMgrServer) DetectMetaNode(v *vp.MetaNode) {
-	return
-}
-
-//todo: not implemented yet
-func (s *VolMgrServer) SetMetaNodeMap(v *vp.MetaNode) int {
-	return 0
 }
 
 // GetMetaLeader ...
