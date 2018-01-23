@@ -15,6 +15,7 @@ service VolMgr {
     rpc GetMetaNodeRGPeers(GetMetaNodeRGPeersReq) returns (GetMetaNodeRGPeersAck){};
     rpc GetBlockGroupByID(GetBlockGroupByIDReq) returns (GetBlockGroupByIDAck){};
     rpc Migrate(MigrateReq) returns (MigrateAck){};
+    rpc ExpandVol(ExpandVolReq) returns (ExpandVolAck){};
 
     // Web Info
     rpc ClusterInfo(ClusterInfoReq) returns (ClusterInfoAck){};
@@ -300,4 +301,12 @@ message NetIO {
     uint64 Dropin = 7;
     uint64 Dropout = 8;
     string Name = 9;
+}
+
+message ExpandVolReq{
+    string UUID = 1;
+    int32 Space = 2;
+}
+message ExpandVolAck{
+    int32 Ret = 1;
 }

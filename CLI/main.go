@@ -33,7 +33,8 @@ func main() {
 		getvols
 		getinodeinfo [volumeuuid ] parentinodeid name
 		getdatanodes
-		deldatanode ip port`)
+		deldatanode ip port
+		getmetanodes`)
 
 	flag.Parse()
 
@@ -72,18 +73,18 @@ func main() {
 		if ret != 0 {
 			fmt.Println("failed")
 		}
-		/*
-			case "expandvol":
-				argNum := flag.NArg()
-				if argNum != 2 {
-					fmt.Println("expandvol [volUUID] [space GB]")
-					os.Exit(1)
-				}
-				ret := fs.ExpandVolTS(flag.Arg(0), flag.Arg(1))
-				if ret != 0 {
-					fmt.Println("failed")
-				}
-		*/
+
+	case "expandvol":
+		argNum := flag.NArg()
+		if argNum != 2 {
+			fmt.Println("expandvol [volUUID] [space GB]")
+			os.Exit(1)
+		}
+		ret := fs.ExpandVol(flag.Arg(0), flag.Arg(1))
+		if ret != 0 {
+			fmt.Println("failed")
+		}
+
 	case "migrate":
 		argNum := flag.NArg()
 		if argNum != 1 {
@@ -211,6 +212,20 @@ func main() {
 			fmt.Printf("del success")
 		} else {
 			fmt.Printf("del failed , ret :%d", ret)
+		}
+	case "getmetanodes":
+		argNum := flag.NArg()
+		if argNum != 0 {
+			fmt.Println("getmetanodes")
+			os.Exit(1)
+		}
+		ret, vi := fs.GetAllMetanode()
+		if ret == 0 {
+			for _, v := range vi {
+				fmt.Println(v)
+			}
+		} else {
+			fmt.Printf("get all datanodes info failed , ret :%d", ret)
 		}
 	default:
 		fmt.Println("wrong action operation")
