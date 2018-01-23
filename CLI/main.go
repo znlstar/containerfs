@@ -18,7 +18,7 @@ func main() {
 	var peers string
 	var cmd string
 
-	flag.StringVar(&peers, "volmgr", "127.0.0.1:7703,127.0.0.1:7713,127.0.0.1:7723", "ContainerFS VolMgr Host")
+	flag.StringVar(&peers, "volmgr", "10.8.64.216,10.8.64.217,10.8.64.218", "ContainerFS VolMgr Host")
 	flag.StringVar(&logpath, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Log Path")
 	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS Log Level")
 	flag.StringVar(&cmd, "action", "", `
@@ -38,7 +38,12 @@ func main() {
 
 	flag.Parse()
 
-	fs.VolMgrHosts = strings.Split(peers, ",")
+	tmp := strings.Split(peers, ",")
+	fs.VolMgrHosts = make([]string, 3)
+	fs.VolMgrHosts[0] = tmp[0] + ":7703"
+	fs.VolMgrHosts[1] = tmp[1] + ":7713"
+	fs.VolMgrHosts[2] = tmp[2] + ":7723"
+
 	fs.BufferSize = 1024 * 1024
 
 	logger.SetConsole(true)
