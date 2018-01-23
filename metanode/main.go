@@ -114,7 +114,7 @@ func (s *MetaNodeServer) ExpandNameSpace(ctx context.Context, in *mp.ExpandNameS
 // SnapShootNameSpace ...
 func (s *MetaNodeServer) SnapShotNameSpace(ctx context.Context, in *mp.SnapShotNameSpaceReq) (*mp.SnapShotNameSpaceAck, error) {
 	go ns.SnapShotNameSpace(s.RaftServer, in.VolID, MetaNodeServerAddr.waldir)
-	return &mp.SnapShotNameSpaceAck{Ret:0}, nil
+	return &mp.SnapShotNameSpaceAck{Ret: 0}, nil
 }
 
 // DeleteNameSpace ...
@@ -384,6 +384,11 @@ func (ms *MetaNodeServer) loadMetaData() int32 {
 		ns.CreateNameSpace(ms.RaftServer, peers, MetaNodeServerAddr.nodeID, MetaNodeServerAddr.waldir, v.UUID, v.RGID, nil, true)
 	}
 	return 0
+}
+
+func (ms *MetaNodeServer) MetaNodeHealthCheck(ctx context.Context, in *mp.MetaNodeHealthCheckReq) (*mp.MetaNodeHealthCheckAck, error) {
+	ack := mp.MetaNodeHealthCheckAck{}
+	return &ack, nil
 }
 
 func init() {

@@ -25,6 +25,9 @@ service MetaNode {
     rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
     rpc SyncChunk(SyncChunkReq) returns (SyncChunkAck){};
     rpc AsyncChunk(AsyncChunkReq) returns (AsyncChunkAck){};
+
+    //utils:healthcheck etc
+    rpc MetaNodeHealthCheck(MetaNodeHealthCheckReq) returns (MetaNodeHealthCheckAck){};
 }
 
 
@@ -260,4 +263,12 @@ message ChunkInfoWithBG{
     uint64 ChunkID = 1;
     int32 ChunkSize = 2;
     BlockGroupWithHost BlockGroupWithHost = 3;
+}
+
+message MetaNodeHealthCheckReq{
+}
+
+message MetaNodeHealthCheckAck{
+    int32 Ret = 1;
+    int32 Status = 2;
 }
