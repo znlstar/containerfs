@@ -30,7 +30,7 @@
 	/home/cfs/cfs-metanode -host 192.168.100.17 -nodeid 2 -volmgr 192.168.100.16:7703,192.168.100.17:7713,192.168.100.18:7723 -wal /home/containerfs/metanode/data 
 	/home/cfs/cfs-metanode -host 192.168.100.18 -nodeid 3 -volmgr 192.168.100.16:7703,192.168.100.17:7713,192.168.100.18:7723 -wal /home/containerfs/metanode/data 
 
-3、在 192.168.100.216 192.168.100.17 192.168.100.19 启动 datanode：
+3、在 192.168.100.16 192.168.100.17 192.168.100.18 启动 datanode：
 
 	/home/cfs/cfs-datanode -host 192.168.100.16:8801 -tier sas -volmgr 192.168.100.16:7703,192.168.100.17:7713,192.168.100.18:7723 -datapath /home/containerfs/datanode1/data
 	/home/cfs/cfs-datanode -host 192.168.100.17:8801 -tier sas -volmgr 192.168.100.16:7703,192.168.100.17:7713,192.168.100.18:7723 -datapath /home/containerfs/datanode1/data
