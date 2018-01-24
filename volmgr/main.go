@@ -49,6 +49,7 @@ type VolMgrServer struct {
 	Cluster     *cluster
 	wg          sync.WaitGroup
 	bgStatusMap map[uint64]int32
+	bgStatusMapSync sync.Mutex
 	sync.Mutex
 }
 
