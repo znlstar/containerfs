@@ -339,7 +339,7 @@ func GetVolInfo(name string) (int32, *vp.GetVolInfoAck) {
 
 	_, conn, err := utils.DialVolMgr(VolMgrHosts)
 	if err != nil {
-		logger.Error("GetAllDatanode failed,Dial to VolMgrHosts fail :%v", err)
+		logger.Error("GetVolInfo failed,Dial to VolMgrHosts fail :%v", err)
 		return -1, nil
 	}
 	defer conn.Close()
@@ -352,6 +352,33 @@ func GetVolInfo(name string) (int32, *vp.GetVolInfoAck) {
 	ack, err := vc.GetVolInfo(ctx, pGetVolInfoReq)
 	if err != nil || ack.Ret != 0 {
 		return -1, &vp.GetVolInfoAck{}
+	}
+	return 0, ack
+}
+
+//Get blockgroup info
+func GetBlockGroupInfo(idStr string) (int32, *vp.GetBlockGroupInfoAck) {
+
+	bgID, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		logger.Error("GetBlockGroupInfo parse bdID failed:%v", err)
+		return -1, nil
+	}
+	_, conn, err := utils.DialVolMgr(VolMgrHosts)
+	if err != nil {
+		logger.Error("GetBlockGroupInfo failed,Dial to VolMgrHosts fail :%v", err)
+		return -1, nil
+	}
+	defer conn.Close()
+	vc := vp.NewVolMgrClient(conn)
+
+	pGetBlockGroupInfoReq := &vp.GetBlockGroupInfoReq{
+		BGID: bgID,
+	}
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	ack, err := vc.GetBlockGroupInfo(ctx, pGetBlockGroupInfoReq)
+	if err != nil || ack.Ret != 0 {
+		return -1, &vp.GetBlockGroupInfoAck{}
 	}
 	return 0, ack
 }
@@ -393,34 +420,33 @@ func SnapShotVol(uuid string) int32 {
 //Snapshot cluster data on volmgrs
 func SnapShotCluster() int32 {
 
-        for _, v := range VolMgrHosts {
+	for _, v := range VolMgrHosts {
 
-                conn, err := utils.Dial(v)
-                if err != nil {
-                        logger.Error("SnapShotVol failed,Dial to MetaNodeHosts %v fail :%v", v, err)
-                        return -1
-                }
+		conn, err := utils.Dial(v)
+		if err != nil {
+			logger.Error("SnapShotVol failed,Dial to MetaNodeHosts %v fail :%v", v, err)
+			return -1
+		}
 
-                defer conn.Close()
+		defer conn.Close()
 
-                vc := vp.NewVolMgrClient(conn)
-                pSnapShotClusterReq := &vp.SnapShotClusterReq{}
-                ctx, _ := context.WithTimeout(context.Background(), 100*time.Second)
-                pSnapShotClusterAck, err := vc.SnapShotCluster(ctx, pSnapShotClusterReq)
-                if err != nil {
-                        logger.Error("SnapShotVol failed,grpc func err :%v", err)
-                        return -1
-                }
+		vc := vp.NewVolMgrClient(conn)
+		pSnapShotClusterReq := &vp.SnapShotClusterReq{}
+		ctx, _ := context.WithTimeout(context.Background(), 100*time.Second)
+		pSnapShotClusterAck, err := vc.SnapShotCluster(ctx, pSnapShotClusterReq)
+		if err != nil {
+			logger.Error("SnapShotVol failed,grpc func err :%v", err)
+			return -1
+		}
 
-                if pSnapShotClusterAck.Ret != 0 {
-                        logger.Error("SnapShotCluster failed,rpc func ret:%v", pSnapShotClusterAck.Ret)
-                        return -1
-                }
-        }
+		if pSnapShotClusterAck.Ret != 0 {
+			logger.Error("SnapShotCluster failed,rpc func ret:%v", pSnapShotClusterAck.Ret)
+			return -1
+		}
+	}
 
-        return 0
+	return 0
 }
-
 
 // DeleteVol function
 func DeleteVol(uuid string) int32 {
