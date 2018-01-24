@@ -392,7 +392,6 @@ func SnapShotVol(uuid string) int32 {
 
 //Snapshot cluster data on volmgrs
 func SnapShotCluster() int32 {
-        // send to metadata to delete a  map
 
         for _, v := range VolMgrHosts {
 
