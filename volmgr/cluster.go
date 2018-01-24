@@ -12,6 +12,7 @@ import (
 	"github.com/tiglabs/raft/storage/wal"
 	"golang.org/x/net/context"
 
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -958,6 +959,11 @@ func (s *VolMgrServer) GetMetaNodeRGPeers(ctx context.Context, in *vp.GetMetaNod
 		}
 	}
 	return &ack, nil
+}
+
+func (s *VolMgrServer) SnapShotCluster(ctx context.Context, in *vp.SnapShotClusterReq) (*vp.SnapShotClusterAck, error) {
+        go raftopt.TakeClusterKvSnapShot(s.Cluster.RaftGroup, s.Cluster.RaftStorage, path.Join(VolMgrServerAddr.waldir, "Cluster", "wal", "snap"))
+        return &vp.SnapShotClusterAck{Ret: 0}, nil
 }
 
 func (s *VolMgrServer) getMetaNodesViaIds(in []*vp.MetaNode) ([]*vp.MetaNode, error) {

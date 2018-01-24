@@ -33,23 +33,23 @@ var (
 )
 
 const (
-	OPT_ALLOCATE_RGID   = 15
-	OPT_ALLOCATE_BGID   = 1
-	OPT_SET_DATANODE    = 2
-	OPT_DEL_DATANODE    = 3
-	OPT_SET_DATANODEBGP = 4
-	OPT_DEL_DATANODEBGP = 5
-	OPT_SET_BGP         = 6
-	OPT_DEL_BGP         = 7
-	OPT_SET_VOL         = 8
-	OPT_DEL_VOL         = 9
-	OPT_SET_METANODE    = 10
-	OPT_DEL_METANODE    = 11
-	OPT_SET_MNRG        = 12
-	OPT_DEL_MNRG        = 13
+	OPT_ALLOCATE_RGID   = 1
+	OPT_ALLOCATE_BGID   = 2
+	OPT_SET_DATANODE    = 3
+	OPT_DEL_DATANODE    = 4
+	OPT_SET_DATANODEBGP = 5
+	OPT_DEL_DATANODEBGP = 6
+	OPT_SET_BGP         = 7
+	OPT_DEL_BGP         = 8
+	OPT_SET_VOL         = 9
+	OPT_DEL_VOL         = 10
+	OPT_SET_METANODE    = 11
+	OPT_DEL_METANODE    = 12
+	OPT_SET_MNRG        = 13
+	OPT_DEL_MNRG        = 14
 
 	//opt applied idx
-	OPT_APPLIED = 14
+	OPT_APPLIED = 15
 )
 
 //KvStateMachine ...
@@ -111,11 +111,9 @@ func CreateClusterKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID
 
 	var index uint64
 
-	if UUID != "Cluster" {
-		index, err = LoadClusterKvSnapShot(kvsm, path.Join(dir, UUID, "wal", "snap"))
-		if err != nil {
-			return nil, nil, err
-		}
+	index, err = LoadClusterKvSnapShot(kvsm, path.Join(dir, UUID, "wal", "snap"))
+	if err != nil {
+		return nil, nil, err
 	}
 
 	log.Debug("CreateKvStateMachine Success index : %v", index)
@@ -1166,95 +1164,346 @@ type KV interface {
 }
 
 //TakeKvSnapShot ...
-func TakeClusterKvSnapShot(ms *ClusterKvStateMachine, rsg *wal.Storage, path string) error {
+func TakeClusterKvSnapShot(ms *ClusterKvStateMachine, rsg *wal.Storage, dir string) error {
 
-	_, err := os.Stat(path)
+	_, err := os.Stat(dir)
 	if err == nil {
 		t := time.Now()
-		os.Rename(path, path+"-backup"+"-"+t.String())
+		os.Rename(dir, dir+"-backup"+"-"+t.String())
 	}
-	os.MkdirAll(path, 0777)
+	os.MkdirAll(dir, 0777)
 
-	f, err := os.OpenFile(path+"/applied", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	var data []byte
+	var fpath string
+
+	flag := os.O_RDWR | os.O_CREATE | os.O_APPEND
+	perm := os.FileMode(0666)
+	fpath = path.Join(dir, "applied")
+	f, err := os.OpenFile(fpath, flag, perm)
 	if err != nil {
 		f.Close()
 		return err
 	}
 	w := bufio.NewWriter(f)
-
 	w.Write([]byte(strconv.FormatUint(ms.applied, 10)))
 	w.Flush()
 	f.Close()
 
-	var data []byte
-
-	f, err = os.OpenFile(path+"/bgdata", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	fpath = path.Join(dir, "rgid")
+	f, err = os.OpenFile(fpath, flag, perm)
 	if err != nil {
 		f.Close()
 		return err
 	}
 	w = bufio.NewWriter(f)
+	w.Write([]byte(strconv.FormatUint(ms.applied, 10)))
+	w.Flush()
+	f.Close()
+	fpath = path.Join(dir, "bgid")
+	f, err = os.OpenFile(fpath, flag, perm)
+	if err != nil {
+		f.Close()
+		return err
+	}
+	w = bufio.NewWriter(f)
+	w.Write([]byte(strconv.FormatUint(ms.bgID, 10)))
+	w.Flush()
+	f.Close()
 
-	ms.blockGroupData.Ascend(func(a btree.Item) bool {
-
-		if data, err = json.Marshal(a.(btree.BGKV)); err != nil {
+	fpath = path.Join(dir, "volData")
+	if f, err = os.OpenFile(fpath, flag, perm); err != nil {
+		return err
+	}
+	w = bufio.NewWriter(f)
+	ms.volData.Ascend(func(a btree.Item) bool {
+		if data, err = json.Marshal(a.(btree.VOLKV)); err != nil {
 			return false
 		}
-
 		w.Write(data)
 		w.WriteByte('\n')
 		w.Flush()
 		return true
 	})
-
 	f.Close()
+
+	fpath = path.Join(dir, "dataNodeData")
+	if f, err = os.OpenFile(fpath, flag, perm); err != nil {
+		return err
+	}
+	w = bufio.NewWriter(f)
+	ms.dataNodeData.Ascend(func(a btree.Item) bool {
+		if data, err = json.Marshal(a.(btree.DataNodeKV)); err != nil {
+			return false
+		}
+		w.Write(data)
+		w.WriteByte('\n')
+		w.Flush()
+		return true
+	})
+	f.Close()
+
+	fpath = path.Join(dir, "dataNodeBGPData")
+	if f, err = os.OpenFile(fpath, flag, perm); err != nil {
+		return err
+	}
+	w = bufio.NewWriter(f)
+	ms.dataNodeBGPData.Ascend(func(a btree.Item) bool {
+		if data, err = json.Marshal(a.(btree.DataNodeBGPKV)); err != nil {
+			return false
+		}
+		w.Write(data)
+		w.WriteByte('\n')
+		w.Flush()
+		return true
+	})
+	f.Close()
+
+	fpath = path.Join(dir, "metaNodeData")
+	if f, err = os.OpenFile(fpath, flag, perm); err != nil {
+		return err
+	}
+	w = bufio.NewWriter(f)
+	ms.metaNodeData.Ascend(func(a btree.Item) bool {
+		if data, err = json.Marshal(a.(btree.MetaNodeKV)); err != nil {
+			return false
+		}
+		w.Write(data)
+		w.WriteByte('\n')
+		w.Flush()
+		return true
+	})
+	f.Close()
+
+	fpath = path.Join(dir, "blockGroupData")
+	if f, err = os.OpenFile(fpath, flag, perm); err != nil {
+		return err
+	}
+	w = bufio.NewWriter(f)
+	ms.blockGroupData.Ascend(func(a btree.Item) bool {
+		if data, err = json.Marshal(a.(btree.BlockGroupKV)); err != nil {
+			return false
+		}
+		w.Write(data)
+		w.WriteByte('\n')
+		w.Flush()
+		return true
+	})
+	f.Close()
+
+	fpath = path.Join(dir, "mnrgData")
+	if f, err = os.OpenFile(fpath, flag, perm); err != nil {
+		return err
+	}
+	w = bufio.NewWriter(f)
+	ms.mnrgData.Ascend(func(a btree.Item) bool {
+		if data, err = json.Marshal(a.(btree.MNRGKV)); err != nil {
+			return false
+		}
+		w.Write(data)
+		w.WriteByte('\n')
+		w.Flush()
+		return true
+	})
+	f.Close()
+
 	err = rsg.Truncate(ms.applied)
 	if err != nil {
 		log.Error("TakeKvSnapShot Truncate failed index : %v , err :%v", ms.applied, err)
 		return err
 	}
-	log.Error("TakeKvSnapShot Truncate Success index : %v ", ms.applied)
 
 	return nil
 }
 
 //LoadKvSnapShot ...
-func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, path string) (uint64, error) {
-	fi, err := os.Open(path + "/applied")
-	if err != nil {
-		return 0, nil
-	}
-	data, err := ioutil.ReadAll(fi)
-	ms.applied, err = strconv.ParseUint(string(data), 10, 64)
-	log.Debug("ms.applied %v", ms.applied)
-	fi.Close()
+func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error) {
 
-	fi, err = os.Open(path + "/bgdata")
+	var fpath string
+
+	fpath = path.Join(dir, "applied")
+	f, err := os.Open(fpath)
 	if err != nil {
 		return 0, err
 	}
-	buf := bufio.NewReader(fi)
-	var bg btree.BGKV
+	data, err := ioutil.ReadAll(f)
+	ms.applied, err = strconv.ParseUint(string(data), 10, 64)
+	log.Debug("ms.applied %v", ms.applied)
+	f.Close()
 
+	fpath = path.Join(dir, "rgid")
+	f, err = os.Open(fpath)
+	if err != nil {
+		return 0, err
+	}
+	data, err = ioutil.ReadAll(f)
+	ms.rgID, err = strconv.ParseUint(string(data), 10, 64)
+	log.Debug("ms.rgID %v", ms.rgID)
+	f.Close()
+
+	fpath = path.Join(dir, "bgid")
+	f, err = os.Open(fpath)
+	if err != nil {
+		return 0, err
+	}
+	data, err = ioutil.ReadAll(f)
+	ms.bgID, err = strconv.ParseUint(string(data), 10, 64)
+	log.Debug("ms.bgID %v", ms.bgID)
+	f.Close()
+
+	fpath = path.Join(dir, "volData")
+	if f, err = os.Open(fpath); err != nil {
+		return 0, err
+	}
+	buf := bufio.NewReader(f)
+
+	var vol btree.VOLKV
 	for {
 		line, err := buf.ReadBytes('\n')
 		if err != nil {
 			if err == io.EOF {
 				break
 			}
-			fi.Close()
+			f.Close()
 			return 0, err
 		}
-		err = json.Unmarshal(line, &bg)
+		err = json.Unmarshal(line, &vol)
 		if err != nil {
-			fi.Close()
+			f.Close()
 			return 0, err
 		}
-		log.Debug("bg %v", bg)
-
-		ms.blockGroupData.ReplaceOrInsert(bg)
+		log.Debug("vol %v", vol)
+		ms.volData.ReplaceOrInsert(vol)
 	}
-	fi.Close()
+	f.Close()
+
+	fpath = path.Join(dir, "dataNodeData")
+	if f, err = os.Open(fpath); err != nil {
+		return 0, err
+	}
+	buf = bufio.NewReader(f)
+
+	var dataNode btree.DataNodeKV
+	for {
+		line, err := buf.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			f.Close()
+			return 0, err
+		}
+		err = json.Unmarshal(line, &dataNode)
+		if err != nil {
+			f.Close()
+			return 0, err
+		}
+		log.Debug("dataNode %v", dataNode)
+		ms.dataNodeData.ReplaceOrInsert(dataNode)
+	}
+	f.Close()
+
+	fpath = path.Join(dir, "dataNodeBGPData")
+	if f, err = os.Open(fpath); err != nil {
+		return 0, err
+	}
+	buf = bufio.NewReader(f)
+
+	var dataNodeBGP btree.DataNodeBGPKV
+	for {
+		line, err := buf.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			f.Close()
+			return 0, err
+		}
+		err = json.Unmarshal(line, &dataNodeBGP)
+		if err != nil {
+			f.Close()
+			return 0, err
+		}
+		log.Debug("dataNodeBGP %v", dataNodeBGP)
+		ms.dataNodeBGPData.ReplaceOrInsert(dataNodeBGP)
+	}
+	f.Close()
+
+	fpath = path.Join(dir, "metaNodeData")
+	if f, err = os.Open(fpath); err != nil {
+		return 0, err
+	}
+	buf = bufio.NewReader(f)
+	var metaNode btree.MetaNodeKV
+	for {
+		line, err := buf.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			f.Close()
+			return 0, err
+		}
+		err = json.Unmarshal(line, &metaNode)
+		if err != nil {
+			f.Close()
+			return 0, err
+		}
+		log.Debug("metaNode %v", metaNode)
+		ms.metaNodeData.ReplaceOrInsert(metaNode)
+	}
+	f.Close()
+
+	fpath = path.Join(dir, "blockGroupData")
+	if f, err = os.Open(fpath); err != nil {
+		return 0, err
+	}
+	buf = bufio.NewReader(f)
+
+	var blockGroup btree.BlockGroupKV
+	for {
+		line, err := buf.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			f.Close()
+			return 0, err
+		}
+		err = json.Unmarshal(line, &blockGroup)
+		if err != nil {
+			f.Close()
+			return 0, err
+		}
+		log.Debug("blockGroup %v", blockGroup)
+		ms.blockGroupData.ReplaceOrInsert(blockGroup)
+	}
+	f.Close()
+
+	fpath = path.Join(dir, "mnrgData")
+	if f, err = os.Open(fpath); err != nil {
+		return 0, err
+	}
+	buf = bufio.NewReader(f)
+
+	var mnrg btree.MNRGKV
+	for {
+		line, err := buf.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			f.Close()
+			return 0, err
+		}
+		err = json.Unmarshal(line, &mnrg)
+		if err != nil {
+			f.Close()
+			return 0, err
+		}
+		log.Debug("mnrg %v", mnrg)
+		ms.mnrgData.ReplaceOrInsert(mnrg)
+	}
+	f.Close()
 
 	log.Debug("ms.applied end %v", ms.applied)
 

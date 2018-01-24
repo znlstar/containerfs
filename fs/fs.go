@@ -390,6 +390,38 @@ func SnapShotVol(uuid string) int32 {
 	return 0
 }
 
+//Snapshot cluster data on volmgrs
+func SnapShotCluster() int32 {
+
+        for _, v := range VolMgrHosts {
+
+                conn, err := utils.Dial(v)
+                if err != nil {
+                        logger.Error("SnapShotVol failed,Dial to MetaNodeHosts %v fail :%v", v, err)
+                        return -1
+                }
+
+                defer conn.Close()
+
+                vc := vp.NewVolMgrClient(conn)
+                pSnapShotClusterReq := &vp.SnapShotClusterReq{}
+                ctx, _ := context.WithTimeout(context.Background(), 100*time.Second)
+                pSnapShotClusterAck, err := vc.SnapShotCluster(ctx, pSnapShotClusterReq)
+                if err != nil {
+                        logger.Error("SnapShotVol failed,grpc func err :%v", err)
+                        return -1
+                }
+
+                if pSnapShotClusterAck.Ret != 0 {
+                        logger.Error("SnapShotCluster failed,rpc func ret:%v", pSnapShotClusterAck.Ret)
+                        return -1
+                }
+        }
+
+        return 0
+}
+
+
 // DeleteVol function
 func DeleteVol(uuid string) int32 {
 

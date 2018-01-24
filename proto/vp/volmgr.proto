@@ -16,6 +16,7 @@ service VolMgr {
     rpc GetBlockGroupByID(GetBlockGroupByIDReq) returns (GetBlockGroupByIDAck){};
     rpc Migrate(MigrateReq) returns (MigrateAck){};
     rpc ExpandVol(ExpandVolReq) returns (ExpandVolAck){};
+    rpc SnapShotCluster(SnapShotClusterReq) returns (SnapShotClusterAck){};
 
     // Web Info
     rpc ClusterInfo(ClusterInfoReq) returns (ClusterInfoAck){};
@@ -310,3 +311,11 @@ message ExpandVolReq{
 message ExpandVolAck{
     int32 Ret = 1;
 }
+
+message SnapShotClusterReq{
+}
+
+message SnapShotClusterAck{
+    int32 Ret = 1;
+}
+

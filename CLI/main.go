@@ -27,6 +27,7 @@ func main() {
 		migrate [host]
 		deletevol [volumeuuid ]
 		snapshootvol [volumeuuid ]
+		snapshotcluster
 		getvolmetaleader [volumeuuid ]
 		getvolmgrleader
 		getvolinfo [volumeuuid ]
@@ -123,6 +124,16 @@ func main() {
 		if ret != 0 {
 			fmt.Println("failed")
 		}
+       case "snapshotcluster":
+	argNum := flag.NArg()
+	if argNum != 0 {
+		fmt.Println("snapshotcluster")
+		os.Exit(1)
+	}
+	ret := fs.SnapShotCluster()
+	if ret != 0 {
+		fmt.Println("failed")
+	}
 	case "getvolmetaleader":
 		argNum := flag.NArg()
 		if argNum != 1 {
