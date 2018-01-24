@@ -749,7 +749,9 @@ func (s *VolMgrServer) DetectDataNode(v *vp.DataNode) {
 		}
 		if dataNodeBGPs != nil {
 			for _, bgID := range dataNodeBGPs.BGPS {
+				s.bgStatusMapSync.Lock()
 				s.bgStatusMap[bgID] += v.Status
+				s.bgStatusMapSync.Unlock()
 			}
 		}
 		s.SetDataNodeMap(v)
