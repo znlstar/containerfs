@@ -31,6 +31,7 @@ func main() {
 		getvolmetaleader [volumeuuid ]
 		getvolmgrleader
 		getvolinfo [volumeuuid ]
+		getbginfo [bgID]
 		getvols
 		getinodeinfo [volumeuuid ] parentinodeid name
 		getdatanodes
@@ -124,16 +125,16 @@ func main() {
 		if ret != 0 {
 			fmt.Println("failed")
 		}
-       case "snapshotcluster":
-	argNum := flag.NArg()
-	if argNum != 0 {
-		fmt.Println("snapshotcluster")
-		os.Exit(1)
-	}
-	ret := fs.SnapShotCluster()
-	if ret != 0 {
-		fmt.Println("failed")
-	}
+	case "snapshotcluster":
+		argNum := flag.NArg()
+		if argNum != 0 {
+			fmt.Println("snapshotcluster")
+			os.Exit(1)
+		}
+		ret := fs.SnapShotCluster()
+		if ret != 0 {
+			fmt.Println("failed")
+		}
 	case "getvolmetaleader":
 		argNum := flag.NArg()
 		if argNum != 1 {
@@ -156,6 +157,18 @@ func main() {
 			fmt.Println(vi)
 		} else {
 			fmt.Printf("get volume info failed , ret :%d", ret)
+		}
+	case "getbginfo":
+		argNum := flag.NArg()
+		if argNum != 1 {
+			fmt.Println("getbginfo [bgID]")
+			os.Exit(1)
+		}
+		ret, vi := fs.GetBlockGroupInfo(flag.Arg(0))
+		if ret == 0 {
+			fmt.Println(vi)
+		} else {
+			fmt.Printf("get blockgroup info failed , ret :%d", ret)
 		}
 	case "getvols":
 		argNum := flag.NArg()

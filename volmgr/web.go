@@ -120,6 +120,16 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 
 	return &ack, nil
 }
+func (s *VolMgrServer) GetBlockGroupInfo(ctx context.Context, in *vp.GetBlockGroupInfoReq) (*vp.GetBlockGroupInfoAck, error) {
+	ack := vp.GetBlockGroupInfoAck{}
+	blockGroup, err := s.Cluster.RaftGroup.BlockGroupGet(in.BGID)
+	if err != nil {
+		return &ack, err
+	}
+
+	ack.BlockGroup = blockGroup
+	return &ack, nil
+}
 
 // rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
 func (s *VolMgrServer) NodeMonitor(ctx context.Context, in *vp.NodeMonitorReq) (*vp.NodeMonitorAck, error) {

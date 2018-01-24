@@ -42,11 +42,13 @@ var VolMgrServerAddr addr
 
 // VolMgrServer ...
 type VolMgrServer struct {
-	NodeID     uint64
-	Addr       *com.Address
-	Resolver   com.Resolver
-	RaftServer *raft.RaftServer
-	Cluster    *cluster
+	NodeID      uint64
+	Addr        *com.Address
+	Resolver    com.Resolver
+	RaftServer  *raft.RaftServer
+	Cluster     *cluster
+	wg          sync.WaitGroup
+	bgStatusMap map[uint64]int32
 	sync.Mutex
 }
 
@@ -142,6 +144,7 @@ func main() {
 
 	var volMgrServer VolMgrServer
 
+	volMgrServer.bgStatusMap = make(map[uint64]int32)
 	// resolver
 	r := raftopt.NewClusterResolver()
 	volMgrServer.Resolver = r

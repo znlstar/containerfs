@@ -706,8 +706,14 @@ func (s *VolMgrServer) DetectDataNodes() {
 	}
 
 	for _, v := range vv {
-		go s.DetectDataNode(v)
+		go func() {
+			s.wg.Add(1)
+			defer s.wg.Done()
+			s.DetectDataNode(v)
+		}()
 	}
+	s.wg.Wait()
+	s.updateBlockGroupStatus()
 }
 
 func (s *VolMgrServer) DetectDataNode(v *vp.DataNode) {
@@ -737,9 +743,38 @@ func (s *VolMgrServer) DetectDataNode(v *vp.DataNode) {
 
 	if v.Status != pDataNodeHealthCheckAck.Status {
 		v.Status = pDataNodeHealthCheckAck.Status
+		dataNodeBGPs, err := s.Cluster.RaftGroup.DataNodeBGPGet(v.Host)
+		if err != nil && raftopt.ErrKeyNotFound != err {
+			return
+		}
+		if dataNodeBGPs != nil {
+			for _, bgID := range dataNodeBGPs.BGPS {
+				s.bgStatusMap[bgID] += v.Status
+			}
+		}
 		s.SetDataNodeMap(v)
 	}
 	return
+}
+
+func (s *VolMgrServer) updateBlockGroupStatus() {
+	var blockGroup *vp.BlockGroup
+	var err error
+	for bgID, status := range s.bgStatusMap {
+		if status > 0 {
+			s.bgStatusMap[bgID] = 0
+			status = 1
+		}
+		blockGroup, err = s.Cluster.RaftGroup.BlockGroupGet(bgID)
+		if err != nil {
+			logger.Error("updateBlockGroup BlockGroupGet failed: %v", err)
+			continue
+		}
+		if blockGroup.Status != status {
+			blockGroup.Status = status
+			s.Cluster.RaftGroup.BlockGroupSet(bgID, blockGroup)
+		}
+	}
 }
 
 func (s *VolMgrServer) DetectMetaNodes() {
@@ -962,8 +997,8 @@ func (s *VolMgrServer) GetMetaNodeRGPeers(ctx context.Context, in *vp.GetMetaNod
 }
 
 func (s *VolMgrServer) SnapShotCluster(ctx context.Context, in *vp.SnapShotClusterReq) (*vp.SnapShotClusterAck, error) {
-        go raftopt.TakeClusterKvSnapShot(s.Cluster.RaftGroup, s.Cluster.RaftStorage, path.Join(VolMgrServerAddr.waldir, "Cluster", "wal", "snap"))
-        return &vp.SnapShotClusterAck{Ret: 0}, nil
+	go raftopt.TakeClusterKvSnapShot(s.Cluster.RaftGroup, s.Cluster.RaftStorage, path.Join(VolMgrServerAddr.waldir, "Cluster", "wal", "snap"))
+	return &vp.SnapShotClusterAck{Ret: 0}, nil
 }
 
 func (s *VolMgrServer) getMetaNodesViaIds(in []*vp.MetaNode) ([]*vp.MetaNode, error) {

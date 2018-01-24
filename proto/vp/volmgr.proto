@@ -26,6 +26,7 @@ service VolMgr {
     rpc VolMgrInfo(VolMgrInfoReq) returns (VolMgrInfoAck){};
     rpc VolumeInfos(VolumeInfosReq) returns (VolumeInfosAck){};
     rpc GetVolInfo(GetVolInfoReq) returns (GetVolInfoAck){};
+    rpc GetBlockGroupInfo(GetBlockGroupInfoReq) returns (GetBlockGroupInfoAck){};
     rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
 
 }
@@ -319,3 +320,10 @@ message SnapShotClusterAck{
     int32 Ret = 1;
 }
 
+message GetBlockGroupInfoReq{
+    uint64 BGID = 1;
+}
+message GetBlockGroupInfoAck{
+    int32 Ret = 1;
+    BlockGroup BlockGroup = 2;
+}
