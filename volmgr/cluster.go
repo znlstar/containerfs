@@ -193,7 +193,12 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		}
 
 		var hosts []string
-		bg := &vp.BlockGroup{BlockGroupID: bgID, FreeSize: BlockGroupSize * 1024 * 1024 * 1024}
+
+		bg := &vp.BlockGroup{BlockGroupID: bgID,
+			VolID:    voluuid,
+			RGID:     rgID,
+			FreeSize: BlockGroupSize * 1024 * 1024 * 1024}
+
 		for n := 0; n < 3; n++ {
 			ipkey := allip[idxs[n]]
 			idx := utils.GenerateRandomNumber(0, len(inuseNodes[ipkey]), 1)

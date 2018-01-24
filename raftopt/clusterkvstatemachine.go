@@ -1323,7 +1323,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 	fpath = path.Join(dir, "applied")
 	f, err := os.Open(fpath)
 	if err != nil {
-		return 0, err
+		return 0, nil
 	}
 	data, err := ioutil.ReadAll(f)
 	ms.applied, err = strconv.ParseUint(string(data), 10, 64)
@@ -1333,7 +1333,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 	fpath = path.Join(dir, "rgid")
 	f, err = os.Open(fpath)
 	if err != nil {
-		return 0, err
+		return 0, nil
 	}
 	data, err = ioutil.ReadAll(f)
 	ms.rgID, err = strconv.ParseUint(string(data), 10, 64)
@@ -1343,7 +1343,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 	fpath = path.Join(dir, "bgid")
 	f, err = os.Open(fpath)
 	if err != nil {
-		return 0, err
+		return 0, nil
 	}
 	data, err = ioutil.ReadAll(f)
 	ms.bgID, err = strconv.ParseUint(string(data), 10, 64)
@@ -1352,7 +1352,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 
 	fpath = path.Join(dir, "volData")
 	if f, err = os.Open(fpath); err != nil {
-		return 0, err
+		return 0, nil
 	}
 	buf := bufio.NewReader(f)
 
@@ -1378,7 +1378,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 
 	fpath = path.Join(dir, "dataNodeData")
 	if f, err = os.Open(fpath); err != nil {
-		return 0, err
+		return 0, nil
 	}
 	buf = bufio.NewReader(f)
 
@@ -1404,7 +1404,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 
 	fpath = path.Join(dir, "dataNodeBGPData")
 	if f, err = os.Open(fpath); err != nil {
-		return 0, err
+		return 0, nil
 	}
 	buf = bufio.NewReader(f)
 
@@ -1430,7 +1430,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 
 	fpath = path.Join(dir, "metaNodeData")
 	if f, err = os.Open(fpath); err != nil {
-		return 0, err
+		return 0, nil
 	}
 	buf = bufio.NewReader(f)
 	var metaNode btree.MetaNodeKV
@@ -1455,7 +1455,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 
 	fpath = path.Join(dir, "blockGroupData")
 	if f, err = os.Open(fpath); err != nil {
-		return 0, err
+		return 0, nil
 	}
 	buf = bufio.NewReader(f)
 
@@ -1481,7 +1481,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 
 	fpath = path.Join(dir, "mnrgData")
 	if f, err = os.Open(fpath); err != nil {
-		return 0, err
+		return 0, nil
 	}
 	buf = bufio.NewReader(f)
 
