@@ -128,12 +128,14 @@ func (s *VolMgrServer) GetBlockGroupInfo(ctx context.Context, in *vp.GetBlockGro
 	//Get blockgroup info from volmgr
 	blockGroup, err := s.Cluster.RaftGroup.BlockGroupGet(in.BGID)
 	if err != nil {
+		logger.Error("BlockGroupGet[%v] failed: %v", in.BGID, err)
 		return &ack, err
 	}
 
 	//Get blockgroup info from metanode
 	mnrg, err := s.Cluster.RaftGroup.MetaNodeRGGet(blockGroup.RGID)
 	if err != nil {
+		logger.Error("BlockGroupGet[bg:%v, rg:%v] failed: %v", in.BGID, blockGroup.RGID, err)
 		return &ack, err
 	}
 
