@@ -28,6 +28,7 @@ service MetaNode {
 
     //utils:healthcheck etc
     rpc MetaNodeHealthCheck(MetaNodeHealthCheckReq) returns (MetaNodeHealthCheckAck){};
+    rpc GetBlockGroupInfo(GetBlockGroupInfoReq) returns (GetBlockGroupInfoAck){};
 }
 
 
@@ -271,4 +272,13 @@ message MetaNodeHealthCheckReq{
 message MetaNodeHealthCheckAck{
     int32 Ret = 1;
     int32 Status = 2;
+}
+
+message GetBlockGroupInfoReq{
+    string VolID = 1;
+    uint64 BGID = 2;
+}
+message GetBlockGroupInfoAck{
+    int32 Ret = 1;
+    BlockGroup BlockGroup = 2;
 }

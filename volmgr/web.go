@@ -2,7 +2,9 @@ package main
 
 import (
 	"github.com/tiglabs/containerfs/logger"
+	"github.com/tiglabs/containerfs/proto/mp"
 	"github.com/tiglabs/containerfs/proto/vp"
+	"github.com/tiglabs/containerfs/utils"
 	"golang.org/x/net/context"
 	"time"
 
@@ -122,12 +124,54 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 }
 func (s *VolMgrServer) GetBlockGroupInfo(ctx context.Context, in *vp.GetBlockGroupInfoReq) (*vp.GetBlockGroupInfoAck, error) {
 	ack := vp.GetBlockGroupInfoAck{}
+
+	//Get blockgroup info from volmgr
 	blockGroup, err := s.Cluster.RaftGroup.BlockGroupGet(in.BGID)
 	if err != nil {
 		return &ack, err
 	}
 
-	ack.BlockGroup = blockGroup
+	//Get blockgroup info from metanode
+	mnrg, err := s.Cluster.RaftGroup.MetaNodeRGGet(blockGroup.RGID)
+	if err != nil {
+		return &ack, err
+	}
+
+	metaNodes, err := s.getMetaNodesViaIds(mnrg.MetaNodes)
+	if err != nil {
+		logger.Error("Get metanodes failed: %v", err)
+		return &ack, err
+	}
+	pGetBlockGroupInfoReq := mp.GetBlockGroupInfoReq{VolID: blockGroup.VolID, BGID: blockGroup.BlockGroupID}
+
+	var flag bool
+	for _, m := range metaNodes {
+		conn, err := utils.Dial(m.Host + ":9901")
+		if err != nil {
+			logger.Error("Dial metanode host[%v] failed: %v", m.Host+":9901", err)
+			continue
+		}
+		defer conn.Close()
+		mc := mp.NewMetaNodeClient(conn)
+
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		pGetBlockGroupInfoAck, err := mc.GetBlockGroupInfo(ctx, &pGetBlockGroupInfoReq)
+		if err != nil {
+			logger.Error("GetBlockGroupInfo from host[%v] failed: %v", m.Host+":9901", err)
+			continue
+		}
+		if pGetBlockGroupInfoAck.Ret != 0 {
+			continue
+		}
+		blockGroup.FreeSize = pGetBlockGroupInfoAck.BlockGroup.FreeSize
+		flag = true
+		break
+	}
+	if !flag {
+		ack.Ret = -1
+	} else {
+		ack.BlockGroup = blockGroup
+	}
 	return &ack, nil
 }
 

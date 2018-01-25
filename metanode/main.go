@@ -391,6 +391,23 @@ func (ms *MetaNodeServer) MetaNodeHealthCheck(ctx context.Context, in *mp.MetaNo
 	return &ack, nil
 }
 
+func (ms *MetaNodeServer) GetBlockGroupInfo(ctx context.Context, in *mp.GetBlockGroupInfoReq) (*mp.GetBlockGroupInfoAck, error) {
+
+	ack := mp.GetBlockGroupInfoAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ok, blockGroup := nameSpace.BlockGroupDBGet(in.BGID)
+	if ok {
+		ack.BlockGroup = blockGroup
+		return &ack, nil
+	}
+	ack.Ret = -2
+	return &ack, nil
+}
+
 func init() {
 
 	var volmgrHostString string

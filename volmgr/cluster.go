@@ -133,9 +133,6 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		blkgrpnum = in.SpaceQuota/BlkSizeG + 1
 		in.SpaceQuota = blkgrpnum * BlkSizeG
 	}
-	if blkgrpnum > 6 {
-		blkgrpnum = 6
-	}
 
 	v, err := s.Cluster.RaftGroup.DataNodeGetAll(1)
 	if err != nil {

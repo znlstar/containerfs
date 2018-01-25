@@ -42,13 +42,13 @@ var VolMgrServerAddr addr
 
 // VolMgrServer ...
 type VolMgrServer struct {
-	NodeID      uint64
-	Addr        *com.Address
-	Resolver    com.Resolver
-	RaftServer  *raft.RaftServer
-	Cluster     *cluster
-	wg          sync.WaitGroup
-	bgStatusMap map[uint64]int32
+	NodeID          uint64
+	Addr            *com.Address
+	Resolver        com.Resolver
+	RaftServer      *raft.RaftServer
+	Cluster         *cluster
+	wg              sync.WaitGroup
+	bgStatusMap     map[uint64]int32
 	bgStatusMapSync sync.Mutex
 	sync.Mutex
 }
@@ -172,7 +172,7 @@ func main() {
 	logger.Debug("AddNode success ...")
 
 	if err := volMgrServer.load(); err != nil {
-		logger.Error("loadMetaData failed ...")
+		logger.Error("loadMetaData failed: %v..", err)
 		os.Exit(1)
 	}
 
