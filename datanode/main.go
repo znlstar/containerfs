@@ -130,6 +130,8 @@ func registryToVolMgr() {
 	}
 	if ack.Ret == 0 {
 		logger.Debug("DataNode[%v]: register to VolMgr success!", DataNodeServerAddr.Host)
+	} else if ack.Ret == 3 {
+		logger.Debug("DataNode[%v]: register to VolMgr success, already register!", DataNodeServerAddr.Host)
 	} else {
 		logger.Error("DataNode[%v]: register to VolMgr failed! ret %v", DataNodeServerAddr.Host, ack.Ret)
 		os.Exit(1)

@@ -149,7 +149,7 @@ func CreateVol(name string, capacity string, tier string) int32 {
 		if ack.UUID != "" {
 			DeleteVol(ack.UUID)
 		}
-		return -1
+		return ack.Ret
 	}
 
 	fmt.Println(ack.UUID)
@@ -1783,15 +1783,23 @@ ALLOCATECHUNK:
 			var ti uint32
 			needClose := bool(true)
 			logger.Debug("WriteHandler: file %v, begin waiting last chunk: %v\n", cfile.Name, len(cfile.DataCache))
+			tmpDataCacheLen := len(cfile.DataCache)
+
 			for cfile.Status == FileNormal {
-				if len(cfile.DataCache) == 0 {
+				if tmpDataCacheLen == 0 {
 					break
 				}
 				time.Sleep(time.Millisecond * 10)
-				ti++
-				if ti == 200 {
+				if tmpDataCacheLen == len(cfile.DataCache) {
+					ti++
+				} else {
+					tmpDataCacheLen = len(cfile.DataCache)
+					ti = 0
+				}
+
+				if ti == 500 {
 					if cfile.CurChunk.ChunkWriteSteam != nil {
-						logger.Error("WriteHandler: file %v, wait last chunk timeout, CloseSend\n", cfile.Name)
+						logger.Error("WriteHandler: file %v, dataCacheLen: %v  wait last chunk timeout, CloseSend\n", cfile.Name, len(cfile.DataCache))
 						cfile.CurChunk.ChunkWriteSteam.CloseSend()
 						needClose = false
 					}
@@ -1922,8 +1930,7 @@ func (cfile *CFile) AllocateChunk(IsStream bool) *Chunk {
 			return nil
 		}
 		C2Mclient := dp.NewDataNodeClient(C2Mconn)
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-		curChunk.ChunkWriteSteam, err = C2Mclient.C2MRepl(ctx)
+		curChunk.ChunkWriteSteam, err = C2Mclient.C2MRepl(context.Background())
 		if err != nil {
 			cfile.delErrDataConn(curChunk.ChunkInfo.BlockGroupWithHost.Hosts[0])
 			logger.Error("AllocateChunk file: %v create stream to %v failed, err: %v\n", cfile.Name, curChunk.ChunkInfo.BlockGroupWithHost.Hosts[0], err)

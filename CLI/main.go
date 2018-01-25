@@ -78,7 +78,7 @@ func main() {
 			ret = fs.CreateVol(flag.Arg(0), flag.Arg(1), flag.Arg(2))
 		}
 		if ret != 0 {
-			fmt.Println("failed")
+			fmt.Println("failed", ret)
 		}
 
 	case "expandvol":
