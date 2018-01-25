@@ -377,7 +377,12 @@ func GetBlockGroupInfo(idStr string) (int32, *vp.GetBlockGroupInfoAck) {
 	}
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 	ack, err := vc.GetBlockGroupInfo(ctx, pGetBlockGroupInfoReq)
-	if err != nil || ack.Ret != 0 {
+	if err != nil {
+		logger.Error("GetBlockGroupInfo failed: %v", err)
+		return -1, &vp.GetBlockGroupInfoAck{}
+	}
+	if ack.Ret != 0 {
+		logger.Error("GetBlockGroupInfo failed: %v", ack.Ret)
 		return -1, &vp.GetBlockGroupInfoAck{}
 	}
 	return 0, ack
