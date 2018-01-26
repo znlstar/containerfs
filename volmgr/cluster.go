@@ -59,8 +59,21 @@ func (vs VolMgrServer) delDataNode(host string) error {
 // for DataNode registry
 func (s *VolMgrServer) DataNodeRegistry(ctx context.Context, in *vp.DataNode) (*vp.DataNodeRegistryAck, error) {
 	ack := vp.DataNodeRegistryAck{}
+
+	dataNode, err := s.Cluster.RaftGroup.DataNodeGet(1, in.Host)
+	if err != nil && err != raftopt.ErrKeyNotFound {
+		return &ack, err
+	}
+	if dataNode != nil {
+		if dataNode.Status != in.Status {
+			dataNode.Status = in.Status
+			s.Cluster.RaftGroup.DataNodeSet(1, in.Host, dataNode)
+			ack.Ret = 3
+			return &ack, nil
+		}
+	}
 	logger.Debug("datanode registry:%v", in)
-	err := s.Cluster.RaftGroup.DataNodeSet(1, in.Host, in)
+	err = s.Cluster.RaftGroup.DataNodeSet(1, in.Host, in)
 	if err != nil {
 		logger.Error("DataNode(%v) Register to MetaNode failed:%v", in.Host, err)
 		return &ack, err
@@ -95,6 +108,7 @@ func (s *VolMgrServer) DelDataNode(ctx context.Context, in *vp.DelDataNodeReq) (
 }
 
 //todo: check leader
+
 func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.CreateVolAck, error) {
 
 	s.Lock()
@@ -175,6 +189,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	}
 
 	dataNodesUsedMap := make(map[string][]uint64)
+	dataNodesForUpdate := make(map[string]*vp.DataNode)
 	var blockGroups []*mp.BlockGroup
 	for i := int32(0); i < blkgrpnum; i++ {
 		bgID, err := s.Cluster.RaftGroup.BGIDGET(1)
@@ -185,12 +200,10 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 
 		idxs := utils.GenerateRandomNumber(0, len(allip), 3)
 		if len(idxs) != 3 {
-			ack.Ret = -1
+			ack.Ret = -5
 			return &ack, nil
 		}
-
 		var hosts []string
-
 		bg := &vp.BlockGroup{BlockGroupID: bgID,
 			RGID:     rgID,
 			VolID:    voluuid,
@@ -203,11 +216,25 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 				ack.Ret = -1
 				return &ack, nil
 			}
-			host := inuseNodes[ipkey][idx[0]].Host
-			bg.Hosts = append(bg.Hosts, host)
-			hosts = append(hosts, host)
-
+			dataNode := inuseNodes[ipkey][idx[0]]
+			bg.Hosts = append(bg.Hosts, dataNode.Host)
+			hosts = append(hosts, dataNode.Host)
+			dataNode.Free = dataNode.Free - 5
+			dataNodesForUpdate[dataNode.Host] = dataNode
+			if inuseNodes[ipkey][idx[0]].Free < 30 {
+				inuseNodes[ipkey] = append(inuseNodes[ipkey][:idx[0]], inuseNodes[ipkey][idx[0]+1:]...)
+			}
 		}
+		var newAllIp []string
+		for _, ip := range allip {
+			if len(inuseNodes[ip]) <= 0 {
+				delete(inuseNodes, ip)
+			} else {
+				newAllIp = append(newAllIp, ip)
+			}
+		}
+		allip = newAllIp
+
 		err = s.Cluster.RaftGroup.BlockGroupSet(bgID, bg)
 		if err != nil {
 			logger.Error("Create Volume:%v Set blockgroup:%v blocks:%v failed:%v", voluuid, bgID, bg, err)
@@ -292,6 +319,11 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	if err != nil {
 		logger.Error("set kv failed: %v", err)
 		return &ack, err
+	}
+
+	// update datanode kv data
+	for host, dataNode := range dataNodesForUpdate {
+		s.Cluster.RaftGroup.DataNodeSet(1, host, dataNode)
 	}
 	return &ack, nil
 }
@@ -803,9 +835,8 @@ func (s *VolMgrServer) DetectMetaNode(v *vp.MetaNode) {
 		}
 		logger.Error("Dial metanode host[%v] failed:%v", v.Host, err)
 		return
-	} else {
-		v.Status = 0
 	}
+
 	defer conn.Close()
 	mc := mp.NewMetaNodeClient(conn)
 	pMetaNodeHealthCheckReq := mp.MetaNodeHealthCheckReq{}

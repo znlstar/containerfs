@@ -367,7 +367,7 @@ func (ms *ClusterKvStateMachine) DataNodeGet(raftGroupID uint64, key string) (*v
 		}
 		return dataNode, nil
 	}
-	return nil, errNotExists
+	return nil, ErrKeyNotFound
 }
 
 func (ms *ClusterKvStateMachine) DataNodeSet(raftGroupID uint64, key string, dataNode *vp.DataNode) error {
