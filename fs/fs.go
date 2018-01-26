@@ -1192,32 +1192,6 @@ type extentInfo struct {
 	length int32 //length in chunk
 }
 
-func generateRandomNumber(start int, end int, count int) []int {
-	if end < start || (end-start) < count {
-		return nil
-	}
-
-	nums := make([]int, 0)
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	for len(nums) < count {
-		num := r.Intn((end - start)) + start
-
-		exist := false
-		for _, v := range nums {
-			if v == num {
-				exist = true
-				break
-			}
-		}
-
-		if !exist {
-			nums = append(nums, num)
-		}
-	}
-
-	return nums
-}
-
 func (cfile *CFile) newDataConn(addr string) *grpc.ClientConn {
 
 	cfile.DataConnLocker.RLock()
@@ -1268,7 +1242,7 @@ func (cfile *CFile) streamRead(chunkidx int, ch chan *bytes.Buffer, offset int64
 	var buffer *bytes.Buffer
 	outflag := 0
 	inflag := 0
-	idxs := generateRandomNumber(0, 3, 3)
+	idxs := utils.GenerateRandomNumber(0, 3, 3)
 
 	for n := 0; n < 3; n++ {
 		i := idxs[n]
