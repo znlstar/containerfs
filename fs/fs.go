@@ -1477,9 +1477,12 @@ func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 		return -2
 	}
 
-	if offset >= cfile.FileSizeInCache {
-		logger.Error("cfile %v unsupport read beyond file size return -3 ", cfile.Name)
-		return -3
+	if offset == cfile.FileSizeInCache {
+		logger.Debug("cfile:%v read offset:%v  equals file size in cache ", cfile.Name, offset)
+		return 0
+	} else if offset > cfile.FileSizeInCache {
+		logger.Debug("cfile %v unsupport read beyond file size, offset:%v, filesize in cache:%v ", cfile.Name, offset, cfile.FileSizeInCache)
+		return 0
 	}
 
 	var i int
