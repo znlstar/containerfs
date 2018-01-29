@@ -12,7 +12,6 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"io"
-	"math/rand"
 	"os"
 	"sort"
 	"strconv"
