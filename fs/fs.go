@@ -11,6 +11,7 @@ import (
 	"github.com/tiglabs/containerfs/utils"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	"io"
 	"os"
 	"sort"
@@ -614,7 +615,7 @@ func (cfs *CFS) CheckLeaderConns() {
 				cfs.VolMgrConn, err = utils.Dial(vLeader)
 				cfs.VolMgrLeader = vLeader
 			}
-			if mLeader != cfs.MetaNodeLeader {
+			if mLeader != cfs.MetaNodeLeader || cfs.MetaNodeConn == nil {
 				logger.Error("MetaNode Leader Change! Old Leader %v,New Leader %v", cfs.MetaNodeLeader, mLeader)
 
 				if cfs.MetaNodeConn != nil {
@@ -624,6 +625,15 @@ func (cfs *CFS) CheckLeaderConns() {
 
 				cfs.MetaNodeConn, err = utils.Dial(mLeader)
 				cfs.MetaNodeLeader = mLeader
+			}
+			if cfs.MetaNodeConn != nil && cfs.MetaNodeLeader != "" && cfs.MetaNodeConn.GetState() == connectivity.TransientFailure {
+				logger.Debug("Need to close bad grpc connection of state TransientFailure")
+				cfs.MetaNodeConn.Close()
+				cfs.MetaNodeConn = nil
+				cfs.MetaNodeConn, err = utils.Dial(cfs.MetaNodeLeader)
+				if err != nil {
+					continue
+				}
 			}
 		}
 	}()
