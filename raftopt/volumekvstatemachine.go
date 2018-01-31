@@ -250,7 +250,7 @@ func (ms *VolumeKvStateMachine) InodeGet(raftGroupID uint64, key uint64) ([]byte
 	if newItem != nil {
 		return newItem.(btree.InodeKV).V, nil
 	}
-	return []byte{}, errNotExists
+	return []byte{}, ErrKeyNotFound
 
 }
 
