@@ -7,16 +7,16 @@ import (
 	"fmt"
 	"github.com/tiglabs/containerfs/fs"
 	"github.com/tiglabs/containerfs/logger"
+	"github.com/tiglabs/containerfs/utils"
 	"golang.org/x/net/context"
 	"math"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
-
-	"net/http"
-	_ "net/http/pprof"
 )
 
 var uuid string
@@ -137,7 +137,7 @@ func (d *dir) Attr(ctx context.Context, a *fuse.Attr) error {
 
 	a.Mode = os.ModeDir | 0755
 	a.Inode = d.inode
-	a.Valid = time.Minute
+	a.Valid = time.Second
 	/*
 		if d.parent == nil {
 			a.Mode = os.ModeDir | 0755
@@ -250,7 +250,7 @@ func (d *dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 		}
 	*/
 
-	//logger.Debug("Create file get locker ,  name %v parentino %v parentname %v", req.Name, d.inode, d.name)
+	logger.Debug("Create file get locker ,  name %v parentino %v parentname %v", req.Name, d.inode, d.name)
 
 	ret, cfile := d.fs.cfs.CreateFileDirect(d.inode, req.Name, int(req.Flags))
 	if ret != 0 {
@@ -351,7 +351,10 @@ func (d *dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	//logger.Debug("Remove get locker , name %v parentino %v parentname %v", req.Name, d.inode, d.name)
+	if a, ok := d.active[req.Name]; ok {
+		delete(d.active, req.Name)
+		a.node.setName("")
+	}
 
 	if req.Dir {
 		ret := d.fs.cfs.DeleteDirDirect(d.inode, req.Name)
@@ -360,23 +363,20 @@ func (d *dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 				return fuse.Errno(syscall.EPERM)
 			}
 			return fuse.Errno(syscall.EIO)
-
 		}
 	} else {
-
 		ret := d.fs.cfs.DeleteFileDirect(d.inode, req.Name)
 		if ret != 0 {
-			if ret == 2 {
+			if ret == utils.ENOTFOUND {
+				return nil
+			} else if ret == 2 {
 				return fuse.Errno(syscall.EPERM)
+			} else {
+				return fuse.Errno(syscall.EIO)
 			}
-			return fuse.Errno(syscall.EIO)
 		}
 	}
 
-	if a, ok := d.active[req.Name]; ok {
-		delete(d.active, req.Name)
-		a.node.setName("")
-	}
 	logger.Debug("Remove end , name %v parentino %v parentname %v", req.Name, d.inode, d.name)
 
 	return nil
@@ -433,7 +433,9 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 
 		ret := d.fs.cfs.RenameDirect(d.inode, req.OldName, d.inode, req.NewName)
 		if ret != 0 {
-			if ret == 2 {
+			if ret == utils.ENOTFOUND {
+				return fuse.Errno(syscall.ENOENT)
+			} else if ret == 2 {
 				return fuse.Errno(syscall.ENOENT)
 			} else if ret == 1 || ret == 17 {
 				return fuse.Errno(syscall.EPERM)
@@ -526,7 +528,7 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.BlockSize = 4 * 1024
 	a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
 	a.Mode = 0666
-	a.Valid = time.Minute
+	a.Valid = time.Second
 
 	return nil
 }
@@ -557,6 +559,30 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 
 	if f.cfile == nil && f.handles == 0 {
 		ret, f.cfile = f.parent.fs.cfs.OpenFileDirect(f.parent.inode, f.name, int(req.Flags))
+
+		//delete dir active cache
+		if ret == utils.ENOTFOUND && f.parent != nil {
+			delete(f.parent.active, f.name)
+
+			if int(req.Flags) != os.O_RDONLY && (int(req.Flags)&os.O_CREATE > 0 || int(req.Flags)&^(os.O_WRONLY|os.O_TRUNC) == 0) {
+
+				logger.Debug("open an deleted file, create new file %v with flag: %v", f.name, req.Flags)
+				ret, f.cfile = f.parent.fs.cfs.CreateFileDirect(f.parent.inode, f.name, int(req.Flags))
+				if ret != 0 {
+					if ret == 17 {
+						return nil, fuse.Errno(syscall.EEXIST)
+					}
+					return nil, fuse.Errno(syscall.EIO)
+				}
+
+				f.inode = f.cfile.Inode
+				f.handles = 0
+				f.writers = 0
+				f.parent.active[f.name] = &refcount{node: f}
+			} else {
+				return nil, fuse.Errno(syscall.ENOENT)
+			}
+		}
 		if ret != 0 {
 			logger.Error("Open failed OpenFileDirect ret %v", ret)
 			return nil, fuse.Errno(syscall.EIO)
