@@ -251,9 +251,9 @@ func (s *MetaNodeServer) GetFileChunksDirect(ctx context.Context, in *mp.GetFile
 		ack.Ret = ret
 		return &ack, nil
 	}
-	ok, chunkInfos, inode := nameSpace.GetFileChunksDirect(in.PInode, in.Name)
-	if ok != 0 {
-		ack.Ret = ok
+	gRet, chunkInfos, inode := nameSpace.GetFileChunksDirect(in.PInode, in.Name)
+	if gRet != 0 {
+		ack.Ret = gRet
 		return &ack, nil
 	}
 

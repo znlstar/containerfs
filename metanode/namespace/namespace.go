@@ -6,7 +6,6 @@ import (
 	"github.com/tiglabs/containerfs/logger"
 	"github.com/tiglabs/containerfs/proto/mp"
 	"github.com/tiglabs/containerfs/proto/vp"
-
 	"github.com/tiglabs/containerfs/raftopt"
 	"github.com/tiglabs/containerfs/utils"
 	"github.com/tiglabs/raft"
@@ -310,9 +309,9 @@ func (ns *nameSpace) GetInodeInfoDirect(pinode uint64, name string) (int32, *mp.
 	var ok bool
 	var pInodeInfo *mp.InodeInfo
 
-	ok, dirent := ns.DentryDBGet(pinode, name)
-	if !ok {
-		return -1, nil, 0
+	gRet, dirent := ns.DentryDBGet(pinode, name)
+	if gRet != 0 {
+		return gRet, nil, 0
 	}
 
 	if ok, pInodeInfo = ns.InodeDBGet(dirent.Inode); !ok {
@@ -326,11 +325,9 @@ func (ns *nameSpace) StatDirect(pinode uint64, name string) (bool, uint64, int32
 
 	defer catchPanic()
 
-	var ok bool
-
-	ok, dirent := ns.DentryDBGet(pinode, name)
-	if !ok {
-		return false, 0, 2
+	gRet, dirent := ns.DentryDBGet(pinode, name)
+	if gRet != 0 {
+		return false, 0, gRet
 	}
 
 	return dirent.InodeType, dirent.Inode, 0
@@ -354,8 +351,8 @@ func (ns *nameSpace) DeleteDirDirect(pinode uint64, name string) int32 {
 
 	defer catchPanic()
 
-	ok, dirent := ns.DentryDBGet(pinode, name)
-	if !ok {
+	gRet, dirent := ns.DentryDBGet(pinode, name)
+	if gRet != 0 {
 		return 1
 	}
 	ns.InodeDBDelete(dirent.Inode)
@@ -369,9 +366,9 @@ func (ns *nameSpace) RenameDirect(oldpinode uint64, oldName string, newpinode ui
 
 	defer catchPanic()
 
-	ok, dirent := ns.DentryDBGet(oldpinode, oldName)
-	if !ok {
-		return 1
+	gRet, dirent := ns.DentryDBGet(oldpinode, oldName)
+	if gRet != 0 {
+		return gRet
 	}
 
 	err := ns.DentryDBSet(newpinode, newName, dirent.InodeType, dirent.Inode)
@@ -420,22 +417,31 @@ func (ns *nameSpace) DeleteFileDirect(pinode uint64, name string) int32 {
 
 	defer catchPanic()
 
-	ok, dirent := ns.DentryDBGet(pinode, name)
-	if !ok {
-		return 1
-	}
-	ok, pInodeInfo := ns.InodeDBGet(dirent.Inode)
-	if !ok {
-		return 1
+	gRet, pDirent := ns.DentryDBGet(pinode, name)
+	if gRet != 0 {
+		return gRet
 	}
 
-	if pInodeInfo.Chunks != nil {
-		for _, v := range pInodeInfo.Chunks {
-			ns.ReleaseBlockGroup(v.BlockGroupID, v.ChunkSize)
+	value, err := ns.RaftGroup.InodeGet(ns.RaftGroupID, pDirent.Inode)
+	if err != nil {
+		value, err = ns.RaftGroup.InodeGet(ns.RaftGroupID, pDirent.Inode)
+		if err == raftopt.ErrKeyNotFound {
+			return 0
+		} else {
+			return 4
 		}
 	}
+	inodeInfo := mp.InodeInfo{}
+	err = pbproto.Unmarshal(value, &inodeInfo)
+	if err != nil {
+		return 5
+	}
 
-	ns.InodeDBDelete(dirent.Inode)
+	for _, v := range inodeInfo.Chunks {
+		ns.ReleaseBlockGroup(v.BlockGroupID, v.ChunkSize)
+	}
+
+	ns.InodeDBDelete(pDirent.Inode)
 	ns.DentryDBDelete(pinode, name)
 
 	return 0
@@ -446,9 +452,9 @@ func (ns *nameSpace) GetFileChunksDirect(pinode uint64, name string) (int32, []*
 
 	defer catchPanic()
 
-	ok, dirent := ns.DentryDBGet(pinode, name)
-	if !ok {
-		return 1, nil, 0
+	gRet, dirent := ns.DentryDBGet(pinode, name)
+	if gRet != 0 {
+		return gRet, nil, 0
 	}
 	ok, pInodeInfo := ns.InodeDBGet(dirent.Inode)
 	if !ok {
@@ -491,8 +497,8 @@ func (ns *nameSpace) SyncChunk(pinode uint64, name string, chunkinfo *mp.ChunkIn
 
 	var ret int32
 
-	ok, dirent := ns.DentryDBGet(pinode, name)
-	if !ok {
+	gRet, dirent := ns.DentryDBGet(pinode, name)
+	if gRet != 0 {
 		ret = 2 /*ENOENT*/
 		return ret
 	}
@@ -563,8 +569,8 @@ func (ns *nameSpace) AsyncChunk(pinode uint64, name string, chunkid uint64, comm
 
 	var ret int32
 
-	ok, dirent := ns.DentryDBGet(pinode, name)
-	if !ok {
+	gRet, dirent := ns.DentryDBGet(pinode, name)
+	if gRet != 0 {
 		ret = 2 /*ENOENT*/
 		return ret
 	}
@@ -791,23 +797,26 @@ func decodeKey(key string) (uint64, string) {
 }
 
 //DentryDBGet ...
-func (ns *nameSpace) DentryDBGet(pinode uint64, name string) (bool, *mp.Dirent) {
+func (ns *nameSpace) DentryDBGet(pinode uint64, name string) (int32, *mp.Dirent) {
 	value, err := ns.RaftGroup.DentryGet(ns.RaftGroupID, encodeKey(pinode, name))
 	if err != nil {
 		value, err = ns.RaftGroup.DentryGet(ns.RaftGroupID, encodeKey(pinode, name))
 		if err != nil {
-			//logger.Error("DentryDBGet vol:%v,key:%v,err:%v\n", ns.VolID, dentryKey, err)
-			return false, nil
+			if err == raftopt.ErrKeyNotFound {
+				return utils.ENOTFOUND, nil
+			} else {
+				return 2, nil
+			}
 		}
 	}
 
 	dirent := mp.Dirent{}
 	err = pbproto.Unmarshal(value, &dirent)
 	if err != nil {
-		return false, nil
+		return 3, nil
 	}
 
-	return true, &dirent
+	return 0, &dirent
 }
 
 func (ns *nameSpace) DentryGetRange(pinode uint64) (bool, []*mp.DirentN) {
