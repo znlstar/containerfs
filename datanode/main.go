@@ -925,6 +925,10 @@ func init() {
 	flag.StringVar(&volMgrHosts, "volmgr", "10.8.64.216,10.8.64.217,10.8.64.218", "ContainerFS VolMgr hosts")
 
 	flag.Parse()
+        if len(os.Args) >= 2 && (os.Args[1] == "version") {
+                fmt.Println(utils.Version())
+                os.Exit(0)
+        }
 
 	tmp := strings.Split(volMgrHosts, ",")
 

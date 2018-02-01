@@ -39,6 +39,10 @@ func main() {
 		getmetanodes`)
 
 	flag.Parse()
+        if len(os.Args) >= 2 && (os.Args[1] == "version") {
+                fmt.Println(utils.Version())
+                os.Exit(0)
+        }
 
 	tmp := strings.Split(peers, ",")
 	fs.VolMgrHosts = make([]string, 3)

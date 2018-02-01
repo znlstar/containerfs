@@ -754,6 +754,10 @@ func main() {
 	isReadOnly := flag.Int("readonly", 0, "Is readonly Volume 1 for ture ,0 for false")
 
 	flag.Parse()
+        if len(os.Args) >= 2 && (os.Args[1] == "version") {
+                fmt.Println(utils.Version())
+                os.Exit(0)
+        }
 
 	tmp := strings.Split(peers, ",")
 	cfs.VolMgrHosts = make([]string, 3)
