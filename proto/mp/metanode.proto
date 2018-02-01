@@ -172,6 +172,8 @@ message StatDirectAck{
 message ListDirectReq{
     string VolID = 1;
     uint64 PInode = 2;
+    string Name = 3;
+    uint64 GInode = 4;
 }
 message ListDirectAck{
     int32 Ret = 1;

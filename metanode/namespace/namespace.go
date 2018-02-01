@@ -343,7 +343,7 @@ func (ns *nameSpace) ListDirect(pinode uint64) ([]*mp.DirentN, int32) {
 		return v, 0
 	}
 
-	return []*mp.DirentN{}, -1
+	return nil, utils.ENOENT
 }
 
 //DeleteDirDirect ...

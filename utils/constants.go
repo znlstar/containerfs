@@ -4,4 +4,6 @@ package utils
 const (
 	EOK       = iota
 	ENOTFOUND = 20
+	ENOENT
+	ENOTDEFIND
 )

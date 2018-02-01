@@ -167,7 +167,7 @@ func (ms *VolumeKvStateMachine) DentryGet(raftGroupID uint64, key string) ([]byt
 	if newItem != nil {
 		return newItem.(btree.DentryKV).V, nil
 	}
-	return []byte{}, errNotExists
+	return []byte{}, ErrKeyNotFound
 
 }
 

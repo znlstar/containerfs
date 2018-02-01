@@ -779,7 +779,7 @@ func (cfs *CFS) StatDirect(pinode uint64, name string) (int32, bool, uint64) {
 }
 
 // ListDirect ...
-func (cfs *CFS) ListDirect(pinode uint64) (int32, []*mp.DirentN) {
+func (cfs *CFS) ListDirect(pinode uint64, ginode uint64, name string) (int32, []*mp.DirentN) {
 
 	ret := cfs.checkMetaConn()
 	if ret != 0 {
@@ -790,6 +790,8 @@ func (cfs *CFS) ListDirect(pinode uint64) (int32, []*mp.DirentN) {
 	pListDirectReq := &mp.ListDirectReq{
 		PInode: pinode,
 		VolID:  cfs.VolID,
+		Name:   name,
+		GInode: ginode,
 	}
 	ctx, _ := context.WithTimeout(context.Background(), 60*time.Second)
 	pListDirectAck, err := mc.ListDirect(ctx, pListDirectReq)

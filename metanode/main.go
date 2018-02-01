@@ -183,6 +183,12 @@ func (s *MetaNodeServer) ListDirect(ctx context.Context, in *mp.ListDirectReq) (
 		ack.Ret = ret
 		return &ack, nil
 	}
+	if in.PInode > 0 {
+		ack.Ret, _ = nameSpace.DentryDBGet(in.GInode, in.Name)
+		if ack.Ret > 0 {
+			return &ack, nil
+		}
+	}
 	ack.Dirents, ack.Ret = nameSpace.ListDirect(in.PInode)
 	return &ack, nil
 }
