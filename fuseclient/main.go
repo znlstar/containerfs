@@ -213,14 +213,28 @@ func (d *dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	logger.Debug("Dir ReadDirAll")
 
 	var res []fuse.Dirent
-	ret, dirents := d.fs.cfs.ListDirect(d.inode)
+	var ginode uint64
 
-	if ret == 2 {
-		return nil, fuse.Errno(syscall.ENOENT)
+	if d.parent != nil {
+		ginode = d.parent.inode
+	} else {
+		ginode = 0
 	}
-	if ret != 0 {
+	ret, dirents := d.fs.cfs.ListDirect(d.inode, ginode, d.name)
+
+	if ret == 0 {
+
+	} else if ret == utils.ENOTFOUND {
+		if d.parent != nil {
+			delete(d.parent.active, d.name)
+		}
+		return nil, fuse.Errno(syscall.EPERM)
+	} else if ret == 2 || ret == utils.ENOENT {
+		return nil, fuse.Errno(syscall.ENOENT)
+	} else {
 		return nil, fuse.Errno(syscall.EIO)
 	}
+
 	for _, v := range dirents {
 		de := fuse.Dirent{
 			Name: v.Name,
