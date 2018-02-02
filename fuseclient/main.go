@@ -448,6 +448,7 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 		ret := d.fs.cfs.RenameDirect(d.inode, req.OldName, d.inode, req.NewName)
 		if ret != 0 {
 			if ret == utils.ENOTFOUND {
+				delete(d.active, req.OldName)
 				return fuse.Errno(syscall.ENOENT)
 			} else if ret == 2 {
 				return fuse.Errno(syscall.ENOENT)
@@ -754,6 +755,10 @@ func main() {
 	isReadOnly := flag.Int("readonly", 0, "Is readonly Volume 1 for ture ,0 for false")
 
 	flag.Parse()
+	if len(os.Args) >= 2 && (os.Args[1] == "version") {
+		fmt.Println(utils.Version())
+		os.Exit(0)
+	}
 
 	tmp := strings.Split(peers, ",")
 	cfs.VolMgrHosts = make([]string, 3)

@@ -428,6 +428,10 @@ func init() {
 	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS metanode log level")
 
 	flag.Parse()
+        if len(os.Args) >= 2 && (os.Args[1] == "version") {
+                fmt.Println(utils.Version())
+                os.Exit(0)
+        }
 
 	tmp := strings.Split(volmgrHostString, ",")
 

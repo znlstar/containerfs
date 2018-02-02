@@ -7,6 +7,7 @@ import (
 	"github.com/tiglabs/containerfs/proto/vp"
 	"github.com/tiglabs/containerfs/raftopt"
 	com "github.com/tiglabs/containerfs/raftopt/common"
+	"github.com/tiglabs/containerfs/utils"
 	"github.com/tiglabs/raft"
 	"github.com/tiglabs/raft/proto"
 	"google.golang.org/grpc"
@@ -89,7 +90,10 @@ func init() {
 	loglevel := flag.String("loglevel", "error", "ContainerFS VolMgr log level")
 
 	flag.Parse()
-
+	if len(os.Args) >= 2 && (os.Args[1] == "version") {
+		fmt.Println(utils.Version())
+		os.Exit(0)
+	}
 	VolMgrServerAddr.nodeID = uint64(*nodeid)
 	VolMgrServerAddr.ips = strings.Split(*ips, ",")
 	peerarray := strings.Split(*peers, ",")
