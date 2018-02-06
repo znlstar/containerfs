@@ -248,6 +248,21 @@ func (s *MetaNodeServer) DeleteFileDirect(ctx context.Context, in *mp.DeleteFile
 
 }
 
+// DeleteFileDirect ...
+func (s *MetaNodeServer) DeleteSymLinkDirect(ctx context.Context, in *mp.DeleteSymLinkDirectReq) (*mp.DeleteSymLinkDirectAck, error) {
+
+	ack := mp.DeleteSymLinkDirectAck{}
+
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ack.Ret = nameSpace.DeleteSymLinkDirect(in.PInode, in.Name)
+	return &ack, nil
+
+}
+
 // GetFileChunksDirect ...
 func (s *MetaNodeServer) GetFileChunksDirect(ctx context.Context, in *mp.GetFileChunksDirectReq) (*mp.GetFileChunksDirectAck, error) {
 	ack := mp.GetFileChunksDirectAck{}
@@ -336,6 +351,42 @@ func (s *MetaNodeServer) AsyncChunk(ctx context.Context, in *mp.AsyncChunkReq) (
 		return &ack, nil
 	}
 	ack.Ret = nameSpace.AsyncChunk(in.ParentInodeID, in.Name, in.ChunkID, in.CommitSize, in.BlockGroupID)
+	return &ack, nil
+}
+
+// SymLink ...
+func (s *MetaNodeServer) SymLink(ctx context.Context, in *mp.SymLinkReq) (*mp.SymLinkAck, error) {
+	ack := mp.SymLinkAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ack.Ret, ack.Inode = nameSpace.SymLink(in.PInode, in.Name, in.Target)
+	return &ack, nil
+}
+
+// ReadLink ...
+func (s *MetaNodeServer) ReadLink(ctx context.Context, in *mp.ReadLinkReq) (*mp.ReadLinkAck, error) {
+	ack := mp.ReadLinkAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ack.Ret, ack.Target = nameSpace.ReadLink(in.Inode)
+	return &ack, nil
+}
+
+//GetSymLinkInfoDirect ...
+func (s *MetaNodeServer) GetSymLinkInfoDirect(ctx context.Context, in *mp.GetSymLinkInfoDirectReq) (*mp.GetSymLinkInfoDirectAck, error) {
+	ack := mp.GetSymLinkInfoDirectAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ack.Ret, ack.Inode = nameSpace.GetSymLinkInfoDirect(in.PInode, in.Name)
 	return &ack, nil
 }
 
@@ -428,10 +479,10 @@ func init() {
 	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS metanode log level")
 
 	flag.Parse()
-        if len(os.Args) >= 2 && (os.Args[1] == "version") {
-                fmt.Println(utils.Version())
-                os.Exit(0)
-        }
+	if len(os.Args) >= 2 && (os.Args[1] == "version") {
+		fmt.Println(utils.Version())
+		os.Exit(0)
+	}
 
 	tmp := strings.Split(volmgrHostString, ",")
 

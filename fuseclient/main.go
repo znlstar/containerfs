@@ -112,6 +112,7 @@ var _ fs.NodeMkdirer = (*dir)(nil)
 var _ fs.NodeRemover = (*dir)(nil)
 var _ fs.NodeRenamer = (*dir)(nil)
 var _ fs.NodeFsyncer = (*dir)(nil)
+var _ fs.NodeSymlinker = (*dir)(nil)
 var _ fs.NodeStringLookuper = (*dir)(nil)
 var _ fs.HandleReadDirAller = (*dir)(nil)
 
@@ -191,15 +192,27 @@ func (d *dir) reviveDir(inode uint64, name string) (*dir, error) {
 	return child, nil
 }
 
-func (d *dir) reviveNode(inodeType bool, inode uint64, name string) (node, error) {
-	if inodeType {
+func (d *dir) reviveNode(inodeType uint32, inode uint64, name string) (node, error) {
+	if inodeType == 2 {
 		child := &File{
-			inode:  inode,
-			name:   name,
-			parent: d,
+			inode:    inode,
+			name:     name,
+			parent:   d,
+			fileType: 0,
 		}
 		return child, nil
 	}
+
+	if inodeType == 3 {
+		child := &File{
+			inode:    inode,
+			name:     name,
+			parent:   d,
+			fileType: 1,
+		}
+		return child, nil
+	}
+
 	child, _ := d.reviveDir(inode, name)
 	return child, nil
 
@@ -239,10 +252,12 @@ func (d *dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 		de := fuse.Dirent{
 			Name: v.Name,
 		}
-		if v.InodeType {
-			de.Type = fuse.DT_File
-		} else {
+		if v.InodeType == 1 {
 			de.Type = fuse.DT_Dir
+		} else if v.InodeType == 2 {
+			de.Type = fuse.DT_File
+		} else if v.InodeType == 3 {
+			de.Type = fuse.DT_Link
 		}
 		res = append(res, de)
 	}
@@ -379,16 +394,58 @@ func (d *dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 			return fuse.Errno(syscall.EIO)
 		}
 	} else {
-		ret := d.fs.cfs.DeleteFileDirect(d.inode, req.Name)
-		if ret != 0 {
-			if ret == utils.ENOTFOUND {
-				return nil
-			} else if ret == 2 {
-				return fuse.Errno(syscall.EPERM)
-			} else {
-				return fuse.Errno(syscall.EIO)
+
+		var symlimkFlag bool
+
+		if node, ok := d.active[req.Name]; ok {
+			if node.node.(*File).fileType == 1 {
+				logger.Debug("symlink file in active ...")
+				symlimkFlag = true
 			}
+		} else {
+			ret, inodeType, _ := d.fs.cfs.StatDirect(d.inode, req.Name)
+			logger.Debug("symlink StatDirect ret %v inodeType %v", ret, inodeType)
+			if ret != 0 {
+				return fuse.Errno(syscall.EIO)
+			} else {
+				if inodeType == 3 {
+					symlimkFlag = true
+				}
+			}
+
 		}
+
+		if symlimkFlag {
+
+			ret := d.fs.cfs.DeleteSymLinkDirect(d.inode, req.Name)
+
+			logger.Debug("symlink DeleteSymLinkDirect ret  %v", ret)
+
+			if ret != 0 {
+				if ret == utils.ENOTFOUND {
+					return nil
+				} else if ret == 2 {
+					return fuse.Errno(syscall.EPERM)
+				} else {
+					return fuse.Errno(syscall.EIO)
+				}
+			}
+
+		} else {
+
+			ret := d.fs.cfs.DeleteFileDirect(d.inode, req.Name)
+			if ret != 0 {
+				if ret == utils.ENOTFOUND {
+					return nil
+				} else if ret == 2 {
+					return fuse.Errno(syscall.EPERM)
+				} else {
+					return fuse.Errno(syscall.EIO)
+				}
+			}
+
+		}
+
 	}
 
 	logger.Debug("Remove end , name %v parentino %v parentname %v", req.Name, d.inode, d.name)
@@ -407,15 +464,23 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	ret, inodeType, _ := d.fs.cfs.StatDirect(newDir.(*dir).inode, req.NewName)
 	if ret == 0 {
 		logger.Debug("newName in newDir is already exsit, inodeType: %v", inodeType)
-		if false == inodeType {
+		if 1 == inodeType {
 			logger.Error("Rename newName %v in newDir %v is an exsit dir, un-supportted rename", req.NewName, d.name)
 			return fuse.Errno(syscall.EPERM)
+		} else if 2 == inodeType {
+			ret = d.fs.cfs.DeleteFileDirect(newDir.(*dir).inode, req.NewName)
+			if ret != 0 {
+				logger.Error("Rename Delete the exist newName %v in newDir %v failed!", req.NewName, d.name)
+				return fuse.Errno(syscall.EPERM)
+			}
+		} else if 3 == inodeType {
+			ret = d.fs.cfs.DeleteSymLinkDirect(newDir.(*dir).inode, req.NewName)
+			if ret != 0 {
+				logger.Error("Rename Delete the exist newName %v in newDir %v failed!", req.NewName, d.name)
+				return fuse.Errno(syscall.EPERM)
+			}
 		}
-		ret = d.fs.cfs.DeleteFileDirect(newDir.(*dir).inode, req.NewName)
-		if ret != 0 {
-			logger.Error("Rename Delete the exist newName %v in newDir %v failed!", req.NewName, d.name)
-			return fuse.Errno(syscall.EPERM)
-		}
+
 	}
 
 	if newDir != d {
@@ -476,6 +541,33 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 }
 
 // Fsync ...
+func (d *dir) Symlink(ctx context.Context, req *fuse.SymlinkRequest) (fs.Node, error) {
+
+	logger.Error("Symlink req %v", req)
+
+	ret, inode := d.fs.cfs.SymLink(d.inode, req.NewName, req.Target)
+	if ret != 0 {
+		logger.Error("Symlink ret %v", ret)
+		return nil, fuse.EPERM
+	}
+
+	logger.Error("Symlink inode %v", inode)
+
+	child := &File{
+		inode:    inode,
+		name:     req.NewName,
+		parent:   d,
+		handles:  1,
+		writers:  1,
+		fileType: 1,
+	}
+
+	d.active[req.NewName] = &refcount{node: child}
+
+	return child, nil
+}
+
+// Fsync ...
 func (d *dir) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
 
 	return nil
@@ -492,11 +584,12 @@ type File struct {
 	mu    sync.Mutex
 	inode uint64
 
-	parent  *dir
-	name    string
-	writers uint
-	handles uint32
-	cfile   *cfs.CFile
+	fileType uint32
+	parent   *dir
+	name     string
+	writers  uint
+	handles  uint32
+	cfile    *cfs.CFile
 }
 
 var _ node = (*File)(nil)
@@ -526,24 +619,46 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	ret, inode, inodeInfo := f.parent.fs.cfs.GetInodeInfoDirect(f.parent.inode, f.name)
-	if ret != 0 || inodeInfo == nil {
-		return nil
-	}
+	if f.fileType == 0 {
 
-	a.Ctime = time.Unix(inodeInfo.ModifiTime, 0)
-	a.Mtime = time.Unix(inodeInfo.ModifiTime, 0)
-	a.Atime = time.Unix(inodeInfo.AccessTime, 0)
-	a.Size = uint64(inodeInfo.FileSize)
-	if f.cfile != nil && a.Size < uint64(f.cfile.FileSizeInCache) {
-		a.Size = uint64(f.cfile.FileSizeInCache)
-	}
-	a.Inode = uint64(inode)
+		logger.Error("att normal file")
 
-	a.BlockSize = 4 * 1024
-	a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
-	a.Mode = 0666
-	a.Valid = time.Second
+		ret, inode, inodeInfo := f.parent.fs.cfs.GetInodeInfoDirect(f.parent.inode, f.name)
+		if ret != 0 || inodeInfo == nil {
+			logger.Error("File Attr err ")
+			return nil
+		}
+
+		a.Ctime = time.Unix(inodeInfo.ModifiTime, 0)
+		a.Mtime = time.Unix(inodeInfo.ModifiTime, 0)
+		a.Atime = time.Unix(inodeInfo.AccessTime, 0)
+		a.Size = uint64(inodeInfo.FileSize)
+		if f.cfile != nil && a.Size < uint64(f.cfile.FileSizeInCache) {
+			a.Size = uint64(f.cfile.FileSizeInCache)
+		}
+		a.Inode = uint64(inode)
+
+		a.BlockSize = 4 * 1024
+		a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
+		a.Mode = 0666
+		a.Valid = time.Second
+
+	} else if f.fileType == 1 {
+
+		logger.Error("att symlink file pinode %v name %v", f.parent.inode, f.name)
+
+		ret, inode := f.parent.fs.cfs.GetSymLinkInfoDirect(f.parent.inode, f.name)
+		if ret != 0 {
+			logger.Error("symlink Attr ret %v ", ret)
+			return nil
+		}
+
+		logger.Error("GetSymLinkInfoDirect inode %v", inode)
+
+		a.Inode = uint64(inode)
+		a.Mode = 0666 | os.ModeSymlink
+		a.Valid = 0
+	}
 
 	return nil
 }
@@ -739,6 +854,23 @@ var _ = fs.NodeSetattrer(&File{})
 // Setattr ...
 func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse.SetattrResponse) error {
 	return nil
+}
+
+var _ = fs.NodeReadlinker(&File{})
+
+// ReadLink ...
+func (f *File) Readlink(ctx context.Context, req *fuse.ReadlinkRequest) (string, error) {
+
+	logger.Error("ReadLink ...")
+
+	ret, target := f.parent.fs.cfs.ReadLink(f.inode)
+	if ret != 0 {
+		logger.Error("ReadLink req ret %v", ret)
+		return "", fuse.EIO
+	}
+
+	return target, nil
+
 }
 
 func main() {
