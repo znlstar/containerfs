@@ -743,12 +743,48 @@ func (cfs *CFS) GetInodeInfoDirect(pinode uint64, name string) (int32, uint64, *
 	return pGetInodeInfoDirectAck.Ret, pGetInodeInfoDirectAck.Inode, pGetInodeInfoDirectAck.InodeInfo
 }
 
-// StatDirect ...
-func (cfs *CFS) StatDirect(pinode uint64, name string) (int32, bool, uint64) {
+// GetSymLinkInfoDirect ...
+func (cfs *CFS) GetSymLinkInfoDirect(pinode uint64, name string) (int32, uint64) {
 
 	ret := cfs.checkMetaConn()
 	if ret != 0 {
-		return -1, false, 0
+		return -1, 0
+	}
+
+	mc := mp.NewMetaNodeClient(cfs.MetaNodeConn)
+	pGetSymLinkInfoDirectReq := &mp.GetSymLinkInfoDirectReq{
+		PInode: pinode,
+		Name:   name,
+		VolID:  cfs.VolID,
+	}
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pGetSymLinkInfoDirectAck, err := mc.GetSymLinkInfoDirect(ctx, pGetSymLinkInfoDirectReq)
+	if err != nil {
+
+		time.Sleep(time.Second)
+
+		ret := cfs.checkMetaConn()
+		if ret != 0 {
+			return -2, 0
+		}
+
+		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		pGetSymLinkInfoDirectAck, err = mc.GetSymLinkInfoDirect(ctx, pGetSymLinkInfoDirectReq)
+		if err != nil {
+			return -3, 0
+		}
+
+	}
+	return pGetSymLinkInfoDirectAck.Ret, pGetSymLinkInfoDirectAck.Inode
+}
+
+// StatDirect ...
+func (cfs *CFS) StatDirect(pinode uint64, name string) (int32, uint32, uint64) {
+
+	ret := cfs.checkMetaConn()
+	if ret != 0 {
+		return -1, 0, 0
 	}
 
 	mc := mp.NewMetaNodeClient(cfs.MetaNodeConn)
@@ -765,14 +801,14 @@ func (cfs *CFS) StatDirect(pinode uint64, name string) (int32, bool, uint64) {
 
 		ret := cfs.checkMetaConn()
 		if ret != 0 {
-			return -1, false, 0
+			return -1, 0, 0
 		}
 
 		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
 		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
 		pStatDirectAck, err = mc.StatDirect(ctx, pStatDirectReq)
 		if err != nil {
-			return -1, false, 0
+			return -1, 0, 0
 		}
 	}
 	return pStatDirectAck.Ret, pStatDirectAck.InodeType, pStatDirectAck.Inode
@@ -830,21 +866,19 @@ func (cfs *CFS) DeleteDirDirect(pinode uint64, name string) int32 {
 	}
 
 	for _, v := range pListDirectAck.Dirents {
-		/*
-			if v.InodeType {
-				cfs.DeleteFileDirect(inode, v.Name)
-			} else {
-				cfs.DeleteDirDirect(inode, v.Name)
-			}
-		*/
 
-		if v.InodeType {
+		if v.InodeType == 1 {
+			ret := cfs.DeleteDirDirect(inode, v.Name)
+			if ret != 0 {
+				return ret
+			}
+		} else if v.InodeType == 2 {
 			ret := cfs.DeleteFileDirect(inode, v.Name)
 			if ret != 0 {
 				return ret
 			}
-		} else {
-			ret := cfs.DeleteDirDirect(inode, v.Name)
+		} else if v.InodeType == 3 {
+			ret := cfs.DeleteSymLinkDirect(inode, v.Name)
 			if ret != 0 {
 				return ret
 			}
@@ -1017,6 +1051,40 @@ func (cfs *CFS) createFileDirect(pinode uint64, name string) (int32, uint64) {
 	return 0, pCreateFileDirectAck.Inode
 }
 
+func (cfs *CFS) DeleteSymLinkDirect(pinode uint64, name string) int32 {
+	ret := cfs.checkMetaConn()
+	if ret != 0 {
+		return -1
+	}
+
+	mc := mp.NewMetaNodeClient(cfs.MetaNodeConn)
+	mpDeleteSymLinkDirectReq := &mp.DeleteSymLinkDirectReq{
+		PInode: pinode,
+		Name:   name,
+		VolID:  cfs.VolID,
+	}
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	mpDDeleteSymLinkDirectAck, err := mc.DeleteSymLinkDirect(ctx, mpDeleteSymLinkDirectReq)
+	if err != nil || mpDDeleteSymLinkDirectAck.Ret != 0 {
+		time.Sleep(time.Second)
+
+		ret := cfs.checkMetaConn()
+		if ret != 0 {
+			return -1
+		}
+		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		mpDDeleteSymLinkDirectAck, err = mc.DeleteSymLinkDirect(ctx, mpDeleteSymLinkDirectReq)
+		if err != nil {
+			logger.Error("DeleteFile failed,grpc func err :%v\n", err)
+			return -1
+		}
+	}
+
+	return mpDDeleteSymLinkDirectAck.Ret
+
+}
+
 // DeleteFileDirect ...
 func (cfs *CFS) DeleteFileDirect(pinode uint64, name string) int32 {
 
@@ -1118,6 +1186,82 @@ func (cfs *CFS) GetFileChunksDirect(pinode uint64, name string) (int32, []*mp.Ch
 		}
 	}
 	return pGetFileChunksDirectAck.Ret, pGetFileChunksDirectAck.ChunkInfos, pGetFileChunksDirectAck.Inode
+}
+
+func (cfs *CFS) SymLink(pInode uint64, newName string, target string) (int32, uint64) {
+
+	ret := cfs.checkMetaConn()
+	if ret != 0 {
+		logger.Error("SymLink cfs.Conn nil ...")
+		return -1, 0
+	}
+
+	mc := mp.NewMetaNodeClient(cfs.MetaNodeConn)
+	pSymLinkReq := &mp.SymLinkReq{
+		PInode: pInode,
+		Name:   newName,
+		Target: target,
+		VolID:  cfs.VolID,
+	}
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pSymLinkAck, err := mc.SymLink(ctx, pSymLinkReq)
+	if err != nil || pSymLinkAck.Ret != 0 {
+
+		time.Sleep(time.Second)
+
+		ret := cfs.checkMetaConn()
+		if ret != 0 {
+			logger.Error("SymLink cfs.Conn nil ...")
+			return -1, 0
+		}
+
+		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		pSymLinkAck, err = mc.SymLink(ctx, pSymLinkReq)
+		if err != nil {
+			logger.Error("SymLink failed,grpc func failed :%v\n", err)
+			return -1, 0
+		}
+	}
+	return pSymLinkAck.Ret, pSymLinkAck.Inode
+
+}
+
+func (cfs *CFS) ReadLink(inode uint64) (int32, string) {
+
+	ret := cfs.checkMetaConn()
+	if ret != 0 {
+		logger.Error("SymLink cfs.Conn nil ...")
+		return -1, ""
+	}
+
+	mc := mp.NewMetaNodeClient(cfs.MetaNodeConn)
+	pReadLinkReq := &mp.ReadLinkReq{
+		Inode: inode,
+		VolID: cfs.VolID,
+	}
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	pReadLinkAck, err := mc.ReadLink(ctx, pReadLinkReq)
+	if err != nil || pReadLinkAck.Ret != 0 {
+
+		time.Sleep(time.Second)
+
+		ret := cfs.checkMetaConn()
+		if ret != 0 {
+			logger.Error("ReadLink cfs.Conn nil ...")
+			return -1, ""
+		}
+
+		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		pReadLinkAck, err = mc.ReadLink(ctx, pReadLinkReq)
+		if err != nil {
+			logger.Error("ReadLink failed,grpc func failed :%v\n", err)
+			return -1, ""
+		}
+	}
+	return pReadLinkAck.Ret, pReadLinkAck.Target
+
 }
 
 type Data struct {

@@ -15,7 +15,7 @@ service MetaNode {
     // fs meta opt
     rpc CreateDirDirect(CreateDirDirectReq) returns (CreateDirDirectAck){};
     rpc StatDirect(StatDirectReq) returns (StatDirectAck){};
-    rpc GetInodeInfoDirect(GetInodeInfoDirectReq) returns (GetInodeInfoDirectAck){};
+    rpc GetInodeInfoDirect(GetInodeInfoDirectReq) returns (GetInodeInfoDirectAck){};    
     rpc ListDirect(ListDirectReq) returns (ListDirectAck){};
     rpc DeleteDirDirect(DeleteDirDirectReq) returns (DeleteDirDirectAck){};
     rpc RenameDirect(RenameDirectReq) returns (RenameDirectAck){};
@@ -25,6 +25,12 @@ service MetaNode {
     rpc AllocateChunk(AllocateChunkReq) returns (AllocateChunkAck){};
     rpc SyncChunk(SyncChunkReq) returns (SyncChunkAck){};
     rpc AsyncChunk(AsyncChunkReq) returns (AsyncChunkAck){};
+
+
+    rpc SymLink(SymLinkReq) returns (SymLinkAck){};
+    rpc ReadLink(ReadLinkReq) returns (ReadLinkAck){};
+    rpc DeleteSymLinkDirect(DeleteSymLinkDirectReq) returns (DeleteSymLinkDirectAck){};
+    rpc GetSymLinkInfoDirect(GetSymLinkInfoDirectReq) returns (GetSymLinkInfoDirectAck){};
 
     //utils:healthcheck etc
     rpc MetaNodeHealthCheck(MetaNodeHealthCheckReq) returns (MetaNodeHealthCheckAck){};
@@ -156,6 +162,17 @@ message GetInodeInfoDirectAck{
     uint64 Inode = 3;
 }
 
+message GetSymLinkInfoDirectReq{
+    string VolID = 1;
+    uint64 PInode = 2;
+    string Name = 3;
+}
+message GetSymLinkInfoDirectAck{
+    int32 Ret = 1;
+    uint64 Inode = 2;
+}
+
+
 
 message StatDirectReq{
     string VolID = 1;
@@ -164,7 +181,7 @@ message StatDirectReq{
 }
 message StatDirectAck{
     int32 Ret = 1;
-    bool InodeType = 2;
+    uint32 InodeType = 2;
     uint64 Inode = 3;
 }
 
@@ -222,6 +239,39 @@ message AsyncChunkAck {
     int32 Ret = 1;
 }
 
+message SymLinkReq {
+    uint64 PInode = 1;
+    string Name = 2;
+    string Target = 3;
+    string VolID = 4;
+}
+
+message SymLinkAck {
+    int32 Ret = 1;
+    uint64 Inode = 2;
+}
+
+message ReadLinkReq {
+    uint64 Inode = 1;
+    string VolID = 2;
+}
+
+message ReadLinkAck {
+    int32 Ret = 1;
+    string Target = 2;
+}
+
+message DeleteSymLinkDirectReq {
+    uint64 PInode = 1;
+    string Name = 2;
+    string VolID = 3;
+}
+
+message DeleteSymLinkDirectAck {
+    int32 Ret = 1;
+}
+
+
 
 
 message InodeInfo{
@@ -232,13 +282,17 @@ message InodeInfo{
     repeated ChunkInfo Chunks = 5;
 }
 
+message SymLinkInfo{
+    string Target = 1;
+}
+
 message Dirent{
-    bool InodeType = 1;
+    uint32 InodeType = 1;
     uint64 Inode = 2;
 }
 
 message DirentN{
-    bool InodeType = 1;
+    uint32 InodeType = 1;
     uint64 Inode = 2;
     string Name = 3;
 }
