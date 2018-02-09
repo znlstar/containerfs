@@ -113,7 +113,7 @@ var _ fs.NodeRemover = (*dir)(nil)
 var _ fs.NodeRenamer = (*dir)(nil)
 var _ fs.NodeFsyncer = (*dir)(nil)
 var _ fs.NodeSymlinker = (*dir)(nil)
-var _ fs.NodeStringLookuper = (*dir)(nil)
+var _ fs.NodeRequestLookuper = (*dir)(nil)
 var _ fs.HandleReadDirAller = (*dir)(nil)
 
 func (d *dir) setName(name string) {
@@ -138,49 +138,50 @@ func (d *dir) Attr(ctx context.Context, a *fuse.Attr) error {
 
 	a.Mode = os.ModeDir | 0755
 	a.Inode = d.inode
-	a.Valid = time.Second
-	/*
-		if d.parent == nil {
-			a.Mode = os.ModeDir | 0755
-			a.Inode = d.inode
+	a.Valid = utils.FUSE_ATTR_CACHE_LIFE
+	if d.parent != nil {
+		logger.Debug("d p inode:%v", d.parent.inode)
+		ret, inode, inodeInfo := d.fs.cfs.GetInodeInfoDirect(d.parent.inode, d.name)
+		if ret == 0 {
+		} else if ret == utils.ENOTFOUND {
+			d.mu.Lock()
+			//clean dirty cache in dir map
+			delete(d.parent.active, d.name)
+			d.mu.Unlock()
+			return fuse.Errno(syscall.ENOENT)
 		} else {
-			ret, inode, inodeInfo := d.fs.cfs.GetInodeInfoDirect(d.parent.inode, d.name)
-			if ret != 0 {
-				return nil
-			}
-
-			a.Ctime = time.Unix(inodeInfo.ModifiTime, 0)
-			a.Mtime = time.Unix(inodeInfo.ModifiTime, 0)
-			a.Atime = time.Unix(inodeInfo.AccessTime, 0)
-			a.Inode = uint64(inode)
+			return fuse.Errno(syscall.EIO)
 		}
-	*/
+		a.Ctime = time.Unix(inodeInfo.ModifiTime, 0)
+		a.Mtime = time.Unix(inodeInfo.ModifiTime, 0)
+		a.Atime = time.Unix(inodeInfo.AccessTime, 0)
+		a.Inode = uint64(inode)
+	}
 	return nil
 }
 
-func (d *dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
+func (d *dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.LookupResponse) (fs.Node, error) {
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	logger.Debug("Dir Lookup")
-
-	if a, ok := d.active[name]; ok {
+	logger.Debug("Dir Lookup %v in dir %v", req.Name, d.name)
+	resp.EntryValid = utils.FUSE_LOOKUP_CACHE_LIFE
+	if a, ok := d.active[req.Name]; ok {
 		return a.node, nil
 	}
 
-	ret, inodeType, inode := d.fs.cfs.StatDirect(d.inode, name)
-
+	ret, inodeType, inode := d.fs.cfs.StatDirect(d.inode, req.Name)
 	if ret == 2 {
 		return nil, fuse.ENOENT
 	}
 	if ret != 0 {
 		return nil, fuse.ENOENT
 	}
-	n, _ := d.reviveNode(inodeType, inode, name)
+	n, _ := d.reviveNode(inodeType, inode, req.Name)
 
 	a := &refcount{node: n}
-	d.active[name] = a
+	d.active[req.Name] = a
 
 	a.kernel = true
 
@@ -193,28 +194,20 @@ func (d *dir) reviveDir(inode uint64, name string) (*dir, error) {
 }
 
 func (d *dir) reviveNode(inodeType uint32, inode uint64, name string) (node, error) {
-	if inodeType == 2 {
+	if inodeType == utils.INODE_DIR {
+		child, _ := d.reviveDir(inode, name)
+		return child, nil
+	} else {
 		child := &File{
 			inode:    inode,
 			name:     name,
 			parent:   d,
-			fileType: 0,
+			fileType: inodeType,
 		}
 		return child, nil
-	}
 
-	if inodeType == 3 {
-		child := &File{
-			inode:    inode,
-			name:     name,
-			parent:   d,
-			fileType: 1,
-		}
-		return child, nil
 	}
-
-	child, _ := d.reviveDir(inode, name)
-	return child, nil
+	return nil, nil
 
 }
 
@@ -239,6 +232,7 @@ func (d *dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 
 	} else if ret == utils.ENOTFOUND {
 		if d.parent != nil {
+			//clean dirty cache in dir map
 			delete(d.parent.active, d.name)
 		}
 		return nil, fuse.Errno(syscall.EPERM)
@@ -292,12 +286,13 @@ func (d *dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 	}
 
 	child := &File{
-		inode:   cfile.Inode,
-		name:    req.Name,
-		parent:  d,
-		handles: 1,
-		writers: 1,
-		cfile:   cfile,
+		inode:    cfile.Inode,
+		name:     req.Name,
+		parent:   d,
+		handles:  1,
+		writers:  1,
+		cfile:    cfile,
+		fileType: utils.INODE_FILE,
 	}
 
 	d.active[req.Name] = &refcount{node: child}
@@ -327,7 +322,7 @@ func (d *dir) forgetChild(name string, child node) {
 }
 
 func (d *dir) Forget() {
-
+	logger.Debug("Forget dir %v inode %v", d.name, d.inode)
 	if d.parent == nil {
 		return
 	}
@@ -398,17 +393,16 @@ func (d *dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 		var symlimkFlag bool
 
 		if node, ok := d.active[req.Name]; ok {
-			if node.node.(*File).fileType == 1 {
+			if node.node.(*File).fileType == utils.INODE_SYMLINK {
 				logger.Debug("symlink file in active ...")
 				symlimkFlag = true
 			}
 		} else {
 			ret, inodeType, _ := d.fs.cfs.StatDirect(d.inode, req.Name)
-			logger.Debug("symlink StatDirect ret %v inodeType %v", ret, inodeType)
 			if ret != 0 {
 				return fuse.Errno(syscall.EIO)
 			} else {
-				if inodeType == 3 {
+				if inodeType == utils.INODE_SYMLINK {
 					symlimkFlag = true
 				}
 			}
@@ -464,16 +458,16 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	ret, inodeType, _ := d.fs.cfs.StatDirect(newDir.(*dir).inode, req.NewName)
 	if ret == 0 {
 		logger.Debug("newName in newDir is already exsit, inodeType: %v", inodeType)
-		if 1 == inodeType {
+		if utils.INODE_DIR == inodeType {
 			logger.Error("Rename newName %v in newDir %v is an exsit dir, un-supportted rename", req.NewName, d.name)
 			return fuse.Errno(syscall.EPERM)
-		} else if 2 == inodeType {
+		} else if utils.INODE_FILE == inodeType {
 			ret = d.fs.cfs.DeleteFileDirect(newDir.(*dir).inode, req.NewName)
 			if ret != 0 {
 				logger.Error("Rename Delete the exist newName %v in newDir %v failed!", req.NewName, d.name)
 				return fuse.Errno(syscall.EPERM)
 			}
-		} else if 3 == inodeType {
+		} else if utils.INODE_SYMLINK == inodeType {
 			ret = d.fs.cfs.DeleteSymLinkDirect(newDir.(*dir).inode, req.NewName)
 			if ret != 0 {
 				logger.Error("Rename Delete the exist newName %v in newDir %v failed!", req.NewName, d.name)
@@ -502,8 +496,7 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 			delete(d.active, req.OldName)
 			aOld.node.setName(req.NewName)
 			aOld.node.setParentInode(newDir.(*dir))
-			//d.active[req.NewName] = aOld
-
+			newDir.(*dir).active[req.NewName] = aOld
 		}
 
 	} else {
@@ -540,10 +533,10 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	return nil
 }
 
-// Fsync ...
+// Symlink ...
 func (d *dir) Symlink(ctx context.Context, req *fuse.SymlinkRequest) (fs.Node, error) {
 
-	logger.Error("Symlink req %v", req)
+	logger.Debug("Symlink req %v", req)
 
 	ret, inode := d.fs.cfs.SymLink(d.inode, req.NewName, req.Target)
 	if ret != 0 {
@@ -551,15 +544,13 @@ func (d *dir) Symlink(ctx context.Context, req *fuse.SymlinkRequest) (fs.Node, e
 		return nil, fuse.EPERM
 	}
 
-	logger.Error("Symlink inode %v", inode)
-
 	child := &File{
 		inode:    inode,
 		name:     req.NewName,
 		parent:   d,
 		handles:  1,
 		writers:  1,
-		fileType: 1,
+		fileType: utils.INODE_SYMLINK,
 	}
 
 	d.active[req.NewName] = &refcount{node: child}
@@ -595,6 +586,20 @@ type File struct {
 var _ node = (*File)(nil)
 var _ = fs.Node(&File{})
 var _ = fs.Handle(&File{})
+var _ = fs.NodeForgetter(&File{})
+
+func (f *File) Forget() {
+	logger.Debug("Forget file %v inode %v", f.name, f.inode)
+	if f.parent == nil {
+		return
+	}
+
+	f.mu.Lock()
+	name := f.name
+	f.mu.Unlock()
+
+	f.parent.forgetChild(name, f)
+}
 
 func (f *File) setName(name string) {
 
@@ -618,17 +623,19 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-
-	if f.fileType == 0 {
-
-		logger.Error("att normal file")
+	logger.Debug("to get attr for %v in type: %v, parent inode: %v", f.name, f.fileType, f.parent.inode)
+	if f.fileType == utils.INODE_FILE {
 
 		ret, inode, inodeInfo := f.parent.fs.cfs.GetInodeInfoDirect(f.parent.inode, f.name)
-		if ret != 0 || inodeInfo == nil {
-			logger.Error("File Attr err ")
+		logger.Debug("to get attr from ms %v in type: %v, ret: %v", f.name, f.fileType, ret)
+		if ret == 0 {
+		} else if ret == utils.ENOTFOUND {
+			delete(f.parent.active, f.name)
+			return fuse.Errno(syscall.ENOENT)
+		} else if ret != 0 || inodeInfo == nil {
 			return nil
 		}
-
+		a.Valid = utils.FUSE_ATTR_CACHE_LIFE
 		a.Ctime = time.Unix(inodeInfo.ModifiTime, 0)
 		a.Mtime = time.Unix(inodeInfo.ModifiTime, 0)
 		a.Atime = time.Unix(inodeInfo.AccessTime, 0)
@@ -643,13 +650,16 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 		a.Mode = 0666
 		a.Valid = time.Second
 
-	} else if f.fileType == 1 {
+	} else if f.fileType == utils.INODE_SYMLINK {
 
-		logger.Error("att symlink file pinode %v name %v", f.parent.inode, f.name)
+		logger.Debug("att symlink file pinode %v name %v", f.parent.inode, f.name)
 
 		ret, inode := f.parent.fs.cfs.GetSymLinkInfoDirect(f.parent.inode, f.name)
-		if ret != 0 {
-			logger.Error("symlink Attr ret %v ", ret)
+		if ret == 0 {
+		} else if ret == utils.ENOTFOUND {
+			delete(f.parent.active, f.name)
+			return fuse.Errno(syscall.ENOENT)
+		} else if ret != 0 {
 			return nil
 		}
 
@@ -690,12 +700,12 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 	if f.cfile == nil && f.handles == 0 {
 		ret, f.cfile = f.parent.fs.cfs.OpenFileDirect(f.parent.inode, f.name, int(req.Flags))
 
-		//delete dir active cache
-		if ret == utils.ENOTFOUND && f.parent != nil {
+		if ret == 0 {
+		} else if ret == utils.ENOTFOUND {
+			//clean dirty cache in dir map
 			delete(f.parent.active, f.name)
 
 			if int(req.Flags) != os.O_RDONLY && (int(req.Flags)&os.O_CREATE > 0 || int(req.Flags)&^(os.O_WRONLY|os.O_TRUNC) == 0) {
-
 				logger.Debug("open an deleted file, create new file %v with flag: %v", f.name, req.Flags)
 				ret, f.cfile = f.parent.fs.cfs.CreateFileDirect(f.parent.inode, f.name, int(req.Flags))
 				if ret != 0 {
@@ -712,8 +722,7 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 			} else {
 				return nil, fuse.Errno(syscall.ENOENT)
 			}
-		}
-		if ret != 0 {
+		} else {
 			logger.Error("Open failed OpenFileDirect ret %v", ret)
 			return nil, fuse.Errno(syscall.EIO)
 		}
@@ -861,7 +870,7 @@ var _ = fs.NodeReadlinker(&File{})
 // ReadLink ...
 func (f *File) Readlink(ctx context.Context, req *fuse.ReadlinkRequest) (string, error) {
 
-	logger.Error("ReadLink ...")
+	logger.Debug("ReadLink ...")
 
 	ret, target := f.parent.fs.cfs.ReadLink(f.inode)
 	if ret != 0 {
