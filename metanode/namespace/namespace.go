@@ -292,7 +292,7 @@ func (ns *nameSpace) CreateDirDirect(pinode uint64, name string) (int32, uint64)
 		return 1, 0
 	}
 
-	err = ns.DentryDBSet(pinode, name, 1, inodeID)
+	err = ns.DentryDBSet(pinode, name, utils.INODE_DIR, inodeID)
 	if err != nil {
 		ns.InodeDBDelete(inodeID)
 		return 1, 0
@@ -416,7 +416,7 @@ func (ns *nameSpace) CreateFileDirect(pinode uint64, name string) (int32, uint64
 		return 1, 0
 	}
 
-	err = ns.DentryDBSet(pinode, name, 2, inodeID)
+	err = ns.DentryDBSet(pinode, name, utils.INODE_FILE, inodeID)
 	if err != nil {
 		ns.InodeDBDelete(inodeID)
 		return 1, 0
@@ -766,7 +766,7 @@ func (ns *nameSpace) SymLink(pInode uint64, newName string, target string) (int3
 		return 1, 0
 	}
 
-	err = ns.DentryDBSet(pInode, newName, 3, inodeID)
+	err = ns.DentryDBSet(pInode, newName, utils.INODE_SYMLINK, inodeID)
 	if err != nil {
 		ns.SymLinkDBDelete(inodeID)
 		return 1, 0
