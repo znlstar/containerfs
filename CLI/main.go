@@ -26,7 +26,7 @@ func main() {
 		expandvol [volumeuuid ] size
 		migrate [host]
 		deletevol [volumeuuid ]
-		snapshootvol [volumeuuid ]
+		snapshotvol [volumeuuid ]
 		snapshotcluster
 		getvolmetaleader [volumeuuid ]
 		getvolmgrleader
@@ -39,10 +39,10 @@ func main() {
 		getmetanodes`)
 
 	flag.Parse()
-        if len(os.Args) >= 2 && (os.Args[1] == "version") {
-                fmt.Println(utils.Version())
-                os.Exit(0)
-        }
+	if len(os.Args) >= 2 && (os.Args[1] == "version") {
+		fmt.Println(utils.Version())
+		os.Exit(0)
+	}
 
 	tmp := strings.Split(peers, ",")
 	fs.VolMgrHosts = make([]string, 3)
@@ -125,6 +125,13 @@ func main() {
 			fmt.Println("snapshotvol [voluuid]")
 			os.Exit(1)
 		}
+
+		cfs := fs.OpenFileSystem(flag.Arg(0))
+		if cfs == nil {
+			fmt.Println("no such volume")
+			os.Exit(1)
+		}
+
 		ret := fs.SnapShotVol(flag.Arg(0))
 		if ret != 0 {
 			fmt.Println("failed")

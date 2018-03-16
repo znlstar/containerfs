@@ -13,7 +13,7 @@ A cluster filesystem for the containers. Please see http://containerfs.io/ for c
 * 2018Q1
 1. Choose RaftGroup in MetaNode Pool ✔
 2. MetaNode Auto Registry Add ✔
-3. Full Posix Interface 
+3. Full Posix Interface ✔
 
 * 2018Q2
 1. Kernel Client

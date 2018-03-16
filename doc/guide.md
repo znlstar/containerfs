@@ -20,21 +20,21 @@
 
 1、在 192.168.100.16 192.168.100.17 192.168.100.18 启动 volmgr： 
 
-	/home/cfs/cfs-volmgr -host 192.168.100.16 -nodeid 1 -nodepeer 1,2,3 -nodeips 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/volmgr/data  
-    /home/cfs/cfs-volmgr -host 192.168.100.17 -nodeid 2 -nodepeer 1,2,3 -nodeips 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/volmgr/data     
-    /home/cfs/cfs-volmgr -host 192.168.100.18 -nodeid 3 -nodepeer 1,2,3 -nodeips 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/volmgr/data  
+	/home/cfs/cfs-volmgr -host 192.168.100.16 -nodeid 1 -nodepeer 1,2,3 -nodeips 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/volmgr/data  &  
+    /home/cfs/cfs-volmgr -host 192.168.100.17 -nodeid 2 -nodepeer 1,2,3 -nodeips 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/volmgr/data  &      
+    /home/cfs/cfs-volmgr -host 192.168.100.18 -nodeid 3 -nodepeer 1,2,3 -nodeips 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/volmgr/data  &  
 
 2、在 192.168.100.16 192.168.100.17 192.168.100.18 启动 metanode： 
 
-	/home/cfs/cfs-metanode -host 192.168.100.16 -nodeid 1 -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/metanode/data 
-	/home/cfs/cfs-metanode -host 192.168.100.17 -nodeid 2 -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/metanode/data 
-	/home/cfs/cfs-metanode -host 192.168.100.18 -nodeid 3 -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/metanode/data 
+	/home/cfs/cfs-metanode -host 192.168.100.16 -nodeid 1 -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/metanode/data  &  
+	/home/cfs/cfs-metanode -host 192.168.100.17 -nodeid 2 -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/metanode/data  &  
+	/home/cfs/cfs-metanode -host 192.168.100.18 -nodeid 3 -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -wal /home/containerfs/metanode/data  &  
 
 3、在 192.168.100.16 192.168.100.17 192.168.100.18 启动 datanode：
 
-	/home/cfs/cfs-datanode -host 192.168.100.16:8801 -tier sas -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -datapath /home/containerfs/datanode1/data
-	/home/cfs/cfs-datanode -host 192.168.100.17:8801 -tier sas -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -datapath /home/containerfs/datanode1/data
-	/home/cfs/cfs-datanode -host 192.168.100.18:8801 -tier sas -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -datapath /home/containerfs/datanode1/data
+	/home/cfs/cfs-datanode -host 192.168.100.16:8801 -tier sas -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -datapath /home/containerfs/datanode1/data &  
+	/home/cfs/cfs-datanode -host 192.168.100.17:8801 -tier sas -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -datapath /home/containerfs/datanode1/data &  
+	/home/cfs/cfs-datanode -host 192.168.100.18:8801 -tier sas -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -datapath /home/containerfs/datanode1/data &  
 
 	-tier参数说明：cfs支持多种类型的存储介质混部, datanode启动带上-tier参数表示该datanode的磁盘介质类型是哪种, 如sata、sas、ssd、nvme等磁盘类型, 不带该参数默认为sas盘
 
@@ -47,7 +47,7 @@
 
 5、在某客户机，安装 fuse (yum install fuse -y) ,然后挂载步骤5创建的volume：
 
-	/home/cfs/cfs-fuseclient -uuid 101d18db4043fa26808fce9dc93a6d9f -buffertype 1 -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -mountpoint /mnt/mytest -readonly 0
+	/home/cfs/cfs-fuseclient -uuid 101d18db4043fa26808fce9dc93a6d9f -buffertype 1 -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -mountpoint /mnt/mytest -readonly 0  &  
 
 	[root@node-219 ~]# df -h
 	Filesystem                                    Size  Used Avail Use% Mounted on
