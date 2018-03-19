@@ -1294,7 +1294,7 @@ type Chunk struct {
 	CFile                    *CFile
 	ChunkFreeSize            int
 	ChunkInfo                *mp.ChunkInfoWithBG
-	ChunkWriteSteam          dp.DataNode_C2MReplClient
+	ChunkWriteStream         dp.DataNode_C2MReplClient
 	ChunkWriteRecvExitSignal chan struct{}
 }
 
@@ -1871,8 +1871,8 @@ func (cfile *CFile) WriteThread() {
 				logger.Debug("WriteThread file %v wait DataCache == 0 done. loop times: %v", cfile.Name, ti)
 
 				if cfile.CurChunk != nil {
-					if cfile.CurChunk.ChunkWriteSteam != nil {
-						cfile.CurChunk.ChunkWriteSteam.CloseSend()
+					if cfile.CurChunk.ChunkWriteStream != nil {
+						cfile.CurChunk.ChunkWriteStream.CloseSend()
 					}
 				}
 				cfile.CloseSignal <- struct{}{}
@@ -1911,7 +1911,7 @@ ALLOCATECHUNK:
 
 	if cfile.CurChunk != nil && cfile.CurChunk.ChunkFreeSize-length < 0 {
 
-		if cfile.CurChunk.ChunkWriteSteam != nil {
+		if cfile.CurChunk.ChunkWriteStream != nil {
 			var ti uint32
 			needClose := bool(true)
 			logger.Debug("WriteHandler: file %v, begin waiting last chunk: %v\n", cfile.Name, len(cfile.DataCache))
@@ -1930,9 +1930,9 @@ ALLOCATECHUNK:
 				}
 
 				if ti == 500 {
-					if cfile.CurChunk.ChunkWriteSteam != nil {
+					if cfile.CurChunk.ChunkWriteStream != nil {
 						logger.Error("WriteHandler: file %v, dataCacheLen: %v  wait last chunk timeout, CloseSend\n", cfile.Name, len(cfile.DataCache))
-						cfile.CurChunk.ChunkWriteSteam.CloseSend()
+						cfile.CurChunk.ChunkWriteStream.CloseSend()
 						needClose = false
 					}
 				}
@@ -1942,8 +1942,8 @@ ALLOCATECHUNK:
 			}
 			logger.Debug("WriteHandler: file %v, end wait after loop times %v\n", cfile.Name, ti)
 
-			if needClose && cfile.CurChunk.ChunkWriteSteam != nil {
-				cfile.CurChunk.ChunkWriteSteam.CloseSend()
+			if needClose && cfile.CurChunk.ChunkWriteStream != nil {
+				cfile.CurChunk.ChunkWriteStream.CloseSend()
 			}
 		}
 
@@ -1981,8 +1981,8 @@ ALLOCATECHUNK:
 	}
 
 	if cfile.CurChunk != nil {
-		if cfile.CurChunk.ChunkWriteSteam != nil {
-			if err := cfile.CurChunk.ChunkWriteSteam.Send(req); err != nil {
+		if cfile.CurChunk.ChunkWriteStream != nil {
+			if err := cfile.CurChunk.ChunkWriteStream.Send(req); err != nil {
 				logger.Debug("WriteHandler: send file %v, chunk %v len: %v failed\n", cfile.Name, cfile.CurChunk, length)
 				cfile.CurChunk.ChunkFreeSize = 0
 			} else {
@@ -2062,7 +2062,7 @@ func (cfile *CFile) AllocateChunk(IsStream bool) *Chunk {
 			return nil
 		}
 		C2Mclient := dp.NewDataNodeClient(C2Mconn)
-		curChunk.ChunkWriteSteam, err = C2Mclient.C2MRepl(context.Background())
+		curChunk.ChunkWriteStream, err = C2Mclient.C2MRepl(context.Background())
 		if err != nil {
 			cfile.delErrDataConn(curChunk.ChunkInfo.BlockGroupWithHost.Hosts[0])
 			logger.Error("AllocateChunk file: %v create stream to %v failed, err: %v\n", cfile.Name, curChunk.ChunkInfo.BlockGroupWithHost.Hosts[0], err)
@@ -2113,7 +2113,7 @@ func (chunk *Chunk) Retry() {
 	} else {
 		chunk.CFile.DataCache = make(map[uint64]*Data)
 		chunk.ChunkFreeSize = 0
-		chunk.ChunkWriteSteam = nil
+		chunk.ChunkWriteStream = nil
 		logger.Debug("C2MRecv thread Retry write file %v chunk %v success", chunk.CFile.Name, chunk.ChunkInfo.ChunkID)
 	}
 }
@@ -2124,13 +2124,13 @@ func (chunk *Chunk) C2MRecv() {
 	defer chunk.Retry()
 
 	for {
-		in, err := chunk.ChunkWriteSteam.Recv()
+		in, err := chunk.ChunkWriteStream.Recv()
 		if err == io.EOF {
-			logger.Debug("C2MRecv: file %v chunk %v stream %v EOF\n", chunk.CFile.Name, chunk.ChunkInfo.ChunkID, chunk.ChunkWriteSteam)
+			logger.Debug("C2MRecv: file %v chunk %v stream %v EOF\n", chunk.CFile.Name, chunk.ChunkInfo.ChunkID, chunk.ChunkWriteStream)
 			break
 		}
 		if err != nil {
-			logger.Debug("C2MRecv: file %v chunk %v stream %v error return : %v\n", chunk.CFile.Name, chunk.ChunkInfo.ChunkID, chunk.ChunkWriteSteam, err)
+			logger.Debug("C2MRecv: file %v chunk %v stream %v error return : %v\n", chunk.CFile.Name, chunk.ChunkInfo.ChunkID, chunk.ChunkWriteStream, err)
 			break
 		}
 
