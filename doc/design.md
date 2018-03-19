@@ -7,12 +7,12 @@ See the later sections for more details of each Containerfs component.
 
 #### Volume  
 Volume is a Containerfs instance.  One Containerfs cluster can host millions of volumes.
-A volume has one matadata table and unlimited number of block groups
+A volume has one metadata table and unlimited number of block groups
 
 #### Inode  
 Inode is a data structure recording the file or directory attributes, indexed with a unique 64bit integer.
 
-#### Matadata Table 
+#### Metadata Table 
 A metadata table is a sorted key-value map from "parent inodeID + name" to inode attributes.
 One volume is associated with a metadata table.
 Metadata tables are replicated via Raft, and not sharded by design. 
