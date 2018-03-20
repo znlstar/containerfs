@@ -829,7 +829,7 @@ func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-
+	
 	if ret := f.cfile.Flush(); ret != 0 {
 		logger.Error("Flush Flush err ...")
 		return fuse.Errno(syscall.EIO)
@@ -894,13 +894,17 @@ func main() {
 	log := flag.String("log", "/export/Logs/containerfs/logs/", "ContainerFS log level")
 	loglevel := flag.String("loglevel", "error", "ContainerFS log level")
 	isReadOnly := flag.Int("readonly", 0, "Is readonly Volume 1 for ture ,0 for false")
-
+	writeBuff := flag.Int("writebuffer", 0, "Write buffer size in mb, must be no larger than 3")
 	flag.Parse()
 	if len(os.Args) >= 2 && (os.Args[1] == "version") {
 		fmt.Println(utils.Version())
 		os.Exit(0)
 	}
-
+	
+	if *writeBuff < 0 || *writeBuff > 3 {
+		fmt.Println("bad writeBuff, must be no larger than 3")
+	 	os.Exit(0)	
+	}
 	tmp := strings.Split(peers, ",")
 	cfs.VolMgrHosts = make([]string, 3)
 	cfs.VolMgrHosts[0] = tmp[0] + ":7703"
@@ -917,6 +921,8 @@ func main() {
 	default:
 		cfs.BufferSize = 512 * 1024
 	}
+	
+	cfs.WriteBufferSize = *writeBuff * 1024 * 1024
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(*log, "fuse.log", 10, 100, logger.MB) //each 100M rolling

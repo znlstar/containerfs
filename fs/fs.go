@@ -35,6 +35,7 @@ const (
 
 // BufferSize ...
 var BufferSize int32
+var WriteBufferSize int
 
 var VolMgrHosts []string
 var MetaNodeHosts []string
@@ -949,6 +950,10 @@ func (cfs *CFS) CreateFileDirect(pinode uint64, name string, flags int) (int32, 
 		Inode:            inode,
 		Name:             name,
 		wBuffer:          wBuffer{buffer: new(bytes.Buffer), freeSize: BufferSize},
+		isWrite:          int(flags)&os.O_WRONLY != 0 || int(flags)&os.O_RDWR != 0,
+		convergeBuffer:   new(bytes.Buffer),
+		convergeTimer:    time.NewTimer(time.Second / 10),
+		convergeFlushCh:  make(chan struct{}, 1),
 		DataCache:        make(map[uint64]*Data),
 		DataQueue:        make(chan *chanData, 1),
 		CloseSignal:      make(chan struct{}, 10),
@@ -957,6 +962,7 @@ func (cfs *CFS) CreateFileDirect(pinode uint64, name string, flags int) (int32, 
 		errDataNodeCache: make(map[string]bool),
 	}
 	go cfile.WriteThread()
+	go cfile.startFlushConvergeBuffer()
 
 	return 0, &cfile
 }
@@ -985,6 +991,10 @@ func (cfs *CFS) OpenFileDirect(pinode uint64, name string, flags int) (int32, *C
 		ParentInodeID:    pinode,
 		Inode:            inode,
 		wBuffer:          wBuffer{buffer: new(bytes.Buffer), freeSize: BufferSize},
+		isWrite:          int(flags)&os.O_WRONLY != 0 || int(flags)&os.O_RDWR != 0,
+		convergeBuffer:   new(bytes.Buffer),
+		convergeTimer:    time.NewTimer(time.Second / 10),
+		convergeFlushCh:  make(chan struct{}, 1),
 		Name:             name,
 		chunks:           chunkInfos,
 		DataCache:        make(map[uint64]*Data),
@@ -996,6 +1006,7 @@ func (cfs *CFS) OpenFileDirect(pinode uint64, name string, flags int) (int32, *C
 	}
 
 	go cfile.WriteThread()
+	go cfile.startFlushConvergeBuffer()
 
 	return 0, &cfile
 }
@@ -1325,6 +1336,11 @@ type CFile struct {
 	WriteErrSignal   chan bool
 	WriteRetrySignal chan bool
 
+	isWrite         bool
+	convergeBuffer  *bytes.Buffer
+	convergeTimer   *time.Timer
+	convergeLocker  sync.Mutex
+	convergeFlushCh chan struct{}
 	Closing     bool
 	CloseSignal chan struct{}
 
@@ -1648,10 +1664,13 @@ func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 			if cfile.FileSize >= end || cfile.FileSize == cfile.FileSizeInCache {
 				break
 			}
+			if cfile.isWrite && cfile.convergeBuffer.Len() > 0 {
+				cfile.convergeFlushCh <- struct{}{}
+			}
 			if len(cfile.DataCache) == 0 {
 				logger.Debug("cfile %v, FileSize %v, FileSizeInCache %v, but no DataCache", cfile.Name, cfile.FileSize, cfile.FileSizeInCache)
 			}
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(40 * time.Millisecond)
 		}
 		logger.Debug("cfile %v, end waiting with FileSize %v, FileSizeInCache %v, time %v ms", cfile.Name, cfile.FileSize, cfile.FileSizeInCache, i*100)
 	}
@@ -1680,7 +1699,7 @@ func (cfile *CFile) Write(buf []byte, offset int64, length int32) int32 {
 
 	if offset == cfile.FileSizeInCache {
 		logger.Debug("cfile %v write append only: offset %v, length %v", cfile.Name, offset, length)
-		return cfile.appendWrite(buf, length)
+		return cfile.appendWrite(buf, length, false)
 	}
 
 	cfile.disableReadCache(offset, length)
@@ -1714,7 +1733,7 @@ func (cfile *CFile) Write(buf []byte, offset int64, length int32) int32 {
 
 		if start == cfile.FileSizeInCache {
 			logger.Debug("cfile %v write append only: offset %v, length %v", cfile.Name, start, length-pos)
-			ret = cfile.appendWrite(buf[pos:length], length-pos)
+			ret = cfile.appendWrite(buf[pos:length], length-pos, false)
 			if ret < 0 {
 				logger.Error("cfile %v appendWrite failed %v", cfile.Name, ret)
 				return int32(start - offset)
@@ -1830,25 +1849,81 @@ func (cfile *CFile) seekWrite(eInfo extentInfo, buf []byte) int32 {
 	return 0
 }
 
+//flush CFile convergeBuffer ...
+func (cfile *CFile) startFlushConvergeBuffer() {
+
+	if !cfile.isWrite || WriteBufferSize <= 0{
+		return
+	}
+
+	for {
+		if cfile.Closing == true {
+			return
+		}
+
+		select {
+		case <-cfile.convergeFlushCh:
+			cfile.convergeLocker.Lock()
+			if cfile.convergeBuffer.Len() > 0 {
+				data := &chanData{}
+				data.data = append(data.data, cfile.convergeBuffer.Next(cfile.convergeBuffer.Len())...)
+				select {
+				case <-cfile.WriteErrSignal:
+					logger.Error("Write recv WriteErrSignal ,volumeid %v , pid %v ,fname %v!", cfile.cfs.VolID, cfile.ParentInodeID, cfile.Name)
+					return
+				case cfile.DataQueue <- data:
+				}
+			}
+			cfile.convergeLocker.Unlock()
+		}
+	}
+}
+
 // Write ...
-func (cfile *CFile) appendWrite(buf []byte, length int32) int32 {
+func (cfile *CFile) appendWrite(buf []byte, length int32, needFlush bool) (ret int32) {
 
 	if cfile.Status == FileError {
 		return -2
 	}
+	
+	ret = length
+
+	cfile.FileSizeInCache += int64(length)
+
+	if WriteBufferSize > 0{
+		cfile.convergeLocker.Lock()
+		if length != 0 {
+			cfile.convergeBuffer.Write(buf)
+		}
+	
+		bufferLen := cfile.convergeBuffer.Len()
+		if bufferLen < WriteBufferSize && !needFlush {
+			cfile.convergeLocker.Unlock()
+			return length
+		}
+		if bufferLen == 0 {
+			cfile.convergeLocker.Unlock()
+			return 0
+		}
+	}
 
 	data := &chanData{}
-	data.data = append(data.data, buf...)
-
+	if WriteBufferSize > 0{
+		data.data = append(data.data, cfile.convergeBuffer.Next(cfile.convergeBuffer.Len())...)
+	}else{
+		data.data = append(data.data, buf...)
+	}
 	select {
 	case <-cfile.WriteErrSignal:
 		logger.Error("Write recv WriteErrSignal ,volumeid %v , pid %v ,fname %v!", cfile.cfs.VolID, cfile.ParentInodeID, cfile.Name)
-		return -2
+		ret = -2
 	case cfile.DataQueue <- data:
 	}
-
-	cfile.FileSizeInCache += int64(length)
-	return length
+	
+	if WriteBufferSize > 0{
+		cfile.convergeLocker.Unlock()
+	}
+	return ret
 }
 
 func (cfile *CFile) WriteThread() {
@@ -2265,14 +2340,24 @@ func (cfile *CFile) Sync() int32 {
 	if cfile.Status == FileError {
 		return -1
 	}
+
+	cfile.appendWrite(nil, 0, true)
+
 	return 0
 }
 
 // Sync ...
 func (cfile *CFile) Flush() int32 {
+	if cfile.isWrite == false{
+		return 0
+	}
+	
 	if cfile.Status == FileError {
 		return -1
 	}
+	
+	cfile.appendWrite(nil, 0, true)
+
 	return 0
 }
 
@@ -2281,6 +2366,8 @@ func (cfile *CFile) CloseWrite() int32 {
 	/*if cfile.Status == FileError {
 		return -1
 	} */
+
+	cfile.appendWrite(nil, 0, true)
 
 	cfile.Closing = true
 	logger.Debug("CloseWrite close cfile.DataQueue")
