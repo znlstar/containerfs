@@ -25,7 +25,7 @@ import (
 const (
 	chunkSize      = 64 * 1024 * 1024
 	//oneExpandSize  = 30 * 1024 * 1024 * 1024
-	BlockGroupSize = 5 * 1024 * 1024 * 1024
+	BlockGroupSize = 16 * 1024 * 1024 * 1024
 )
 
 const (
