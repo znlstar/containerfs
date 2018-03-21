@@ -34,12 +34,6 @@ type addr struct {
 	volmgrHosts []string
 }
 
-const (
-	BlkSizeG      = 5
-	BlkSize       = 5 * 1024 * 1024 * 1024  /*one blksize 5G*/
-	OneExpandSize = 30 * 1024 * 1024 * 1024 /*allocated volumesize 30G for each time*/
-)
-
 // MetaNodeServerAddr ...
 var MetaNodeServerAddr addr
 
