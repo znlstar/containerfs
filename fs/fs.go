@@ -1380,7 +1380,7 @@ func (cfile *CFile) newDataConn(addr string) *grpc.ClientConn {
 
 	cfile.DataConnLocker.Lock()
 	if v, ok := cfile.DataConn[addr]; ok {
-		cfile.DataConnLocker.RUnlock()
+		cfile.DataConnLocker.Unlock()
 		conn.Close()
 		return v
 	}
