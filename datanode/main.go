@@ -25,12 +25,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/shirou/gopsutil/cpu"
-	"github.com/shirou/gopsutil/disk"
-	"github.com/shirou/gopsutil/load"
-	"github.com/shirou/gopsutil/mem"
-	utilnet "github.com/shirou/gopsutil/net"
 )
 
 var VolMgrHosts []string
@@ -854,64 +848,6 @@ func (s *DataNodeServer) DeleteChunk(ctx context.Context, in *dp.DeleteChunkReq)
 	return &ack, nil
 }
 
-// rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
-func (s *DataNodeServer) NodeMonitor(ctx context.Context, in *dp.NodeMonitorReq) (*dp.NodeMonitorAck, error) {
-	ack := dp.NodeMonitorAck{NodeInfo: &dp.NodeInfo{}}
-
-	cpuUsage, err := cpu.Percent(time.Millisecond*300, false)
-	if err == nil {
-		ack.NodeInfo.CpuUsage = cpuUsage[0]
-	} else {
-		logger.Error("DataNode[%v]: NodeMonitor get cpu usage failed !", DataNodeServerAddr.Host)
-	}
-
-	cpuLoad, _ := load.Avg()
-	ack.NodeInfo.CpuLoad = cpuLoad.Load1
-
-	memv, _ := mem.VirtualMemory()
-	ack.NodeInfo.TotalMem = memv.Total
-	ack.NodeInfo.FreeMem = memv.Free
-	ack.NodeInfo.MemUsedPercent = memv.UsedPercent
-
-	diskUsage, _ := disk.Usage(DataNodeServerAddr.Path)
-	ack.NodeInfo.PathUsedPercent = diskUsage.UsedPercent
-	ack.NodeInfo.PathTotal = diskUsage.Total
-	ack.NodeInfo.PathFree = diskUsage.Free
-
-	disksIO, _ := disk.IOCounters()
-	for _, v := range disksIO {
-		diskio := dp.DiskIO{}
-		diskio.IoTime = v.IoTime
-		diskio.IopsInProgress = v.IopsInProgress
-		diskio.Name = v.Name
-		diskio.ReadBytes = v.ReadBytes
-		diskio.ReadCount = v.ReadCount
-		diskio.WeightedIO = v.WeightedIO
-		diskio.WriteBytes = v.WriteBytes
-		diskio.WriteCount = v.WriteCount
-		ack.NodeInfo.DiskIOs = append(ack.NodeInfo.DiskIOs, &diskio)
-	}
-
-	NetsIO, _ := utilnet.IOCounters(true)
-	for _, v := range NetsIO {
-		netio := dp.NetIO{}
-		netio.BytesRecv = v.BytesRecv
-		netio.BytesSent = v.BytesSent
-		netio.Dropin = v.Dropin
-		netio.Dropout = v.Dropout
-		netio.Errin = v.Errin
-		netio.Errout = v.Errout
-		netio.Name = v.Name
-		netio.PacketsRecv = v.PacketsRecv
-		netio.PacketsSent = v.PacketsSent
-		ack.NodeInfo.NetIOs = append(ack.NodeInfo.NetIOs, &netio)
-	}
-
-	logger.Debug("DataNode[%v]: NodeMonitor: %v", DataNodeServerAddr.Host, ack.NodeInfo)
-
-	return &ack, nil
-}
-
 func init() {
 
 	var loglevel string
@@ -925,10 +861,10 @@ func init() {
 	flag.StringVar(&volMgrHosts, "volmgr", "10.8.64.216,10.8.64.217,10.8.64.218", "ContainerFS VolMgr hosts")
 
 	flag.Parse()
-        if len(os.Args) >= 2 && (os.Args[1] == "version") {
-                fmt.Println(utils.Version())
-                os.Exit(0)
-        }
+	if len(os.Args) >= 2 && (os.Args[1] == "version") {
+		fmt.Println(utils.Version())
+		os.Exit(0)
+	}
 
 	tmp := strings.Split(volMgrHosts, ",")
 

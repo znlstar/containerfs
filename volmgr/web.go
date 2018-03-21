@@ -7,12 +7,6 @@ import (
 	"github.com/tiglabs/containerfs/utils"
 	"golang.org/x/net/context"
 	"time"
-
-	"github.com/shirou/gopsutil/cpu"
-	"github.com/shirou/gopsutil/disk"
-	"github.com/shirou/gopsutil/load"
-	"github.com/shirou/gopsutil/mem"
-	"github.com/shirou/gopsutil/net"
 )
 
 // rpc ClusterInfo(ClusterInfoReq) returns (ClusterInfoAck){};
@@ -174,63 +168,5 @@ func (s *VolMgrServer) GetBlockGroupInfo(ctx context.Context, in *vp.GetBlockGro
 	} else {
 		ack.BlockGroup = blockGroup
 	}
-	return &ack, nil
-}
-
-// rpc NodeMonitor(NodeMonitorReq) returns (NodeMonitorAck){};
-func (s *VolMgrServer) NodeMonitor(ctx context.Context, in *vp.NodeMonitorReq) (*vp.NodeMonitorAck, error) {
-	ack := vp.NodeMonitorAck{NodeInfo: &vp.NodeInfo{}}
-
-	cpuUsage, err := cpu.Percent(time.Millisecond*500, false)
-	if err == nil {
-		ack.NodeInfo.CpuUsage = cpuUsage[0]
-	} else {
-		logger.Error("NodeMonitor get cpu usage failed !")
-	}
-
-	cpuLoad, _ := load.Avg()
-	ack.NodeInfo.CpuLoad = cpuLoad.Load1
-
-	memv, _ := mem.VirtualMemory()
-	ack.NodeInfo.TotalMem = memv.Total
-	ack.NodeInfo.FreeMem = memv.Free
-	ack.NodeInfo.MemUsedPercent = memv.UsedPercent
-
-	diskUsage, _ := disk.Usage(VolMgrServerAddr.waldir)
-	ack.NodeInfo.PathUsedPercent = diskUsage.UsedPercent
-	ack.NodeInfo.PathTotal = diskUsage.Total
-	ack.NodeInfo.PathFree = diskUsage.Free
-
-	disksIO, _ := disk.IOCounters()
-	for _, v := range disksIO {
-		diskio := vp.DiskIO{}
-		diskio.IoTime = v.IoTime
-		diskio.IopsInProgress = v.IopsInProgress
-		diskio.Name = v.Name
-		diskio.ReadBytes = v.ReadBytes
-		diskio.ReadCount = v.ReadCount
-		diskio.WeightedIO = v.WeightedIO
-		diskio.WriteBytes = v.WriteBytes
-		diskio.WriteCount = v.WriteCount
-		ack.NodeInfo.DiskIOs = append(ack.NodeInfo.DiskIOs, &diskio)
-	}
-
-	NetsIO, _ := net.IOCounters(true)
-	for _, v := range NetsIO {
-		netio := vp.NetIO{}
-		netio.BytesRecv = v.BytesRecv
-		netio.BytesSent = v.BytesSent
-		netio.Dropin = v.Dropin
-		netio.Dropout = v.Dropout
-		netio.Errin = v.Errin
-		netio.Errout = v.Errout
-		netio.Name = v.Name
-		netio.PacketsRecv = v.PacketsRecv
-		netio.PacketsSent = v.PacketsSent
-		ack.NodeInfo.NetIOs = append(ack.NodeInfo.NetIOs, &netio)
-	}
-
-	logger.Debug("NodeMonitor: %v", ack.NodeInfo)
-
 	return &ack, nil
 }
