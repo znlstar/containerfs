@@ -21,13 +21,6 @@ import (
 	"time"
 )
 
-// chunksize for write
-const (
-	chunkSize      = 64 * 1024 * 1024
-	//oneExpandSize  = 30 * 1024 * 1024 * 1024
-	BlockGroupSize = 16 * 1024 * 1024 * 1024
-)
-
 const (
 	FileNormal = 0
 	FileError  = 2
@@ -223,7 +216,7 @@ func UpdateMetaForExpandVol(UUID string, ack *mp.ExpandVolRSAck) int {
 	for _, v := range ack.BGPS {
 		mpBlockGroup := &mp.BlockGroup{
 			BlockGroupID: v.Blocks[0].BGID,
-			FreeSize:     BlockGroupSize,
+			FreeSize:     utils.BlockGroupSize,
 		}
 		mpBlockGroups = append(mpBlockGroups, mpBlockGroup)
 	}
@@ -1341,8 +1334,8 @@ type CFile struct {
 	convergeTimer   *time.Timer
 	convergeLocker  sync.Mutex
 	convergeFlushCh chan struct{}
-	Closing     bool
-	CloseSignal chan struct{}
+	Closing         bool
+	CloseSignal     chan struct{}
 
 	CurChunk *Chunk
 
@@ -1852,7 +1845,7 @@ func (cfile *CFile) seekWrite(eInfo extentInfo, buf []byte) int32 {
 //flush CFile convergeBuffer ...
 func (cfile *CFile) startFlushConvergeBuffer() {
 
-	if !cfile.isWrite || WriteBufferSize <= 0{
+	if !cfile.isWrite || WriteBufferSize <= 0 {
 		return
 	}
 
@@ -1885,17 +1878,17 @@ func (cfile *CFile) appendWrite(buf []byte, length int32, needFlush bool) (ret i
 	if cfile.Status == FileError {
 		return -2
 	}
-	
+
 	ret = length
 
 	cfile.FileSizeInCache += int64(length)
 
-	if WriteBufferSize > 0{
+	if WriteBufferSize > 0 {
 		cfile.convergeLocker.Lock()
 		if length != 0 {
 			cfile.convergeBuffer.Write(buf)
 		}
-	
+
 		bufferLen := cfile.convergeBuffer.Len()
 		if bufferLen < WriteBufferSize && !needFlush {
 			cfile.convergeLocker.Unlock()
@@ -1908,9 +1901,9 @@ func (cfile *CFile) appendWrite(buf []byte, length int32, needFlush bool) (ret i
 	}
 
 	data := &chanData{}
-	if WriteBufferSize > 0{
+	if WriteBufferSize > 0 {
 		data.data = append(data.data, cfile.convergeBuffer.Next(cfile.convergeBuffer.Len())...)
-	}else{
+	} else {
 		data.data = append(data.data, buf...)
 	}
 	select {
@@ -1919,8 +1912,8 @@ func (cfile *CFile) appendWrite(buf []byte, length int32, needFlush bool) (ret i
 		ret = -2
 	case cfile.DataQueue <- data:
 	}
-	
-	if WriteBufferSize > 0{
+
+	if WriteBufferSize > 0 {
 		cfile.convergeLocker.Unlock()
 	}
 	return ret
@@ -2144,7 +2137,7 @@ func (cfile *CFile) AllocateChunk(IsStream bool) *Chunk {
 			return nil
 		}
 
-		curChunk.ChunkFreeSize = chunkSize
+		curChunk.ChunkFreeSize = utils.ChunkSize
 		curChunk.ChunkWriteRecvExitSignal = make(chan struct{})
 
 		go curChunk.C2MRecv()
@@ -2348,14 +2341,14 @@ func (cfile *CFile) Sync() int32 {
 
 // Sync ...
 func (cfile *CFile) Flush() int32 {
-	if cfile.isWrite == false{
+	if cfile.isWrite == false {
 		return 0
 	}
-	
+
 	if cfile.Status == FileError {
 		return -1
 	}
-	
+
 	cfile.appendWrite(nil, 0, true)
 
 	return 0

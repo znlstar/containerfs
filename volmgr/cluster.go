@@ -19,11 +19,6 @@ import (
 )
 
 const (
-	//BlockGroupSize 5GB
-	BlockGroupSize = 5
-)
-
-const (
 	blockGroupFree = 0
 	blockGroupFull = 2
 )
@@ -141,11 +136,11 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 
 	//the volume need block group total numbers
 	var blkgrpnum int32
-	if in.SpaceQuota%BlkSizeG == 0 {
-		blkgrpnum = in.SpaceQuota / BlkSizeG
+	if in.SpaceQuota%utils.BlkSizeG == 0 {
+		blkgrpnum = in.SpaceQuota / utils.BlkSizeG
 	} else {
-		blkgrpnum = in.SpaceQuota/BlkSizeG + 1
-		in.SpaceQuota = blkgrpnum * BlkSizeG
+		blkgrpnum = in.SpaceQuota/utils.BlkSizeG + 1
+		in.SpaceQuota = blkgrpnum * utils.BlkSizeG
 	}
 
 	v, err := s.Cluster.RaftGroup.DataNodeGetAll(1)
@@ -207,7 +202,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		bg := &vp.BlockGroup{BlockGroupID: bgID,
 			RGID:     rgID,
 			VolID:    voluuid,
-			FreeSize: BlockGroupSize * 1024 * 1024 * 1024}
+			FreeSize: utils.BlockGroupSize}
 
 		for n := 0; n < 3; n++ {
 			ipkey := allip[idxs[n]]
@@ -252,7 +247,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		vol.BlockGroups = append(vol.BlockGroups, bgID)
 		blockGroup := &mp.BlockGroup{}
 		blockGroup.BlockGroupID = bgID
-		blockGroup.FreeSize = BlockGroupSize * 1024 * 1024 * 1024
+		blockGroup.FreeSize = utils.BlockGroupSize
 		blockGroups = append(blockGroups, blockGroup)
 	}
 
@@ -349,11 +344,11 @@ func (s *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp.
 
 	//the volume need block group total numbers
 	var blkgrpnum int32
-	if in.Space%BlkSizeG == 0 {
-		blkgrpnum = in.Space / BlkSizeG
+	if in.Space%utils.BlkSizeG == 0 {
+		blkgrpnum = in.Space / utils.BlkSizeG
 	} else {
-		blkgrpnum = in.Space/BlkSizeG + 1
-		in.Space = blkgrpnum * BlkSizeG
+		blkgrpnum = in.Space/utils.BlkSizeG + 1
+		in.Space = blkgrpnum * utils.BlkSizeG
 	}
 	if blkgrpnum > 6 {
 		blkgrpnum = 6
@@ -407,7 +402,7 @@ func (s *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp.
 		}
 
 		var hosts []string
-		bg := &vp.BlockGroup{BlockGroupID: bgID, FreeSize: BlockGroupSize * 1024 * 1024 * 1024}
+		bg := &vp.BlockGroup{BlockGroupID: bgID, FreeSize: utils.BlockGroupSize}
 		for n := 0; n < 3; n++ {
 			ipkey := allip[idxs[n]]
 			idx := utils.GenerateRandomNumber(0, len(inuseNodes[ipkey]), 1)
@@ -437,7 +432,7 @@ func (s *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp.
 		vol.BlockGroups = append(vol.BlockGroups, bgID)
 		blockGroup := &mp.BlockGroup{}
 		blockGroup.BlockGroupID = bgID
-		blockGroup.FreeSize = BlockGroupSize * 1024 * 1024 * 1024
+		blockGroup.FreeSize = utils.BlockGroupSize
 		blockGroups = append(blockGroups, blockGroup)
 	}
 
@@ -631,7 +626,7 @@ func (s *VolMgrServer) BeginMigrate(bgID uint64, badHost string, tier string) in
 			}
 		}
 		logger.Debug("DataNode: %v", vv)
-		if flag && vv.Status == 0 && vv.Tier == tier && vv.Free > BlockGroupSize {
+		if flag && vv.Status == 0 && vv.Tier == tier && vv.Free > utils.BlkSizeG {
 			dataNodes = append(dataNodes, vv)
 		}
 	}
@@ -655,7 +650,7 @@ func (s *VolMgrServer) BeginMigrate(bgID uint64, badHost string, tier string) in
 		logger.Error("DataNodeGet[%v] failed: %v", dHost, err)
 		return -7
 	}
-	dataNode.Free = dataNode.Free - BlockGroupSize
+	dataNode.Free = dataNode.Free - utils.BlkSizeG
 
 	if err = s.Cluster.RaftGroup.DataNodeSet(1, dHost, dataNode); err != nil {
 		logger.Error("DataNodeSet failed: %v", err)

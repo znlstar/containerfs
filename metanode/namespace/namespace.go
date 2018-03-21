@@ -20,13 +20,6 @@ import (
 	"time"
 )
 
-const (
-	//BlockGroupSize 5GB
-	BlockGroupSize = 5 * 1024 * 1024 * 1024
-	//ChunkSize 64MB
-	ChunkSize = 64 * 1024 * 1024
-)
-
 var VolMgrConn *grpc.ClientConn
 var VolMgrLeader string
 var VolMgrHosts []string
@@ -245,7 +238,7 @@ func (ns *nameSpace) GetFSInfo(volID string) mp.GetFSInfoAck {
 	}
 
 	for _, v := range bgs {
-		totalSpace = totalSpace + BlockGroupSize
+		totalSpace = totalSpace + uint64(utils.BlockGroupSize)
 		freeSpace = freeSpace + uint64(v.FreeSize)
 	}
 
@@ -571,7 +564,7 @@ func (ns *nameSpace) SyncChunk(pinode uint64, name string, chunkinfo *mp.ChunkIn
 
 	pTmpBlockGroup.FreeSize = pTmpBlockGroup.FreeSize - int64(blockGroupUsed)
 
-	if pTmpBlockGroup.FreeSize <= ChunkSize {
+	if pTmpBlockGroup.FreeSize <= utils.ChunkSize {
 		pTmpBlockGroup.Status = blockGroupFull
 	}
 
@@ -645,7 +638,7 @@ func (ns *nameSpace) AsyncChunk(pinode uint64, name string, chunkid uint64, comm
 
 	pTmpBlockGroup.FreeSize = pTmpBlockGroup.FreeSize - int64(blockGroupUsed)
 
-	if pTmpBlockGroup.FreeSize <= ChunkSize {
+	if pTmpBlockGroup.FreeSize <= utils.ChunkSize {
 		pTmpBlockGroup.Status = blockGroupFull
 	}
 
@@ -731,12 +724,12 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID uint64, chunSize int32) {
 	blockGroup.FreeSize = blockGroup.FreeSize + int64(chunSize)
 
 	/*
-		if blockGroup.FreeSize > BlockGroupSize {
-			blockGroup.FreeSize = BlockGroupSize
+		if blockGroup.FreeSize > utils.BlockGroupSize {
+			blockGroup.FreeSize = utils.BlockGroupSize
 		}
 	*/
 
-	if blockGroup.FreeSize > int64(ChunkSize) {
+	if blockGroup.FreeSize > int64(utils.ChunkSize) {
 
 		if blockGroup.Status == blockGroupFull {
 			blockGroup.Status = blockGroupFree
