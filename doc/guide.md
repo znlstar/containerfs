@@ -47,7 +47,7 @@
 
 5、在某客户机，安装 fuse (yum install fuse -y) ,然后挂载步骤5创建的volume：
 
-	/home/cfs/cfs-fuseclient -uuid 101d18db4043fa26808fce9dc93a6d9f -buffertype 1 -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -mountpoint /mnt/mytest -readonly 0  &  
+	/home/cfs/cfs-fuseclient -uuid 101d18db4043fa26808fce9dc93a6d9f -buffertype 1 -volmgr 192.168.100.16,192.168.100.17,192.168.100.18 -mountpoint /mnt/mytest -readonly 0 -writebuffer=2 &  
 
 	[root@node-219 ~]# df -h
 	Filesystem                                    Size  Used Avail Use% Mounted on
@@ -59,4 +59,5 @@
 	/dev/sda1                                     497M  166M  331M  34% /boot
 	/dev/mapper/centos-home                       150G   45G  106G  30% /home
 	tmpfs                                         3.2G     0  3.2G   0% /run/user/0
-	ContainerFS-101d18db4043fa26808fce9dc93a6d9f   10G     0   10G   0% /mnt/mytest
+	ContainerFS-101d18db4043fa26808fce9dc93a6d9f   10G     0   10G   0% /mnt/mytest
+备注：fuseclient 的writebuffer参数用于配置写缓存，最大可配值为3（MB）
