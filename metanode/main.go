@@ -3,13 +3,16 @@ package main
 import (
 	"flag"
 	"fmt"
-	pbproto "github.com/golang/protobuf/proto"
-	"github.com/tigcode/containerfs/logger"
-	ns "github.com/tigcode/containerfs/metanode/namespace"
-	"github.com/tigcode/containerfs/metanode/raftopt"
-	"github.com/tigcode/containerfs/proto/mp"
-	"github.com/tigcode/raft"
-	"github.com/tigcode/raft/proto"
+	//pbproto "github.com/golang/protobuf/proto"
+	"github.com/tiglabs/containerfs/logger"
+	ns "github.com/tiglabs/containerfs/metanode/namespace"
+	"github.com/tiglabs/containerfs/proto/mp"
+	"github.com/tiglabs/containerfs/proto/vp"
+	"github.com/tiglabs/containerfs/raftopt"
+	com "github.com/tiglabs/containerfs/raftopt/common"
+	"github.com/tiglabs/containerfs/utils"
+	"github.com/tiglabs/raft"
+	"github.com/tiglabs/raft/proto"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -18,26 +21,18 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 type addr struct {
-	host   string
-	nodeID uint64
-	peers  []proto.Peer
-	ips    []string
-	waldir string
-	log    string
+	host        string
+	nodeID      uint64
+	waldir      string
+	log         string
+	volmgrHosts []string
 }
-
-const (
-	BlkSizeG      = 5
-	BlkSize       = 5 * 1024 * 1024 * 1024  /*one blksize 5G*/
-	OneExpandSize = 30 * 1024 * 1024 * 1024 /*allocated volumesize 30G for each time*/
-)
 
 // MetaNodeServerAddr ...
 var MetaNodeServerAddr addr
@@ -45,8 +40,8 @@ var MetaNodeServerAddr addr
 // MetaNodeServer ...
 type MetaNodeServer struct {
 	NodeID     uint64
-	Addr       *raftopt.Address
-	Resolver   *raftopt.Resolver
+	Addr       *com.Address
+	Resolver   com.Resolver
 	RaftServer *raft.RaftServer
 	sync.Mutex
 }
@@ -59,20 +54,39 @@ func (s *MetaNodeServer) GetMetaLeader(ctx context.Context, in *mp.GetMetaLeader
 		ack.Ret = ret
 		return &ack, nil
 	}
+	for id, addr := range raftopt.VolumeAddrDatabase {
+		logger.Debug("id:%v addr:%v", id, *addr)
+	}
 	leaderID, _ := s.RaftServer.LeaderTerm(nameSpace.RaftGroupID)
 	if leaderID <= 0 {
 		ack.Ret = 1
 		return &ack, nil
 	}
 	ack.Ret = 0
-	ack.Leader = raftopt.AddrDatabase[leaderID].Grpc
+	ack.Leader = raftopt.VolumeAddrDatabase[leaderID].Grpc
 	return &ack, nil
 }
 
 //CreateNameSpace ...
 func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameSpaceReq) (*mp.CreateNameSpaceAck, error) {
 	ack := mp.CreateNameSpaceAck{}
-	ack.Ret = ns.CreateNameSpace(s.RaftServer, MetaNodeServerAddr.peers, MetaNodeServerAddr.nodeID, MetaNodeServerAddr.waldir, in.VolID, in.RaftGroupID, false)
+
+	for _, v := range in.Volume.VolumePeers {
+		addr := &com.Address{
+			Grpc:      v.Host + ":9901",
+			Heartbeat: v.Host + ":9902",
+			Replicate: v.Host + ":9903",
+			Pprof:     v.Host + ":9904",
+		}
+		s.Resolver.AddNode(v.NodeID, addr)
+	}
+
+	var peers []proto.Peer
+	for _, v := range in.Volume.VolumePeers {
+		peers = append(peers, proto.Peer{ID: v.NodeID})
+	}
+
+	ack.Ret = ns.CreateNameSpace(s.RaftServer, peers, MetaNodeServerAddr.nodeID, MetaNodeServerAddr.waldir, in.VolID, in.Volume.RaftGroupID, in.Volume.BlockGroups, false)
 	return &ack, nil
 }
 
@@ -91,75 +105,16 @@ func (s *MetaNodeServer) ExpandNameSpace(ctx context.Context, in *mp.ExpandNameS
 	return &ack, nil
 }
 
-// SnapShotNameSpace ...
-func (s *MetaNodeServer) SnapShotNameSpace(ctx context.Context, in *mp.SnapShootNameSpaceReq) (*mp.SnapShootNameSpaceAck, error) {
-	ack := mp.SnapShootNameSpaceAck{}
-	ack.Ret = ns.SnapShotNameSpace(s.RaftServer, in.VolID, MetaNodeServerAddr.waldir)
-	// send to follower metadatas to SnapShoot
-	if in.Type == 0 {
-		for _, addr := range raftopt.AddrDatabase {
-			if addr.Grpc == s.Addr.Grpc {
-				continue
-			}
-			conn2, err2 := grpc.Dial(addr.Grpc, grpc.WithInsecure())
-			if err2 != nil {
-				logger.Error("told peers to SnapShoot NameSpace Failed ...")
-				continue
-			}
-			defer conn2.Close()
-			mc := mp.NewMetaNodeClient(conn2)
-			pmSnapShootNameSpaceReq := &mp.SnapShootNameSpaceReq{
-				VolID: in.VolID,
-				Type:  1,
-			}
-			pmSnapShootNameSpaceAck, ret := mc.SnapShotNameSpace(context.Background(), pmSnapShootNameSpaceReq)
-			if ret != nil {
-				logger.Error("told peers to SnapShoot NameSpace Failed ...")
-				continue
-			}
-			if pmSnapShootNameSpaceAck.Ret != 0 {
-				logger.Error("told peers to SnapShoot NameSpace Failed ...")
-				continue
-			}
-		}
-	}
-	return &ack, nil
+// SnapShootNameSpace ...
+func (s *MetaNodeServer) SnapShotNameSpace(ctx context.Context, in *mp.SnapShotNameSpaceReq) (*mp.SnapShotNameSpaceAck, error) {
+	go ns.SnapShotNameSpace(s.RaftServer, in.VolID, MetaNodeServerAddr.waldir)
+	return &mp.SnapShotNameSpaceAck{Ret: 0}, nil
 }
 
 // DeleteNameSpace ...
 func (s *MetaNodeServer) DeleteNameSpace(ctx context.Context, in *mp.DeleteNameSpaceReq) (*mp.DeleteNameSpaceAck, error) {
 	ack := mp.DeleteNameSpaceAck{}
 	ack.Ret = ns.DeleteNameSpace(s.RaftServer, in.VolID)
-
-	// send to follower metadatas to delete
-	if in.Type == 0 {
-		for _, addr := range raftopt.AddrDatabase {
-			if addr.Grpc == s.Addr.Grpc {
-				continue
-			}
-			conn2, err2 := grpc.Dial(addr.Grpc, grpc.WithInsecure())
-			if err2 != nil {
-				logger.Error("told peers to  delete NameSpace Failed ...")
-				continue
-			}
-			defer conn2.Close()
-			mc := mp.NewMetaNodeClient(conn2)
-			pmDeleteNameSpaceReq := &mp.DeleteNameSpaceReq{
-				VolID: in.VolID,
-				Type:  1,
-			}
-			pmDeleteNameSpaceAck, ret := mc.DeleteNameSpace(context.Background(), pmDeleteNameSpaceReq)
-			if ret != nil {
-				logger.Error("told peers to  delete NameSpace Failed ...")
-				continue
-			}
-			if pmDeleteNameSpaceAck.Ret != 0 {
-				logger.Error("told peers to  delete NameSpace Failed ...")
-				continue
-			}
-		}
-	}
-
 	return &ack, nil
 }
 
@@ -222,6 +177,12 @@ func (s *MetaNodeServer) ListDirect(ctx context.Context, in *mp.ListDirectReq) (
 		ack.Ret = ret
 		return &ack, nil
 	}
+	if in.PInode > 0 {
+		ack.Ret, _ = nameSpace.DentryDBGet(in.GInode, in.Name)
+		if ack.Ret > 0 {
+			return &ack, nil
+		}
+	}
 	ack.Dirents, ack.Ret = nameSpace.ListDirect(in.PInode)
 	return &ack, nil
 }
@@ -281,6 +242,21 @@ func (s *MetaNodeServer) DeleteFileDirect(ctx context.Context, in *mp.DeleteFile
 
 }
 
+// DeleteFileDirect ...
+func (s *MetaNodeServer) DeleteSymLinkDirect(ctx context.Context, in *mp.DeleteSymLinkDirectReq) (*mp.DeleteSymLinkDirectAck, error) {
+
+	ack := mp.DeleteSymLinkDirectAck{}
+
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ack.Ret = nameSpace.DeleteSymLinkDirect(in.PInode, in.Name)
+	return &ack, nil
+
+}
+
 // GetFileChunksDirect ...
 func (s *MetaNodeServer) GetFileChunksDirect(ctx context.Context, in *mp.GetFileChunksDirectReq) (*mp.GetFileChunksDirectAck, error) {
 	ack := mp.GetFileChunksDirectAck{}
@@ -288,47 +264,37 @@ func (s *MetaNodeServer) GetFileChunksDirect(ctx context.Context, in *mp.GetFile
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
 		ack.Ret = ret
-		logger.Error("GetFileChunksDirect GetNameSpace err ... ")
 		return &ack, nil
 	}
-	ok, chunkInfos, inode := nameSpace.GetFileChunksDirect(in.PInode, in.Name)
-	if ok != 0 {
-		ack.Ret = ok
-		logger.Error("GetFileChunksDirect nameSpace.GetFileChunksDirect err %v", ok)
+	gRet, chunkInfos, inode := nameSpace.GetFileChunksDirect(in.PInode, in.Name)
+	if gRet != 0 {
+		ack.Ret = gRet
 		return &ack, nil
 	}
 
-	ret, nameSpace = ns.GetNameSpace("Cluster")
-	if ret != 0 {
-		ack.Ret = ret
-		logger.Error("GetFileChunksDirect GetNameSpace(Cluster) err ret %v", ret)
-		return &ack, nil
-	}
+	vc := vp.NewVolMgrClient(ns.VolMgrConn)
+	pGetBlockGroupByIDReq := &vp.GetBlockGroupByIDReq{}
+
 	for _, v := range chunkInfos {
 		var chunkInfoWithBG mp.ChunkInfoWithBG
 		chunkInfoWithBG.ChunkID = v.ChunkID
 		chunkInfoWithBG.ChunkSize = v.ChunkSize
 
-		bgKey := in.VolID + fmt.Sprintf("-%d", v.BlockGroupID)
+		blockGroup := &mp.BlockGroupWithHost{}
 
-		blockGroup, err := nameSpace.RaftGroup.BGPGet(1, bgKey)
-		if err != nil {
-			ack.Ret = 1
-			logger.Error("GetFileChunksDirect nameSpace.RaftGroup.BGPGet(1, bgKey) err %v", err)
+		pGetBlockGroupByIDReq.BlockGroupID = v.BlockGroupID
+		ctx, _ := context.WithTimeout(context.Background(), 3*time.Second)
+		pGetBlockGroupByIDAck, err := vc.GetBlockGroupByID(ctx, pGetBlockGroupByIDReq)
+		if err != nil || pGetBlockGroupByIDAck.Ret != 0 {
+			ack.Ret = -1
 			return &ack, nil
+		} else {
+			blockGroup.BlockGroupID = v.BlockGroupID
+			blockGroup.Hosts = pGetBlockGroupByIDAck.BlockGroup.Hosts
 		}
 
-		bgp := &mp.BGP{}
-
-		err = pbproto.Unmarshal(blockGroup, bgp)
-		if err != nil {
-			ack.Ret = 1
-			return &ack, nil
-		}
-
-		chunkInfoWithBG.BGP = bgp
+		chunkInfoWithBG.BlockGroupWithHost = blockGroup
 		ack.ChunkInfos = append(ack.ChunkInfos, &chunkInfoWithBG)
-
 	}
 
 	ack.Ret = 0
@@ -349,6 +315,7 @@ func (s *MetaNodeServer) AllocateChunk(ctx context.Context, in *mp.AllocateChunk
 	ret, chunkInfo := nameSpace.AllocateChunk()
 	if ret != 0 {
 		ack.Ret = ret
+		logger.Error("AllocateChunk Failed ret %v", ret)
 		return &ack, nil
 	}
 
@@ -381,6 +348,42 @@ func (s *MetaNodeServer) AsyncChunk(ctx context.Context, in *mp.AsyncChunkReq) (
 	return &ack, nil
 }
 
+// SymLink ...
+func (s *MetaNodeServer) SymLink(ctx context.Context, in *mp.SymLinkReq) (*mp.SymLinkAck, error) {
+	ack := mp.SymLinkAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ack.Ret, ack.Inode = nameSpace.SymLink(in.PInode, in.Name, in.Target)
+	return &ack, nil
+}
+
+// ReadLink ...
+func (s *MetaNodeServer) ReadLink(ctx context.Context, in *mp.ReadLinkReq) (*mp.ReadLinkAck, error) {
+	ack := mp.ReadLinkAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ack.Ret, ack.Target = nameSpace.ReadLink(in.Inode)
+	return &ack, nil
+}
+
+//GetSymLinkInfoDirect ...
+func (s *MetaNodeServer) GetSymLinkInfoDirect(ctx context.Context, in *mp.GetSymLinkInfoDirectReq) (*mp.GetSymLinkInfoDirectAck, error) {
+	ack := mp.GetSymLinkInfoDirectAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ack.Ret, ack.Inode = nameSpace.GetSymLinkInfoDirect(in.PInode, in.Name)
+	return &ack, nil
+}
+
 func startMetaDataService(metaServer *MetaNodeServer) {
 
 	lis, err := net.Listen("tcp", metaServer.Addr.Grpc)
@@ -396,47 +399,98 @@ func startMetaDataService(metaServer *MetaNodeServer) {
 	}
 }
 
-func loadMetaData(rs *raft.RaftServer) int32 {
-	ns.CreateGNameSpace()
+func (ms *MetaNodeServer) loadMetaData() int32 {
 
-	ns.CreateClusterNameSpace(rs, MetaNodeServerAddr.peers, MetaNodeServerAddr.nodeID, MetaNodeServerAddr.waldir)
-
-	ret, vols := ns.GetVolList()
-	if ret != 0 {
-		logger.Error("loadMetaData,GetVolList failed,ret:%v", ret)
-		return ret
+	vc := vp.NewVolMgrClient(ns.VolMgrConn)
+	pGetMetaNodeRGPeersReq := &vp.GetMetaNodeRGPeersReq{
+		MetaNodeID: MetaNodeServerAddr.nodeID,
 	}
-	for _, v := range vols {
+	ctx, _ := context.WithTimeout(context.Background(), 3*time.Second)
+	pGetMetaNodeRGPeersAck, err := vc.GetMetaNodeRGPeers(ctx, pGetMetaNodeRGPeersReq)
+	if err != nil || pGetMetaNodeRGPeersAck.Ret != 0 {
+		logger.Error("loadMetaData GetMetaNodeRGPeers failed ...")
+		return -1
+	}
+
+	for _, v := range pGetMetaNodeRGPeersAck.RaftGroups {
+		for _, vv := range v.MetaNodes {
+			addr := &com.Address{
+				Grpc:      vv.Host + ":9901",
+				Heartbeat: vv.Host + ":9902",
+				Replicate: vv.Host + ":9903",
+				Pprof:     vv.Host + ":9904",
+			}
+			ms.Resolver.AddNode(vv.Id, addr)
+		}
+	}
+
+	for _, v := range pGetMetaNodeRGPeersAck.RaftGroups {
 		logger.Debug("loadMetaData,Vol:%v", v)
-		ns.CreateNameSpace(rs, MetaNodeServerAddr.peers, MetaNodeServerAddr.nodeID, MetaNodeServerAddr.waldir, v.UUID, v.RGID, true)
+
+		var peers []proto.Peer
+		for _, vv := range v.MetaNodes {
+			peers = append(peers, proto.Peer{ID: vv.Id})
+		}
+
+		ns.CreateNameSpace(ms.RaftServer, peers, MetaNodeServerAddr.nodeID, MetaNodeServerAddr.waldir, v.UUID, v.RGID, nil, true)
 	}
 	return 0
 }
 
+func (ms *MetaNodeServer) MetaNodeHealthCheck(ctx context.Context, in *mp.MetaNodeHealthCheckReq) (*mp.MetaNodeHealthCheckAck, error) {
+	ack := mp.MetaNodeHealthCheckAck{}
+	return &ack, nil
+}
+
+func (ms *MetaNodeServer) GetBlockGroupInfo(ctx context.Context, in *mp.GetBlockGroupInfoReq) (*mp.GetBlockGroupInfoAck, error) {
+
+	ack := mp.GetBlockGroupInfoAck{}
+	ret, nameSpace := ns.GetNameSpace(in.VolID)
+	if ret != 0 {
+		ack.Ret = ret
+		return &ack, nil
+	}
+	ok, blockGroup := nameSpace.BlockGroupDBGet(in.BGID)
+	if ok {
+		ack.BlockGroup = blockGroup
+		return &ack, nil
+	}
+	ack.Ret = -2
+	return &ack, nil
+}
+
 func init() {
 
-	flag.StringVar(&MetaNodeServerAddr.host, "metanode", "127.0.0.1", "ContainerFS Metanode Host")
-	nodeid := flag.Int64("nodeid", 1, "ContainerFS Metanode ID")
-	peers := flag.String("nodepeer", "1,2,3", "ContainerFS metanode peers")
-	ips := flag.String("nodeips", "127.0.0.1,127.0.0.1,127.0.0.1", "ContainerFS metanode ips")
+	var volmgrHostString string
+	var nodeid uint64
+	var loglevel string
+
+	flag.StringVar(&MetaNodeServerAddr.host, "host", "127.0.0.1", "ContainerFS Metanode Host")
+	flag.StringVar(&volmgrHostString, "volmgr", "10.8.64.216,10.8.64.217,10.8.64.218", "ContainerFS VolMgr Host")
+	flag.Uint64Var(&nodeid, "nodeid", 1, "ContainerFS Metanode ID")
 	flag.StringVar(&MetaNodeServerAddr.waldir, "wal", "/export/containerfs/metanode/data", "ContainerFS Meta waldir")
 	flag.StringVar(&MetaNodeServerAddr.log, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Meta log")
-	loglevel := flag.String("loglevel", "error", "ContainerFS metanode log level")
+	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS metanode log level")
 
 	flag.Parse()
-
-	MetaNodeServerAddr.nodeID = uint64(*nodeid)
-	MetaNodeServerAddr.ips = strings.Split(*ips, ",")
-	peerarray := strings.Split(*peers, ",")
-	var err error
-	MetaNodeServerAddr.peers, err = parsePeers(peerarray)
-	if err != nil {
-		logger.Error("parse peers failed!. peers=%v", peers)
+	if len(os.Args) >= 2 && (os.Args[1] == "version") {
+		fmt.Println(utils.Version())
+		os.Exit(0)
 	}
+
+	tmp := strings.Split(volmgrHostString, ",")
+
+	MetaNodeServerAddr.volmgrHosts = make([]string, 3)
+	MetaNodeServerAddr.volmgrHosts[0] = tmp[0] + ":7703"
+	MetaNodeServerAddr.volmgrHosts[1] = tmp[1] + ":7713"
+	MetaNodeServerAddr.volmgrHosts[2] = tmp[2] + ":7723"
+
+	MetaNodeServerAddr.nodeID = nodeid
+	ns.VolMgrHosts = MetaNodeServerAddr.volmgrHosts
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(MetaNodeServerAddr.log, "metanode.log", 10, 100, logger.MB) //each 100M rolling
-	switch *loglevel {
+	switch loglevel {
 	case "error":
 		logger.SetLevel(logger.ERROR)
 	case "debug":
@@ -449,6 +503,7 @@ func init() {
 
 }
 
+/*
 func parsePeers(peersstr []string) (peers []proto.Peer, err error) {
 	for _, s := range peersstr {
 		p, err := strconv.Atoi(s)
@@ -475,48 +530,41 @@ func showLeaders(s *MetaNodeServer) {
 		}
 	}
 	return
-
 }
+*/
 
 func main() {
 
 	//for multi-cpu scheduling
-	numCPU := runtime.NumCPU()
-	runtime.GOMAXPROCS(numCPU)
-
-	raftopt.AddInit(MetaNodeServerAddr.ips)
-
-	fmt.Println("MetaNodeServerAddr:")
-	fmt.Println(MetaNodeServerAddr)
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	var metaServer MetaNodeServer
-
 	// resolver
-	r := raftopt.NewResolver()
+	r := raftopt.NewVolumeResolver()
 	metaServer.Resolver = r
 
-	// address
-	addrInfo, ok := raftopt.AddrDatabase[MetaNodeServerAddr.nodeID]
-	if !ok {
-		logger.Error("no such address info. nodeId: %d", MetaNodeServerAddr.nodeID)
-	}
-	metaServer.Addr = addrInfo
-
 	//  new raft server
-	err := raftopt.StartRaftServer(&metaServer.RaftServer, metaServer.Resolver, addrInfo, MetaNodeServerAddr.nodeID)
+	addr := &com.Address{
+		Grpc:      MetaNodeServerAddr.host + ":9901",
+		Heartbeat: MetaNodeServerAddr.host + ":9902",
+		Replicate: MetaNodeServerAddr.host + ":9903",
+		Pprof:     MetaNodeServerAddr.host + ":9904",
+	}
+	metaServer.Addr = addr
+	err := com.StartRaftServer(&metaServer.RaftServer, metaServer.Resolver, addr, MetaNodeServerAddr.nodeID)
 	if err != nil {
 		logger.Error("StartRaftServer failed ...")
 		os.Exit(1)
 	}
 	logger.Debug("StartRaftServer success ...")
 
-	// parse peers
-	for _, p := range MetaNodeServerAddr.peers {
-		r.AddNode(p.ID)
+	if ret := registryToVolMgr(metaServer); ret != 0 {
+		os.Exit(1)
 	}
+
 	logger.Debug("AddNode success ...")
 
-	ret := loadMetaData(metaServer.RaftServer)
+	ret := metaServer.loadMetaData()
 	if ret != 0 {
 		if ret == 1 {
 			logger.Debug("loadMetaData  no volumes")
@@ -527,25 +575,53 @@ func main() {
 	}
 
 	go func() {
-		http.ListenAndServe(":10000", nil)
+		http.ListenAndServe(addr.Pprof, nil)
 	}()
 
-	ticker := time.NewTicker(time.Second * 10)
-	go func() {
-		for range ticker.C {
-			showLeaders(&metaServer)
-		}
-	}()
-
-	t := time.NewTicker(time.Second * 30)
-	go func() {
-		for range t.C {
-			if metaServer.RaftServer.IsLeader(1) {
-				DetectDataNodes(&metaServer)
-			}
-		}
-	}()
+	// ticker := time.NewTicker(time.Second * 10)
+	// go func() {
+	// 	for range ticker.C {
+	// 		showLeaders(&metaServer)
+	// 	}
+	// }()
 
 	startMetaDataService(&metaServer)
 
+}
+
+func registryToVolMgr(metaServer MetaNodeServer) int {
+
+	_, conn, err := utils.DialVolMgr(MetaNodeServerAddr.volmgrHosts)
+	if err != nil {
+		logger.Error("registryToVolMgr DialVolMgr failed ...")
+		return -1
+	}
+
+	vc := vp.NewVolMgrClient(conn)
+
+	pMetaNode := &vp.MetaNode{
+		Id:   MetaNodeServerAddr.nodeID,
+		Host: MetaNodeServerAddr.host,
+		Mem:  utils.MemStat().Free,
+	}
+	ctx, _ := context.WithTimeout(context.Background(), time.Second)
+	pMetaNodeAck, err := vc.MetaNodeRegistry(ctx, pMetaNode)
+	if err != nil || pMetaNodeAck.Ret != 0 {
+		logger.Error("registryToVolMgr MetaNodeRegistry failed ...")
+		return -1
+	}
+
+	ns.VolMgrLeader, err = utils.GetVolMgrLeader(MetaNodeServerAddr.volmgrHosts)
+	if err != nil {
+		return -1
+	}
+
+	_, ns.VolMgrConn, err = utils.DialVolMgr(MetaNodeServerAddr.volmgrHosts)
+	if ns.VolMgrConn == nil || err != nil {
+		return -1
+	}
+
+	ns.VolMgrInit = true
+
+	return 0
 }

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	//"strconv"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -817,6 +817,7 @@ func (a BGKV) Less(b Item) bool {
 
 // -------- Cluster Btrees ---------------
 
+//for datanode
 type DataNodeKV struct {
 	K string
 	V []byte
@@ -826,24 +827,47 @@ func (a DataNodeKV) Less(b Item) bool {
 	return a.K < b.(DataNodeKV).K
 }
 
-type BlockKV struct {
+//for datanodebgp
+type DataNodeBGPKV struct {
 	K string
 	V []byte
 }
 
-func (a BlockKV) Less(b Item) bool {
-	return a.K < b.(BlockKV).K
+func (a DataNodeBGPKV) Less(b Item) bool {
+	return a.K < b.(DataNodeBGPKV).K
 }
 
-type BGPKV struct {
-	K string
+//for meatanode
+type MetaNodeKV struct {
+	K uint64
 	V []byte
 }
 
-func (a BGPKV) Less(b Item) bool {
-	return a.K < b.(BGPKV).K
+func (a MetaNodeKV) Less(b Item) bool {
+	return a.K < b.(MetaNodeKV).K
 }
 
+//for volume blockgroup
+type BlockGroupKV struct {
+	K uint64
+	V []byte
+}
+
+func (a BlockGroupKV) Less(b Item) bool {
+	return a.K < b.(BlockGroupKV).K
+}
+
+//for MetaNode RaftGroup
+type MNRGKV struct {
+	K uint64
+	V []byte
+}
+
+func (a MNRGKV) Less(b Item) bool {
+	return a.K < b.(MNRGKV).K
+}
+
+//for volume info
 type VOLKV struct {
 	K string
 	V []byte
@@ -851,4 +875,47 @@ type VOLKV struct {
 
 func (a VOLKV) Less(b Item) bool {
 	return a.K < b.(VOLKV).K
+}
+
+//to implement kv interface for snapshot
+func (a DataNodeKV) Key() string {
+	return a.K
+}
+func (a DataNodeKV) Value() []byte {
+	return a.V
+}
+
+func (a DataNodeBGPKV) Key() string {
+	return a.Key()
+}
+func (a DataNodeBGPKV) Value() []byte {
+	return a.V
+}
+
+func (a MetaNodeKV) Key() string {
+	return strconv.FormatUint(a.K, 10)
+}
+func (a MetaNodeKV) Value() []byte {
+	return a.V
+}
+
+func (a BlockGroupKV) Key() string {
+	return strconv.FormatUint(a.K, 10)
+}
+func (a BlockGroupKV) Value() []byte {
+	return a.V
+}
+
+func (a MNRGKV) Key() string {
+	return strconv.FormatUint(a.K, 10)
+}
+func (a MNRGKV) Value() []byte {
+	return a.V
+}
+
+func (a VOLKV) Key() string {
+	return a.K
+}
+func (a VOLKV) Value() []byte {
+	return a.V
 }

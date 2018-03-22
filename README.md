@@ -1,5 +1,5 @@
-[![Go Report Card](https://goreportcard.com/badge/github.com/tigcode/containerfs)](https://goreportcard.com/report/github.com/tigcode/containerfs)
-[![Build Status](https://travis-ci.org/tigcode/containerfs.svg?branch=master)](https://travis-ci.org/tigcode/containerfs)
+[![Go Report Card](https://goreportcard.com/badge/github.com/tiglabs/containerfs)](https://goreportcard.com/report/github.com/tiglabs/containerfs)
+[![Build Status](https://travis-ci.org/tiglabs/containerfs.svg?branch=master)](https://travis-ci.org/tiglabs/containerfs)
 # ContainerFS
 ![image](doc/logo.png) 
 
@@ -7,15 +7,17 @@ A cluster filesystem for the containers. Please see http://containerfs.io/ for c
 
 # Roadmap
 * 2017Q4  
-1. WEB UI
-2. ReplGroup for Datanode
-       
+1. WEB UI ✔
+2. ReplGroup Stream Write for DataNodes  ✔
+ 
 * 2018Q1
-1. Kernel Client
-2. Volume meta auto split
+1. Choose RaftGroup in MetaNode Pool ✔
+2. MetaNode Auto Registry Add ✔
+3. Full Posix Interface ✔
 
 * 2018Q2
-1. SPDK-NVME driver for Datanode
+1. Kernel Client
+2. SPDK-NVME driver for Datanode
 
 # Concepts
 
@@ -32,6 +34,6 @@ a volume = a metadata table + multiple block groups
 
 ## Report a Bug
 
-For filing bugs, suggesting improvements, or requesting new features, please open an [issue](https://github.com/tigcode/containerfs/issues).
+For filing bugs, suggesting improvements, or requesting new features, please open an [issue](https://github.com/tiglabs/containerfs/issues).
 
 # User Case

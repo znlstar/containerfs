@@ -5,12 +5,14 @@ import (
 	"bazil.org/fuse/fs"
 	"flag"
 	"fmt"
-	"github.com/tigcode/containerfs/fs"
-	"github.com/tigcode/containerfs/logger"
+	"github.com/tiglabs/containerfs/fs"
+	"github.com/tiglabs/containerfs/logger"
+	"github.com/tiglabs/containerfs/utils"
 	"golang.org/x/net/context"
 	"math"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"syscall"
@@ -73,7 +75,7 @@ func (fs *FS) Root() (fs.Node, error) {
 
 // Statfs ...
 func (fs *FS) Statfs(ctx context.Context, req *fuse.StatfsRequest, resp *fuse.StatfsResponse) error {
-	err, ret := cfs.GetFSInfo(fs.cfs.VolID)
+	err, ret := fs.cfs.GetFSInfo()
 	if err != 0 {
 		return fuse.Errno(syscall.EIO)
 	}
@@ -109,7 +111,9 @@ var _ fs.NodeForgetter = (*dir)(nil)
 var _ fs.NodeMkdirer = (*dir)(nil)
 var _ fs.NodeRemover = (*dir)(nil)
 var _ fs.NodeRenamer = (*dir)(nil)
-var _ fs.NodeStringLookuper = (*dir)(nil)
+var _ fs.NodeFsyncer = (*dir)(nil)
+var _ fs.NodeSymlinker = (*dir)(nil)
+var _ fs.NodeRequestLookuper = (*dir)(nil)
 var _ fs.HandleReadDirAller = (*dir)(nil)
 
 func (d *dir) setName(name string) {
@@ -134,49 +138,50 @@ func (d *dir) Attr(ctx context.Context, a *fuse.Attr) error {
 
 	a.Mode = os.ModeDir | 0755
 	a.Inode = d.inode
-	a.Valid = time.Minute
-	/*
-		if d.parent == nil {
-			a.Mode = os.ModeDir | 0755
-			a.Inode = d.inode
+	a.Valid = utils.FUSE_ATTR_CACHE_LIFE
+	if d.parent != nil {
+		logger.Debug("d p inode:%v", d.parent.inode)
+		ret, inode, inodeInfo := d.fs.cfs.GetInodeInfoDirect(d.parent.inode, d.name)
+		if ret == 0 {
+		} else if ret == utils.ENOTFOUND {
+			d.mu.Lock()
+			//clean dirty cache in dir map
+			delete(d.parent.active, d.name)
+			d.mu.Unlock()
+			return fuse.Errno(syscall.ENOENT)
 		} else {
-			ret, inode, inodeInfo := d.fs.cfs.GetInodeInfoDirect(d.parent.inode, d.name)
-			if ret != 0 {
-				return nil
-			}
-
-			a.Ctime = time.Unix(inodeInfo.ModifiTime, 0)
-			a.Mtime = time.Unix(inodeInfo.ModifiTime, 0)
-			a.Atime = time.Unix(inodeInfo.AccessTime, 0)
-			a.Inode = uint64(inode)
+			return fuse.Errno(syscall.EIO)
 		}
-	*/
+		a.Ctime = time.Unix(inodeInfo.ModifiTime, 0)
+		a.Mtime = time.Unix(inodeInfo.ModifiTime, 0)
+		a.Atime = time.Unix(inodeInfo.AccessTime, 0)
+		a.Inode = uint64(inode)
+	}
 	return nil
 }
 
-func (d *dir) Lookup(ctx context.Context, name string) (fs.Node, error) {
+func (d *dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.LookupResponse) (fs.Node, error) {
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	logger.Debug("Dir Lookup")
-
-	if a, ok := d.active[name]; ok {
+	logger.Debug("Dir Lookup %v in dir %v", req.Name, d.name)
+	resp.EntryValid = utils.FUSE_LOOKUP_CACHE_LIFE
+	if a, ok := d.active[req.Name]; ok {
 		return a.node, nil
 	}
 
-	ret, inodeType, inode := d.fs.cfs.StatDirect(d.inode, name)
-
+	ret, inodeType, inode := d.fs.cfs.StatDirect(d.inode, req.Name)
 	if ret == 2 {
 		return nil, fuse.ENOENT
 	}
 	if ret != 0 {
 		return nil, fuse.ENOENT
 	}
-	n, _ := d.reviveNode(inodeType, inode, name)
+	n, _ := d.reviveNode(inodeType, inode, req.Name)
 
 	a := &refcount{node: n}
-	d.active[name] = a
+	d.active[req.Name] = a
 
 	a.kernel = true
 
@@ -188,17 +193,21 @@ func (d *dir) reviveDir(inode uint64, name string) (*dir, error) {
 	return child, nil
 }
 
-func (d *dir) reviveNode(inodeType bool, inode uint64, name string) (node, error) {
-	if inodeType {
+func (d *dir) reviveNode(inodeType uint32, inode uint64, name string) (node, error) {
+	if inodeType == utils.INODE_DIR {
+		child, _ := d.reviveDir(inode, name)
+		return child, nil
+	} else {
 		child := &File{
-			inode:  inode,
-			name:   name,
-			parent: d,
+			inode:    inode,
+			name:     name,
+			parent:   d,
+			fileType: inodeType,
 		}
 		return child, nil
+
 	}
-	child, _ := d.reviveDir(inode, name)
-	return child, nil
+	return nil, nil
 
 }
 
@@ -210,22 +219,39 @@ func (d *dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 	logger.Debug("Dir ReadDirAll")
 
 	var res []fuse.Dirent
-	ret, dirents := d.fs.cfs.ListDirect(d.inode)
+	var ginode uint64
 
-	if ret == 2 {
-		return nil, fuse.Errno(syscall.ENOENT)
+	if d.parent != nil {
+		ginode = d.parent.inode
+	} else {
+		ginode = 0
 	}
-	if ret != 0 {
+	ret, dirents := d.fs.cfs.ListDirect(d.inode, ginode, d.name)
+
+	if ret == 0 {
+
+	} else if ret == utils.ENOTFOUND {
+		if d.parent != nil {
+			//clean dirty cache in dir map
+			delete(d.parent.active, d.name)
+		}
+		return nil, fuse.Errno(syscall.EPERM)
+	} else if ret == 2 || ret == utils.ENOENT {
+		return nil, fuse.Errno(syscall.ENOENT)
+	} else {
 		return nil, fuse.Errno(syscall.EIO)
 	}
+
 	for _, v := range dirents {
 		de := fuse.Dirent{
 			Name: v.Name,
 		}
-		if v.InodeType {
-			de.Type = fuse.DT_File
-		} else {
+		if v.InodeType == 1 {
 			de.Type = fuse.DT_Dir
+		} else if v.InodeType == 2 {
+			de.Type = fuse.DT_File
+		} else if v.InodeType == 3 {
+			de.Type = fuse.DT_Link
 		}
 		res = append(res, de)
 	}
@@ -247,7 +273,7 @@ func (d *dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 		}
 	*/
 
-	//logger.Debug("Create file get locker ,  name %v parentino %v parentname %v", req.Name, d.inode, d.name)
+	logger.Debug("Create file get locker ,  name %v parentino %v parentname %v", req.Name, d.inode, d.name)
 
 	ret, cfile := d.fs.cfs.CreateFileDirect(d.inode, req.Name, int(req.Flags))
 	if ret != 0 {
@@ -260,12 +286,13 @@ func (d *dir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.Cr
 	}
 
 	child := &File{
-		inode:   cfile.Inode,
-		name:    req.Name,
-		parent:  d,
-		handles: 1,
-		writers: 1,
-		cfile:   cfile,
+		inode:    cfile.Inode,
+		name:     req.Name,
+		parent:   d,
+		handles:  1,
+		writers:  1,
+		cfile:    cfile,
+		fileType: utils.INODE_FILE,
 	}
 
 	d.active[req.Name] = &refcount{node: child}
@@ -295,7 +322,7 @@ func (d *dir) forgetChild(name string, child node) {
 }
 
 func (d *dir) Forget() {
-
+	logger.Debug("Forget dir %v inode %v", d.name, d.inode)
 	if d.parent == nil {
 		return
 	}
@@ -348,7 +375,10 @@ func (d *dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	//logger.Debug("Remove get locker , name %v parentino %v parentname %v", req.Name, d.inode, d.name)
+	if a, ok := d.active[req.Name]; ok {
+		delete(d.active, req.Name)
+		a.node.setName("")
+	}
 
 	if req.Dir {
 		ret := d.fs.cfs.DeleteDirDirect(d.inode, req.Name)
@@ -357,23 +387,61 @@ func (d *dir) Remove(ctx context.Context, req *fuse.RemoveRequest) error {
 				return fuse.Errno(syscall.EPERM)
 			}
 			return fuse.Errno(syscall.EIO)
-
 		}
 	} else {
 
-		ret := d.fs.cfs.DeleteFileDirect(d.inode, req.Name)
-		if ret != 0 {
-			if ret == 2 {
-				return fuse.Errno(syscall.EPERM)
+		var symlimkFlag bool
+
+		if node, ok := d.active[req.Name]; ok {
+			if node.node.(*File).fileType == utils.INODE_SYMLINK {
+				logger.Debug("symlink file in active ...")
+				symlimkFlag = true
 			}
-			return fuse.Errno(syscall.EIO)
+		} else {
+			ret, inodeType, _ := d.fs.cfs.StatDirect(d.inode, req.Name)
+			if ret != 0 {
+				return fuse.Errno(syscall.EIO)
+			} else {
+				if inodeType == utils.INODE_SYMLINK {
+					symlimkFlag = true
+				}
+			}
+
 		}
+
+		if symlimkFlag {
+
+			ret := d.fs.cfs.DeleteSymLinkDirect(d.inode, req.Name)
+
+			logger.Debug("symlink DeleteSymLinkDirect ret  %v", ret)
+
+			if ret != 0 {
+				if ret == utils.ENOTFOUND {
+					return nil
+				} else if ret == 2 {
+					return fuse.Errno(syscall.EPERM)
+				} else {
+					return fuse.Errno(syscall.EIO)
+				}
+			}
+
+		} else {
+
+			ret := d.fs.cfs.DeleteFileDirect(d.inode, req.Name)
+			if ret != 0 {
+				if ret == utils.ENOTFOUND {
+					return nil
+				} else if ret == 2 {
+					return fuse.Errno(syscall.EPERM)
+				} else {
+					return fuse.Errno(syscall.EIO)
+				}
+			}
+
+		}
+
 	}
 
-	if a, ok := d.active[req.Name]; ok {
-		delete(d.active, req.Name)
-		a.node.setName("")
-	}
 	logger.Debug("Remove end , name %v parentino %v parentname %v", req.Name, d.inode, d.name)
 
 	return nil
@@ -387,10 +455,26 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	ret, _, _ := d.fs.cfs.StatDirect(newDir.(*dir).inode, req.NewName)
+	ret, inodeType, _ := d.fs.cfs.StatDirect(newDir.(*dir).inode, req.NewName)
 	if ret == 0 {
-		logger.Error("Rename Failed , newName in newDir is already exsit")
-		return fuse.Errno(syscall.EPERM)
+		logger.Debug("newName in newDir is already exsit, inodeType: %v", inodeType)
+		if utils.INODE_DIR == inodeType {
+			logger.Error("Rename newName %v in newDir %v is an exsit dir, un-supportted rename", req.NewName, d.name)
+			return fuse.Errno(syscall.EPERM)
+		} else if utils.INODE_FILE == inodeType {
+			ret = d.fs.cfs.DeleteFileDirect(newDir.(*dir).inode, req.NewName)
+			if ret != 0 {
+				logger.Error("Rename Delete the exist newName %v in newDir %v failed!", req.NewName, d.name)
+				return fuse.Errno(syscall.EPERM)
+			}
+		} else if utils.INODE_SYMLINK == inodeType {
+			ret = d.fs.cfs.DeleteSymLinkDirect(newDir.(*dir).inode, req.NewName)
+			if ret != 0 {
+				logger.Error("Rename Delete the exist newName %v in newDir %v failed!", req.NewName, d.name)
+				return fuse.Errno(syscall.EPERM)
+			}
+		}
+
 	}
 
 	if newDir != d {
@@ -412,8 +496,7 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 			delete(d.active, req.OldName)
 			aOld.node.setName(req.NewName)
 			aOld.node.setParentInode(newDir.(*dir))
-			//d.active[req.NewName] = aOld
-
+			newDir.(*dir).active[req.NewName] = aOld
 		}
 
 	} else {
@@ -422,7 +505,10 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 
 		ret := d.fs.cfs.RenameDirect(d.inode, req.OldName, d.inode, req.NewName)
 		if ret != 0 {
-			if ret == 2 {
+			if ret == utils.ENOTFOUND {
+				delete(d.active, req.OldName)
+				return fuse.Errno(syscall.ENOENT)
+			} else if ret == 2 {
 				return fuse.Errno(syscall.ENOENT)
 			} else if ret == 1 || ret == 17 {
 				return fuse.Errno(syscall.EPERM)
@@ -447,6 +533,37 @@ func (d *dir) Rename(ctx context.Context, req *fuse.RenameRequest, newDir fs.Nod
 	return nil
 }
 
+// Symlink ...
+func (d *dir) Symlink(ctx context.Context, req *fuse.SymlinkRequest) (fs.Node, error) {
+
+	logger.Debug("Symlink req %v", req)
+
+	ret, inode := d.fs.cfs.SymLink(d.inode, req.NewName, req.Target)
+	if ret != 0 {
+		logger.Error("Symlink ret %v", ret)
+		return nil, fuse.EPERM
+	}
+
+	child := &File{
+		inode:    inode,
+		name:     req.NewName,
+		parent:   d,
+		handles:  1,
+		writers:  1,
+		fileType: utils.INODE_SYMLINK,
+	}
+
+	d.active[req.NewName] = &refcount{node: child}
+
+	return child, nil
+}
+
+// Fsync ...
+func (d *dir) Fsync(ctx context.Context, req *fuse.FsyncRequest) error {
+
+	return nil
+}
+
 type node interface {
 	fs.Node
 	setName(name string)
@@ -458,16 +575,31 @@ type File struct {
 	mu    sync.Mutex
 	inode uint64
 
-	parent  *dir
-	name    string
-	writers uint
-	handles uint32
-	cfile   *cfs.CFile
+	fileType uint32
+	parent   *dir
+	name     string
+	writers  uint
+	handles  uint32
+	cfile    *cfs.CFile
 }
 
 var _ node = (*File)(nil)
 var _ = fs.Node(&File{})
 var _ = fs.Handle(&File{})
+var _ = fs.NodeForgetter(&File{})
+
+func (f *File) Forget() {
+	logger.Debug("Forget file %v inode %v", f.name, f.inode)
+	if f.parent == nil {
+		return
+	}
+
+	f.mu.Lock()
+	name := f.name
+	f.mu.Unlock()
+
+	f.parent.forgetChild(name, f)
+}
 
 func (f *File) setName(name string) {
 
@@ -491,22 +623,52 @@ func (f *File) Attr(ctx context.Context, a *fuse.Attr) error {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	logger.Debug("to get attr for %v in type: %v, parent inode: %v", f.name, f.fileType, f.parent.inode)
+	if f.fileType == utils.INODE_FILE {
 
-	ret, inode, inodeInfo := f.parent.fs.cfs.GetInodeInfoDirect(f.parent.inode, f.name)
-	if ret != 0 || inodeInfo == nil {
-		return nil
+		ret, inode, inodeInfo := f.parent.fs.cfs.GetInodeInfoDirect(f.parent.inode, f.name)
+		logger.Debug("to get attr from ms %v in type: %v, ret: %v", f.name, f.fileType, ret)
+		if ret == 0 {
+		} else if ret == utils.ENOTFOUND {
+			delete(f.parent.active, f.name)
+			return fuse.Errno(syscall.ENOENT)
+		} else if ret != 0 || inodeInfo == nil {
+			return nil
+		}
+		a.Valid = utils.FUSE_ATTR_CACHE_LIFE
+		a.Ctime = time.Unix(inodeInfo.ModifiTime, 0)
+		a.Mtime = time.Unix(inodeInfo.ModifiTime, 0)
+		a.Atime = time.Unix(inodeInfo.AccessTime, 0)
+		a.Size = uint64(inodeInfo.FileSize)
+		if f.cfile != nil && a.Size < uint64(f.cfile.FileSizeInCache) {
+			a.Size = uint64(f.cfile.FileSizeInCache)
+		}
+		a.Inode = uint64(inode)
+
+		a.BlockSize = 4 * 1024
+		a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
+		a.Mode = 0666
+		a.Valid = time.Second
+
+	} else if f.fileType == utils.INODE_SYMLINK {
+
+		logger.Debug("att symlink file pinode %v name %v", f.parent.inode, f.name)
+
+		ret, inode := f.parent.fs.cfs.GetSymLinkInfoDirect(f.parent.inode, f.name)
+		if ret == 0 {
+		} else if ret == utils.ENOTFOUND {
+			delete(f.parent.active, f.name)
+			return fuse.Errno(syscall.ENOENT)
+		} else if ret != 0 {
+			return nil
+		}
+
+		logger.Error("GetSymLinkInfoDirect inode %v", inode)
+
+		a.Inode = uint64(inode)
+		a.Mode = 0666 | os.ModeSymlink
+		a.Valid = 0
 	}
-
-	a.Ctime = time.Unix(inodeInfo.ModifiTime, 0)
-	a.Mtime = time.Unix(inodeInfo.ModifiTime, 0)
-	a.Atime = time.Unix(inodeInfo.AccessTime, 0)
-	a.Size = uint64(inodeInfo.FileSize)
-	a.Inode = uint64(inode)
-
-	a.BlockSize = 4 * 1024
-	a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
-	a.Mode = 0666
-	a.Valid = time.Minute
 
 	return nil
 }
@@ -537,7 +699,30 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 
 	if f.cfile == nil && f.handles == 0 {
 		ret, f.cfile = f.parent.fs.cfs.OpenFileDirect(f.parent.inode, f.name, int(req.Flags))
-		if ret != 0 {
+
+		if ret == 0 {
+		} else if ret == utils.ENOTFOUND {
+			//clean dirty cache in dir map
+			delete(f.parent.active, f.name)
+
+			if int(req.Flags) != os.O_RDONLY && (int(req.Flags)&os.O_CREATE > 0 || int(req.Flags)&^(os.O_WRONLY|os.O_TRUNC) == 0) {
+				logger.Debug("open an deleted file, create new file %v with flag: %v", f.name, req.Flags)
+				ret, f.cfile = f.parent.fs.cfs.CreateFileDirect(f.parent.inode, f.name, int(req.Flags))
+				if ret != 0 {
+					if ret == 17 {
+						return nil, fuse.Errno(syscall.EEXIST)
+					}
+					return nil, fuse.Errno(syscall.EIO)
+				}
+
+				f.inode = f.cfile.Inode
+				f.handles = 0
+				f.writers = 0
+				f.parent.active[f.name] = &refcount{node: f}
+			} else {
+				return nil, fuse.Errno(syscall.ENOENT)
+			}
+		} else {
 			logger.Error("Open failed OpenFileDirect ret %v", ret)
 			return nil, fuse.Errno(syscall.EIO)
 		}
@@ -579,6 +764,7 @@ func (f *File) Release(ctx context.Context, req *fuse.ReleaseRequest) error {
 	}
 	f.handles--
 	if f.handles == 0 {
+		f.cfile.Close()
 		f.cfile = nil
 	}
 	logger.Debug("Release end : name %v pinode %v pname %v", f.name, f.parent.inode, f.parent.name)
@@ -593,18 +779,14 @@ func (f *File) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadR
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if _, ok := f.cfile.ReaderMap[req.Handle]; !ok {
-		rdinfo := cfs.ReaderInfo{}
-		rdinfo.LastOffset = int64(0)
-		f.cfile.ReaderMap[req.Handle] = &rdinfo
-	}
-	if req.Offset == f.cfile.FileSize {
+
+	if req.Offset == f.cfile.FileSizeInCache {
 
 		logger.Debug("Request Read file offset equal filesize")
 		return nil
 	}
 
-	length := f.cfile.Read(req.Handle, &resp.Data, req.Offset, int64(req.Size))
+	length := f.cfile.Read(&resp.Data, req.Offset, int64(req.Size))
 	if length != int64(req.Size) {
 		logger.Debug("== Read reqsize:%v, but return datasize:%v ==\n", req.Size, length)
 	}
@@ -623,7 +805,7 @@ func (f *File) Write(ctx context.Context, req *fuse.WriteRequest, resp *fuse.Wri
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	w := f.cfile.Write(req.Data, int32(len(req.Data)))
+	w := f.cfile.Write(req.Data, req.Offset, int32(len(req.Data)))
 	if w != int32(len(req.Data)) {
 		if w == -1 {
 			logger.Error("Write Failed Err:ENOSPC")
@@ -647,7 +829,7 @@ func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-
+	
 	if ret := f.cfile.Flush(); ret != 0 {
 		logger.Error("Flush Flush err ...")
 		return fuse.Errno(syscall.EIO)
@@ -683,19 +865,51 @@ func (f *File) Setattr(ctx context.Context, req *fuse.SetattrRequest, resp *fuse
 	return nil
 }
 
+var _ = fs.NodeReadlinker(&File{})
+
+// ReadLink ...
+func (f *File) Readlink(ctx context.Context, req *fuse.ReadlinkRequest) (string, error) {
+
+	logger.Debug("ReadLink ...")
+
+	ret, target := f.parent.fs.cfs.ReadLink(f.inode)
+	if ret != 0 {
+		logger.Error("ReadLink req ret %v", ret)
+		return "", fuse.EIO
+	}
+
+	return target, nil
+
+}
+
 func main() {
 
-	addr2 := flag.String("metanode", "127.0.0.1:9903,127.0.0.1:9913,127.0.0.1:9923", "ContainerFS metanode hosts")
+	var peers string
+
+	flag.StringVar(&peers, "volmgr", "10.8.64.216,10.8.64.217,10.8.64.218", "ContainerFS VolMgr Host")
+
 	buffertype := flag.Int("buffertype", 0, "ContainerFS per file buffertype : 0 512KB 1 256KB 2 128KB")
 	uuid := flag.String("uuid", "xxx", "ContainerFS Volume UUID")
 	mountPoint := flag.String("mountpoint", "/mnt", "ContainerFS MountPoint")
 	log := flag.String("log", "/export/Logs/containerfs/logs/", "ContainerFS log level")
 	loglevel := flag.String("loglevel", "error", "ContainerFS log level")
 	isReadOnly := flag.Int("readonly", 0, "Is readonly Volume 1 for ture ,0 for false")
-
+	writeBuff := flag.Int("writebuffer", 0, "Write buffer size in mb, must be no larger than 3")
 	flag.Parse()
-
-	cfs.MetaNodePeers = strings.Split(*addr2, ",")
+	if len(os.Args) >= 2 && (os.Args[1] == "version") {
+		fmt.Println(utils.Version())
+		os.Exit(0)
+	}
+	
+	if *writeBuff < 0 || *writeBuff > 3 {
+		fmt.Println("bad writeBuff, must be no larger than 3")
+	 	os.Exit(0)	
+	}
+	tmp := strings.Split(peers, ",")
+	cfs.VolMgrHosts = make([]string, 3)
+	cfs.VolMgrHosts[0] = tmp[0] + ":7703"
+	cfs.VolMgrHosts[1] = tmp[1] + ":7713"
+	cfs.VolMgrHosts[2] = tmp[2] + ":7723"
 
 	switch *buffertype {
 	case 0:
@@ -707,6 +921,8 @@ func main() {
 	default:
 		cfs.BufferSize = 512 * 1024
 	}
+	
+	cfs.WriteBufferSize = *writeBuff * 1024 * 1024
 
 	logger.SetConsole(true)
 	logger.SetRollingFile(*log, "fuse.log", 10, 100, logger.MB) //each 100M rolling
@@ -723,46 +939,35 @@ func main() {
 		logger.SetLevel(logger.ERROR)
 	}
 
-	defer func() {
-		if err := recover(); err != nil {
-			logger.Error("panic !!! :%v", err)
-			logger.Error("stacks:%v", string(debug.Stack()))
-		}
-	}()
+	/*
+		//allocate volume blkgrp
+		tic := time.NewTicker(30 * time.Second)
+		go func() {
+			for range tic.C {
+				ok, ret := cfs.GetFSInfo(*uuid)
+				if ok != 0 {
+					logger.Error("ExpandVol once volume:%v failed, GetFSInfo error", *uuid)
+					continue
+				}
+				if float64(ret.FreeSpace)/float64(ret.TotalSpace) > 0.1 {
+					continue
+				}
 
-	cfs.MetaNodeAddr, _ = cfs.GetLeader(*uuid)
-	fmt.Printf("Leader:%v\n", cfs.MetaNodeAddr)
-	ticker := time.NewTicker(time.Second * 60)
+				logger.Debug("Need ExpandVol once volume:%v -- totalsize:%v -- freesize:%v", *uuid, ret.TotalSpace, ret.FreeSpace)
+				ok = cfs.ExpandVolRS(*uuid, *mountPoint)
+				if ok == -1 {
+					logger.Error("Expand volume: %v one time error", *uuid)
+				} else if ok == -2 {
+					logger.Error("Expand volume: %v by another client, so this client not need expand", *uuid)
+				} else if ok == 1 {
+					logger.Debug("Expand volume: %v one time sucess", *uuid)
+				}
+			}
+		}()
+	*/
+
 	go func() {
-		for range ticker.C {
-			cfs.MetaNodeAddr, _ = cfs.GetLeader(*uuid)
-			fmt.Printf("Leader:%v\n", cfs.MetaNodeAddr)
-		}
-	}()
-
-	//allocate volume blkgrp
-	tic := time.NewTicker(30 * time.Second)
-	go func() {
-		for range tic.C {
-			ok, ret := cfs.GetFSInfo(*uuid)
-			if ok != 0 {
-				logger.Error("ExpandVol once volume:%v failed, GetFSInfo error", *uuid)
-				continue
-			}
-			if float64(ret.FreeSpace)/float64(ret.TotalSpace) > 0.1 {
-				continue
-			}
-
-			logger.Debug("Need ExpandVol once volume:%v -- totalsize:%v -- freesize:%v", *uuid, ret.TotalSpace, ret.FreeSpace)
-			ok = cfs.ExpandVolRS(*uuid, *mountPoint)
-			if ok == -1 {
-				logger.Error("Expand volume: %v one time error", *uuid)
-			} else if ok == -2 {
-				logger.Error("Expand volume: %v by another client, so this client not need expand", *uuid)
-			} else if ok == 1 {
-				logger.Debug("Expand volume: %v one time sucess", *uuid)
-			}
-		}
+		http.ListenAndServe(":10000", nil)
 	}()
 
 	err := mount(*uuid, *mountPoint, *isReadOnly)
@@ -771,10 +976,14 @@ func main() {
 	}
 }
 
-func closeConns(fs *cfs.CFS) {
+func closeConns(c *cfs.CFS) {
 
-	if fs.Conn != nil {
-		fs.Conn.Close()
+	if c.MetaNodeConn != nil {
+		c.MetaNodeConn.Close()
+	}
+
+	if c.VolMgrConn != nil {
+		c.VolMgrConn.Close()
 	}
 
 }
