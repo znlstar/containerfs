@@ -77,7 +77,7 @@ func main() {
 
 		var ret int32
 		if argNum == 2 {
-			ret = fs.CreateVol(flag.Arg(0), flag.Arg(1), "sas","3")
+			ret = fs.CreateVol(flag.Arg(0), flag.Arg(1), "sas", "3")
 		} else if argNum == 4 {
 			ret = fs.CreateVol(flag.Arg(0), flag.Arg(1), flag.Arg(2), flag.Arg(3))
 		}

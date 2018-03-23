@@ -35,7 +35,7 @@ var MetaNodeHosts []string
 
 // CFS ...
 type CFS struct {
-	VolID string
+	VolID  string
 	Copies int
 
 	VolMgrConn   *grpc.ClientConn
@@ -2052,7 +2052,7 @@ ALLOCATECHUNK:
 		ChunkID:      cfile.CurChunk.ChunkInfo.ChunkID,
 		Master:       cfile.CurChunk.ChunkInfo.BlockGroupWithHost.Hosts[0],
 		Slave:        cfile.CurChunk.ChunkInfo.BlockGroupWithHost.Hosts[1],
-		Backup:		  backup,
+		Backup:       backup,
 		Databuf:      newData.DataBuf.Bytes(),
 		DataLen:      uint32(length),
 		CommitID:     cfile.atomicNum,
@@ -2135,7 +2135,7 @@ func (cfile *CFile) AllocateChunk(IsStream bool) *Chunk {
 				logger.Error("AllocateChunk file: %v new conn to %v failed, err: %v\n", cfile.Name, curChunk.ChunkInfo.BlockGroupWithHost.Hosts[2], err)
 				return nil
 			}
-	    }
+		}
 
 		C2Mconn := cfile.newDataConn(curChunk.ChunkInfo.BlockGroupWithHost.Hosts[0])
 		if C2Mconn == nil {

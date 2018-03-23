@@ -11,8 +11,8 @@ import (
 	"github.com/tiglabs/containerfs/utils"
 	"github.com/tiglabs/raft/storage/wal"
 	"golang.org/x/net/context"
-	"strconv"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -171,7 +171,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 	copies, _ := strconv.Atoi(in.Copies)
 
 	if len(allip) < copies {
-		logger.Error("Create Volume:%v Tier:%v Copies:%v but DataNode nums:%v less than Copies:%v, so forbid CreateVol", voluuid, in.Tier, copies, len(allip),copies)
+		logger.Error("Create Volume:%v Tier:%v Copies:%v but DataNode nums:%v less than Copies:%v, so forbid CreateVol", voluuid, in.Tier, copies, len(allip), copies)
 		ack.Ret = -1
 		return &ack, nil
 	}
@@ -180,7 +180,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		UUID:          voluuid,
 		Name:          in.VolName,
 		Tier:          in.Tier,
-		Copies:	       int32(copies),
+		Copies:        int32(copies),
 		TotalSize:     in.SpaceQuota,
 		AllocatedSize: blkgrpnum * 5,
 		RGID:          rgID,
@@ -384,7 +384,7 @@ func (s *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp.
 	}
 
 	if len(allip) < int(vol.Copies) {
-		logger.Error("Expand Volume:%v Tier:%v but DataNode nums:%v less than Copies:%v, so forbid CreateVol", vol.UUID, vol.Tier, len(allip),vol.Copies)
+		logger.Error("Expand Volume:%v Tier:%v but DataNode nums:%v less than Copies:%v, so forbid CreateVol", vol.UUID, vol.Tier, len(allip), vol.Copies)
 		ack.Ret = -1
 		return &ack, nil
 	}

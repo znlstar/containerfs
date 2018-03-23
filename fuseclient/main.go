@@ -829,7 +829,7 @@ func (f *File) Flush(ctx context.Context, req *fuse.FlushRequest) error {
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	
+
 	if ret := f.cfile.Flush(); ret != 0 {
 		logger.Error("Flush Flush err ...")
 		return fuse.Errno(syscall.EIO)
@@ -900,10 +900,10 @@ func main() {
 		fmt.Println(utils.Version())
 		os.Exit(0)
 	}
-	
+
 	if *writeBuff < 0 || *writeBuff > 3 {
 		fmt.Println("bad writeBuff, must be no larger than 3")
-	 	os.Exit(0)	
+		os.Exit(0)
 	}
 	tmp := strings.Split(peers, ",")
 	cfs.VolMgrHosts = make([]string, 3)
@@ -921,7 +921,7 @@ func main() {
 	default:
 		cfs.BufferSize = 512 * 1024
 	}
-	
+
 	cfs.WriteBufferSize = *writeBuff * 1024 * 1024
 
 	logger.SetConsole(true)
