@@ -319,7 +319,7 @@ func (s *DataNodeServer) C2MReplExit(clientStreamID uint64) {
 	}
 }
 
-// C2MRepl ...
+// On Master: C2MRepl ...
 func (s *DataNodeServer) C2MRepl(stream dp.DataNode_C2MReplServer) error {
 
 	clientStreamID := atomic.AddUint64(&s.ClientStreamID, 1)
@@ -486,6 +486,7 @@ func (mss *M2SReplClientStream) BackWard() {
 
 }
 
+// On Slave: M2SRepl...
 func (s *DataNodeServer) M2SRepl(stream dp.DataNode_M2SReplServer) error {
 
 	M2SReplServerStream := &M2SReplServerStream{stream: stream}
@@ -517,34 +518,48 @@ func (s *DataNodeServer) M2SRepl(stream dp.DataNode_M2SReplServer) error {
 			return errors.New("M2SReplServerStream NeedBreak")
 		}
 
-		if M2SReplServerStream.S2BReplClientStream == nil {
-			M2SReplServerStream.BlockGroupID = in.BlockGroupID
-			M2SReplServerStream.BackupHost = in.Backup
+		ack := dp.StreamWriteAck{CommitID: in.CommitID, DataLen: in.DataLen, ChunkID: in.ChunkID, BlockGroupID: in.BlockGroupID, StreamID: in.StreamID, Ret: 0}
 
-			M2SReplServerStream.S2BReplClientStream = s.CreateS2BStream(in.Backup, M2SReplServerStream)
+		if in.Backup != "" {
 			if M2SReplServerStream.S2BReplClientStream == nil {
-				logger.Error("DataNode[%v]: M2SRepl BGID-%v CreateS2BStream err", DataNodeServerAddr.Host, M2SReplServerStream.BlockGroupID)
-				return errors.New("CreateS2BStream err")
+				M2SReplServerStream.BlockGroupID = in.BlockGroupID
+				M2SReplServerStream.BackupHost = in.Backup
+
+				M2SReplServerStream.S2BReplClientStream = s.CreateS2BStream(in.Backup, M2SReplServerStream)
+				if M2SReplServerStream.S2BReplClientStream == nil {
+					logger.Error("DataNode[%v]: M2SRepl BGID-%v CreateS2BStream err", DataNodeServerAddr.Host, M2SReplServerStream.BlockGroupID)
+					return errors.New("CreateS2BStream err")
+				}
 			}
-		}
 
-		if M2SReplServerStream.BackupHost != in.Backup || M2SReplServerStream.BlockGroupID != in.BlockGroupID {
-			logger.Error("DataNode[%v]: M2SRepl  BlockGroup error: stream(BHOST-%v, BGID-%v) != in(BHOST-%v, BGID-%v)",
-				DataNodeServerAddr.Host, M2SReplServerStream.BackupHost, M2SReplServerStream.BlockGroupID, in.Backup, in.BlockGroupID)
-			return errors.New("BlockGroup err")
-		}
+			if M2SReplServerStream.BackupHost != in.Backup || M2SReplServerStream.BlockGroupID != in.BlockGroupID {
+				logger.Error("DataNode[%v]: M2SRepl  BlockGroup error: stream(BHOST-%v, BGID-%v) != in(BHOST-%v, BGID-%v)",
+					DataNodeServerAddr.Host, M2SReplServerStream.BackupHost, M2SReplServerStream.BlockGroupID, in.Backup, in.BlockGroupID)
+				return errors.New("BlockGroup err")
+			}
 
-		// save to localdisk
-		if err := s.writeDisk(in.BlockGroupID, in.ChunkID, in.Databuf); err != nil {
-			logger.Error("DataNode[%v]: BGID-%v M2SRepl writeDisk failed %v", DataNodeServerAddr.Host, M2SReplServerStream.BlockGroupID, err)
-			return err
-		}
+			// save to localdisk
+			if err := s.writeDisk(in.BlockGroupID, in.ChunkID, in.Databuf); err != nil {
+				logger.Error("DataNode[%v]: BGID-%v M2SRepl writeDisk failed %v", DataNodeServerAddr.Host, M2SReplServerStream.BlockGroupID, err)
+				return err
+			}
 
-		if err := M2SReplServerStream.S2BReplClientStream.stream.Send(in); err != nil {
-			logger.Error("DataNode[%v]: BGID-%v M2SRepl S2BReplClientStream.Send failed %v", DataNodeServerAddr.Host, M2SReplServerStream.BlockGroupID, err)
-			ack := dp.StreamWriteAck{CommitID: in.CommitID, DataLen: in.DataLen, ChunkID: in.ChunkID, BlockGroupID: in.BlockGroupID, StreamID: in.StreamID, Ret: -1}
-			stream.Send(&ack)
-			return err
+			if err := M2SReplServerStream.S2BReplClientStream.stream.Send(in); err != nil {
+				logger.Error("DataNode[%v]: BGID-%v M2SRepl S2BReplClientStream.Send failed %v", DataNodeServerAddr.Host, M2SReplServerStream.BlockGroupID, err)
+				ack.Ret = -1
+				stream.Send(&ack)
+				return err
+			}
+		} else {
+			if err := s.writeDisk(in.BlockGroupID, in.ChunkID, in.Databuf); err != nil {
+				logger.Error("DataNode[%v]: M2SRepl BGID-%v  writeDisk err %v", DataNodeServerAddr.Host, in.BlockGroupID, err)
+				ack.Ret = -1
+			}
+
+			if err := stream.Send(&ack); err != nil {
+				logger.Error("DataNode[%v]: M2SRepl BGID-%v stream.Send err %v", DataNodeServerAddr.Host, in.BlockGroupID, err)
+				return err
+			}
 		}
 
 	}

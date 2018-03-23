@@ -90,10 +90,11 @@ message Volume {
 	string UUID = 1;
 	string Name = 2;
     string Tier = 3;
-	int32  TotalSize = 4;
-	int32  AllocatedSize = 5;
-	uint64 RGID = 6;
-    repeated uint64 BlockGroups =7;
+    int32  Copies = 4;
+    int32  TotalSize = 5;
+    int32  AllocatedSize = 6;
+    uint64 RGID = 7;
+    repeated uint64 BlockGroups = 8;
 }
 
 message Vols {
@@ -109,6 +110,7 @@ message CreateVolReq {
     string VolName = 1 ;
     int32  SpaceQuota = 2 ;
     string Tier = 3;
+    string  Copies = 4;
 }
 message CreateVolAck {
     int32 Ret = 1;
@@ -128,8 +130,9 @@ message GetMetaNodeRGReq {
 }
 message GetMetaNodeRGAck {
     int32 Ret = 1;
-    repeated MetaNode MetaNodes = 2;
-    string Leader = 3;    
+    int32 Copies = 2;
+    repeated MetaNode MetaNodes = 3;
+    string Leader = 4;    
 }
 
 message GetVolMgrRGReq{

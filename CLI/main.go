@@ -22,7 +22,7 @@ func main() {
 	flag.StringVar(&logpath, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS Log Path")
 	flag.StringVar(&loglevel, "loglevel", "error", "ContainerFS Log Level")
 	flag.StringVar(&cmd, "action", "", `
-		createvol [volumename ] size [sata/sas/ssd/nvme...]
+		createvol [volumename ] size [sata/sas/ssd/nvme... default:sas] [copies default:3]
 		expandvol [volumeuuid ] size
 		migrate [host]
 		deletevol [volumeuuid ]
@@ -70,16 +70,16 @@ func main() {
 
 	case "createvol":
 		argNum := flag.NArg()
-		if argNum != 2 && argNum != 3 {
-			fmt.Println("createvol [volname] [space GB] [sata/sas/ssd/nvme...]")
+		if argNum != 2 && argNum != 4 {
+			fmt.Println("createvol [volname] [space GB] [sata/sas/ssd/nvme...] [copies]")
 			os.Exit(1)
 		}
 
 		var ret int32
 		if argNum == 2 {
-			ret = fs.CreateVol(flag.Arg(0), flag.Arg(1), "sas")
-		} else if argNum == 3 {
-			ret = fs.CreateVol(flag.Arg(0), flag.Arg(1), flag.Arg(2))
+			ret = fs.CreateVol(flag.Arg(0), flag.Arg(1), "sas","3")
+		} else if argNum == 4 {
+			ret = fs.CreateVol(flag.Arg(0), flag.Arg(1), flag.Arg(2), flag.Arg(3))
 		}
 		if ret != 0 {
 			fmt.Println("failed", ret)

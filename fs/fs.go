@@ -36,6 +36,7 @@ var MetaNodeHosts []string
 // CFS ...
 type CFS struct {
 	VolID string
+	Copies int
 
 	VolMgrConn   *grpc.ClientConn
 	VolMgrLeader string
@@ -113,7 +114,7 @@ func DelDatanode(host string) int {
 }
 
 // CreateVol volume
-func CreateVol(name string, capacity string, tier string) int32 {
+func CreateVol(name string, capacity string, tier string, copies string) int32 {
 
 	_, conn, err := utils.DialVolMgr(VolMgrHosts)
 	if err != nil {
@@ -128,6 +129,7 @@ func CreateVol(name string, capacity string, tier string) int32 {
 		VolName:    name,
 		SpaceQuota: int32(spaceQuota),
 		Tier:       tier,
+		Copies:     copies,
 	}
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 	ack, err := vc.CreateVol(ctx, pCreateVolReq)
@@ -551,6 +553,7 @@ func (cfs *CFS) GetLeaderInfo(uuid string) error {
 		return fmt.Errorf("GetMetaNodeRG Failed Ret:%v", pGetMetaNodeRGAck.Ret)
 	}
 
+	cfs.Copies = int(pGetMetaNodeRGAck.Copies)
 	cfs.MetaNodeLeader = pGetMetaNodeRGAck.Leader
 	cfs.MetaNodeConn, err = utils.Dial(cfs.MetaNodeLeader)
 	if err != nil {
@@ -1406,9 +1409,10 @@ func (cfile *CFile) streamRead(chunkidx int, ch chan *bytes.Buffer, offset int64
 	var buffer *bytes.Buffer
 	outflag := 0
 	inflag := 0
-	idxs := utils.GenerateRandomNumber(0, 3, 3)
+	copies := cfile.cfs.Copies
+	idxs := utils.GenerateRandomNumber(0, copies, copies)
 
-	for n := 0; n < 3; n++ {
+	for n := 0; n < copies; n++ {
 		i := idxs[n]
 		addr := cfile.chunks[chunkidx].BlockGroupWithHost.Hosts[i]
 		_, ok := cfile.errDataNodeCache[addr]
@@ -1422,7 +1426,7 @@ func (cfile *CFile) streamRead(chunkidx int, ch chan *bytes.Buffer, offset int64
 		}
 	}
 
-	for n := 0; n < len(cfile.chunks[chunkidx].BlockGroupWithHost.Hosts); n++ {
+	for n := 0; n < copies; n++ {
 		i := idxs[n]
 
 		buffer = new(bytes.Buffer)
@@ -1505,18 +1509,18 @@ func (cfile *CFile) streamRead(chunkidx int, ch chan *bytes.Buffer, offset int64
 		if inflag == 0 {
 			ch <- buffer
 			break
-		} else if inflag == 3 {
+		} else if inflag == copies {
 			buffer = new(bytes.Buffer)
 			buffer.Write([]byte{})
 			logger.Error("Stream Read the chunk three copy Recv error")
 			ch <- buffer
 			break
-		} else if inflag < 3 {
+		} else if inflag < copies {
 			logger.Error("Stream Read the chunk %v copy Recv error, so need retry other datanode!!!", inflag)
 			continue
 		}
 	}
-	if outflag >= 3 {
+	if outflag >= copies {
 		buffer = new(bytes.Buffer)
 		buffer.Write([]byte{})
 		logger.Error("Stream Read the chunk three copy Datanode error")
@@ -1834,7 +1838,7 @@ func (cfile *CFile) seekWrite(eInfo extentInfo, buf []byte) int32 {
 
 	cfile.wgWriteReps.Wait()
 
-	if copies < 3 {
+	if copies < uint64(cfile.cfs.Copies) {
 		cfile.Status = FileError
 		logger.Error("cfile %v seekWriteChunk copies: %v, set error!", cfile.Name, copies)
 		return -1
@@ -2037,11 +2041,18 @@ ALLOCATECHUNK:
 	cfile.DataCache[cfile.atomicNum] = newData
 	cfile.DataCacheLocker.Unlock()
 
+	var backup string
+	if cfile.cfs.Copies == 3 {
+		backup = cfile.CurChunk.ChunkInfo.BlockGroupWithHost.Hosts[2]
+	} else {
+		backup = ""
+	}
+
 	req := &dp.StreamWriteReq{
 		ChunkID:      cfile.CurChunk.ChunkInfo.ChunkID,
 		Master:       cfile.CurChunk.ChunkInfo.BlockGroupWithHost.Hosts[0],
 		Slave:        cfile.CurChunk.ChunkInfo.BlockGroupWithHost.Hosts[1],
-		Backup:       cfile.CurChunk.ChunkInfo.BlockGroupWithHost.Hosts[2],
+		Backup:		  backup,
 		Databuf:      newData.DataBuf.Bytes(),
 		DataLen:      uint32(length),
 		CommitID:     cfile.atomicNum,
@@ -2118,11 +2129,13 @@ func (cfile *CFile) AllocateChunk(IsStream bool) *Chunk {
 			return nil
 		}
 
-		err = utils.TryDial(curChunk.ChunkInfo.BlockGroupWithHost.Hosts[2])
-		if err != nil {
-			logger.Error("AllocateChunk file: %v new conn to %v failed, err: %v\n", cfile.Name, curChunk.ChunkInfo.BlockGroupWithHost.Hosts[2], err)
-			return nil
-		}
+		if cfile.cfs.Copies == 3 {
+			err = utils.TryDial(curChunk.ChunkInfo.BlockGroupWithHost.Hosts[2])
+			if err != nil {
+				logger.Error("AllocateChunk file: %v new conn to %v failed, err: %v\n", cfile.Name, curChunk.ChunkInfo.BlockGroupWithHost.Hosts[2], err)
+				return nil
+			}
+	    }
 
 		C2Mconn := cfile.newDataConn(curChunk.ChunkInfo.BlockGroupWithHost.Hosts[0])
 		if C2Mconn == nil {
