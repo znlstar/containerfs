@@ -11,7 +11,7 @@ import (
 	"github.com/tiglabs/containerfs/utils"
 	"github.com/tiglabs/raft/storage/wal"
 	"golang.org/x/net/context"
-
+	"strconv"
 	"path"
 	"strings"
 	"sync"
@@ -168,8 +168,10 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		allip = append(allip, k)
 	}
 
-	if len(allip) < 3 {
-		logger.Error("Create Volume:%v Tier:%v but DataNode nums:%v less than 3, so forbid CreateVol", voluuid, in.Tier, len(allip))
+	copies, _ := strconv.Atoi(in.Copies)
+
+	if len(allip) < copies {
+		logger.Error("Create Volume:%v Tier:%v Copies:%v but DataNode nums:%v less than Copies:%v, so forbid CreateVol", voluuid, in.Tier, copies, len(allip),copies)
 		ack.Ret = -1
 		return &ack, nil
 	}
@@ -178,6 +180,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		UUID:          voluuid,
 		Name:          in.VolName,
 		Tier:          in.Tier,
+		Copies:	       int32(copies),
 		TotalSize:     in.SpaceQuota,
 		AllocatedSize: blkgrpnum * 5,
 		RGID:          rgID,
@@ -193,8 +196,8 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 			return &ack, err
 		}
 
-		idxs := utils.GenerateRandomNumber(0, len(allip), 3)
-		if len(idxs) != 3 {
+		idxs := utils.GenerateRandomNumber(0, len(allip), copies)
+		if len(idxs) != copies {
 			ack.Ret = -5
 			return &ack, nil
 		}
@@ -204,7 +207,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 			VolID:    voluuid,
 			FreeSize: utils.BlockGroupSize}
 
-		for n := 0; n < 3; n++ {
+		for n := 0; n < copies; n++ {
 			ipkey := allip[idxs[n]]
 			idx := utils.GenerateRandomNumber(0, len(inuseNodes[ipkey]), 1)
 			if len(idx) <= 0 {
@@ -380,8 +383,8 @@ func (s *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp.
 		allip = append(allip, k)
 	}
 
-	if len(allip) < 3 {
-		logger.Error("Expand Volume:%v Tier:%v but DataNode nums:%v less than 3, so forbid CreateVol", vol.UUID, vol.Tier, len(allip))
+	if len(allip) < int(vol.Copies) {
+		logger.Error("Expand Volume:%v Tier:%v but DataNode nums:%v less than Copies:%v, so forbid CreateVol", vol.UUID, vol.Tier, len(allip),vol.Copies)
 		ack.Ret = -1
 		return &ack, nil
 	}
@@ -395,15 +398,15 @@ func (s *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp.
 			return &ack, err
 		}
 
-		idxs := utils.GenerateRandomNumber(0, len(allip), 3)
-		if len(idxs) != 3 {
+		idxs := utils.GenerateRandomNumber(0, len(allip), int(vol.Copies))
+		if len(idxs) != int(vol.Copies) {
 			ack.Ret = -1
 			return &ack, nil
 		}
 
 		var hosts []string
 		bg := &vp.BlockGroup{BlockGroupID: bgID, FreeSize: utils.BlockGroupSize}
-		for n := 0; n < 3; n++ {
+		for n := 0; n < int(vol.Copies); n++ {
 			ipkey := allip[idxs[n]]
 			idx := utils.GenerateRandomNumber(0, len(inuseNodes[ipkey]), 1)
 			if len(idx) <= 0 {
@@ -963,6 +966,8 @@ func (s *VolMgrServer) GetMetaNodeRG(ctx context.Context, in *vp.GetMetaNodeRGRe
 		ack.Ret = -1
 		return &ack, err
 	}
+
+	ack.Copies = vol.Copies
 
 	logger.Debug("vol rgid:%v", vol.RGID)
 	metaNodeRG, err := s.Cluster.RaftGroup.MetaNodeRGGet(vol.RGID)
