@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	fs "github.com/tiglabs/containerfs/fs"
-	"github.com/tiglabs/containerfs/logger"
-	"github.com/tiglabs/containerfs/utils"
 	"os"
 	"strconv"
 	"strings"
+
+	fs "github.com/tiglabs/containerfs/fs"
+	"github.com/tiglabs/containerfs/logger"
+	"github.com/tiglabs/containerfs/utils"
 )
 
 func main() {

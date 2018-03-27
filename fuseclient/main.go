@@ -1,14 +1,8 @@
 package main
 
 import (
-	"bazil.org/fuse"
-	"bazil.org/fuse/fs"
 	"flag"
 	"fmt"
-	"github.com/tiglabs/containerfs/fs"
-	"github.com/tiglabs/containerfs/logger"
-	"github.com/tiglabs/containerfs/utils"
-	"golang.org/x/net/context"
 	"math"
 	"net/http"
 	_ "net/http/pprof"
@@ -17,6 +11,13 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"bazil.org/fuse"
+	"bazil.org/fuse/fs"
+	"github.com/tiglabs/containerfs/fs"
+	"github.com/tiglabs/containerfs/logger"
+	"github.com/tiglabs/containerfs/utils"
+	"golang.org/x/net/context"
 )
 
 var uuid string
@@ -172,9 +173,6 @@ func (d *dir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.Lo
 	}
 
 	ret, inodeType, inode := d.fs.cfs.StatDirect(d.inode, req.Name)
-	if ret == 2 {
-		return nil, fuse.ENOENT
-	}
 	if ret != 0 {
 		return nil, fuse.ENOENT
 	}
@@ -213,10 +211,11 @@ func (d *dir) reviveNode(inodeType uint32, inode uint64, name string) (node, err
 
 // ReadDirAll ...
 func (d *dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
 
 	logger.Debug("Dir ReadDirAll")
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
 	var res []fuse.Dirent
 	var ginode uint64
@@ -246,11 +245,11 @@ func (d *dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 		de := fuse.Dirent{
 			Name: v.Name,
 		}
-		if v.InodeType == 1 {
+		if v.InodeType == utils.INODE_DIR {
 			de.Type = fuse.DT_Dir
-		} else if v.InodeType == 2 {
+		} else if v.InodeType == utils.INODE_FILE {
 			de.Type = fuse.DT_File
-		} else if v.InodeType == 3 {
+		} else if v.InodeType == utils.INODE_SYMLINK {
 			de.Type = fuse.DT_Link
 		}
 		res = append(res, de)
@@ -540,7 +539,7 @@ func (d *dir) Symlink(ctx context.Context, req *fuse.SymlinkRequest) (fs.Node, e
 
 	ret, inode := d.fs.cfs.SymLink(d.inode, req.NewName, req.Target)
 	if ret != 0 {
-		logger.Error("Symlink ret %v", ret)
+		logger.Error("Symlink ret %v,pinode %v,newname %v,target %v", ret, d.inode, req.NewName, req.Target)
 		return nil, fuse.EPERM
 	}
 
@@ -677,18 +676,17 @@ var _ = fs.NodeOpener(&File{})
 
 // Open ...
 func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenResponse) (fs.Handle, error) {
-	var ret int32
 
 	logger.Debug("Open start : name %v inode %v Flags %v pinode %v pname %v", f.name, f.inode, req.Flags, f.parent.inode, f.parent.name)
+
+	if int(req.Flags)&os.O_TRUNC != 0 {
+		return nil, fuse.Errno(syscall.EPERM)
+	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	//logger.Debug("Open get locker : name %v inode %v Flags %v pinode %v pname %v", f.name, f.inode, req.Flags, f.parent.inode, f.parent.name)
-
-	if int(req.Flags)&os.O_TRUNC != 0 {
-		return nil, fuse.Errno(syscall.EPERM)
-	}
 
 	if f.writers > 0 {
 		if int(req.Flags)&os.O_WRONLY != 0 || int(req.Flags)&os.O_RDWR != 0 {
@@ -696,6 +694,8 @@ func (f *File) Open(ctx context.Context, req *fuse.OpenRequest, resp *fuse.OpenR
 			return nil, fuse.Errno(syscall.EPERM)
 		}
 	}
+
+	var ret int32
 
 	if f.cfile == nil && f.handles == 0 {
 		ret, f.cfile = f.parent.fs.cfs.OpenFileDirect(f.parent.inode, f.name, int(req.Flags))
@@ -906,6 +906,10 @@ func main() {
 		os.Exit(0)
 	}
 	tmp := strings.Split(peers, ",")
+	if len(tmp) != 3 {
+		fmt.Println("bad peers, must be 3 peer")
+		os.Exit(0)
+	}
 	cfs.VolMgrHosts = make([]string, 3)
 	cfs.VolMgrHosts[0] = tmp[0] + ":7703"
 	cfs.VolMgrHosts[1] = tmp[1] + ":7713"

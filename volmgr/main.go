@@ -3,15 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/tiglabs/containerfs/logger"
-	"github.com/tiglabs/containerfs/proto/vp"
-	"github.com/tiglabs/containerfs/raftopt"
-	com "github.com/tiglabs/containerfs/raftopt/common"
-	"github.com/tiglabs/containerfs/utils"
-	"github.com/tiglabs/raft"
-	"github.com/tiglabs/raft/proto"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -21,6 +12,16 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/tiglabs/containerfs/logger"
+	"github.com/tiglabs/containerfs/proto/vp"
+	"github.com/tiglabs/containerfs/raftopt"
+	com "github.com/tiglabs/containerfs/raftopt/common"
+	"github.com/tiglabs/containerfs/utils"
+	"github.com/tiglabs/raft"
+	"github.com/tiglabs/raft/proto"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 type addr struct {

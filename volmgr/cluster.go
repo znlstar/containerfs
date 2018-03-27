@@ -3,6 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
+	"path"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/tiglabs/containerfs/logger"
 	"github.com/tiglabs/containerfs/proto/dp"
 	"github.com/tiglabs/containerfs/proto/mp"
@@ -11,11 +17,6 @@ import (
 	"github.com/tiglabs/containerfs/utils"
 	"github.com/tiglabs/raft/storage/wal"
 	"golang.org/x/net/context"
-	"path"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
 )
 
 const (

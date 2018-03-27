@@ -2,6 +2,12 @@ package namespace
 
 import (
 	"encoding/binary"
+	"math/rand"
+	"path"
+	"runtime/debug"
+	"sync"
+	"time"
+
 	pbproto "github.com/golang/protobuf/proto"
 	"github.com/tiglabs/containerfs/logger"
 	"github.com/tiglabs/containerfs/proto/mp"
@@ -13,11 +19,6 @@ import (
 	"github.com/tiglabs/raft/storage/wal"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"math/rand"
-	"path"
-	"runtime/debug"
-	"sync"
-	"time"
 )
 
 var VolMgrConn *grpc.ClientConn

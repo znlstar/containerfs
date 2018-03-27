@@ -5,6 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"os"
+	"path"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	pbproto "github.com/golang/protobuf/proto"
 	"github.com/tiglabs/containerfs/logger"
 	log "github.com/tiglabs/containerfs/logger"
@@ -14,14 +23,6 @@ import (
 	"github.com/tiglabs/raft"
 	"github.com/tiglabs/raft/proto"
 	"github.com/tiglabs/raft/storage/wal"
-	"io"
-	"io/ioutil"
-	"os"
-	"path"
-	"strconv"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
 const (

@@ -1,12 +1,13 @@
 package main
 
 import (
+	"time"
+
 	"github.com/tiglabs/containerfs/logger"
 	"github.com/tiglabs/containerfs/proto/mp"
 	"github.com/tiglabs/containerfs/proto/vp"
 	"github.com/tiglabs/containerfs/utils"
 	"golang.org/x/net/context"
-	"time"
 )
 
 // rpc ClusterInfo(ClusterInfoReq) returns (ClusterInfoAck){};

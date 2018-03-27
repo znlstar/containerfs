@@ -3,7 +3,15 @@ package main
 import (
 	"flag"
 	"fmt"
-	//pbproto "github.com/golang/protobuf/proto"
+	"net"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"runtime"
+	"strings"
+	"sync"
+	"time"
+
 	"github.com/tiglabs/containerfs/logger"
 	ns "github.com/tiglabs/containerfs/metanode/namespace"
 	"github.com/tiglabs/containerfs/proto/mp"
@@ -16,14 +24,6 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
-	"net"
-	"net/http"
-	_ "net/http/pprof"
-	"os"
-	"runtime"
-	"strings"
-	"sync"
-	"time"
 )
 
 type addr struct {

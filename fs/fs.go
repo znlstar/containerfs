@@ -4,6 +4,14 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"sort"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"time"
+
 	"github.com/tiglabs/containerfs/logger"
 	"github.com/tiglabs/containerfs/proto/dp"
 	"github.com/tiglabs/containerfs/proto/mp"
@@ -12,13 +20,6 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
-	"io"
-	"os"
-	"sort"
-	"strconv"
-	"sync"
-	"sync/atomic"
-	"time"
 )
 
 const (

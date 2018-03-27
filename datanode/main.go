@@ -5,14 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/tiglabs/containerfs/logger"
-	"github.com/tiglabs/containerfs/proto/dp"
-	"github.com/tiglabs/containerfs/proto/vp"
-	"github.com/tiglabs/containerfs/utils"
-	"golang.org/x/net/context"
-	"google.golang.org/grpc"
-	//"google.golang.org/grpc/keepalive"
-	"google.golang.org/grpc/reflection"
 	"io"
 	"io/ioutil"
 	"net"
@@ -25,6 +17,14 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/tiglabs/containerfs/logger"
+	"github.com/tiglabs/containerfs/proto/dp"
+	"github.com/tiglabs/containerfs/proto/vp"
+	"github.com/tiglabs/containerfs/utils"
+	"golang.org/x/net/context"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 var VolMgrHosts []string

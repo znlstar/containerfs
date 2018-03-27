@@ -1,9 +1,10 @@
 package common
 
 import (
-	log "github.com/tiglabs/containerfs/logger"
-	"github.com/tiglabs/raft"
 	"time"
+
+	"github.com/tiglabs/containerfs/logger"
+	"github.com/tiglabs/raft"
 )
 
 //Address ...
@@ -35,7 +36,7 @@ func StartRaftServer(rs **raft.RaftServer, r Resolver, addr *Address, nodeid uin
 	c.ReplicateAddr = addr.Replicate
 	*rs, err = raft.NewRaftServer(c)
 	if err != nil {
-		log.Error("create raft server failed: %v", err)
+		logger.Error("create raft server failed: %v", err)
 		return err
 	}
 	return nil
