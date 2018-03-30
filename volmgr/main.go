@@ -137,6 +137,16 @@ func showLeaders(s *VolMgrServer) {
 
 }
 
+func logleveldebug(w http.ResponseWriter, req *http.Request) {
+	logger.SetLevel(logger.DEBUG)
+	io.WriteString(w, "ok!\n")
+}
+
+func loglevelerror(w http.ResponseWriter, req *http.Request) {
+	logger.SetLevel(logger.ERROR)
+	io.WriteString(w, "ok!\n")
+}
+
 func main() {
 
 	//for multi-cpu scheduling
@@ -181,6 +191,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	http.HandleFunc("/logleveldebug", logleveldebug)
+	http.HandleFunc("/loglevelerror", loglevelerror)
 	go func() {
 		http.ListenAndServe(volMgrServer.Addr.Pprof, nil)
 	}()

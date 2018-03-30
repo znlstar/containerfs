@@ -882,6 +882,16 @@ func (f *File) Readlink(ctx context.Context, req *fuse.ReadlinkRequest) (string,
 
 }
 
+func logleveldebug(w http.ResponseWriter, req *http.Request) {
+	logger.SetLevel(logger.DEBUG)
+	io.WriteString(w, "ok!\n")
+}
+
+func loglevelerror(w http.ResponseWriter, req *http.Request) {
+	logger.SetLevel(logger.ERROR)
+	io.WriteString(w, "ok!\n")
+}
+
 func main() {
 
 	var peers string
@@ -970,6 +980,8 @@ func main() {
 		}()
 	*/
 
+	http.HandleFunc("/logleveldebug", logleveldebug)
+	http.HandleFunc("/loglevelerror", loglevelerror)
 	go func() {
 		http.ListenAndServe(":10000", nil)
 	}()
