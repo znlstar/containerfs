@@ -16,8 +16,9 @@ A cluster filesystem for the containers. Please see http://containerfs.io/ for c
 3. Full Posix Interface ✔
 
 * 2018Q2
-1. Kernel Client
-2. SPDK-NVME driver for Datanode
+1. kubernetes CSI 
+2. Kernel Client
+3. SPDK-NVME driver for Datanode
 
 # Concepts
 
