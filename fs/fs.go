@@ -1019,6 +1019,7 @@ func (cfs *CFS) createFileDirect(pinode uint64, name string) (int32, uint64) {
 
 	ret := cfs.checkMetaConn()
 	if ret != 0 {
+		logger.Debug("createFileDirect checkMetaConn failed ret %v", ret)
 		return -1, 0
 	}
 
@@ -1047,6 +1048,9 @@ func (cfs *CFS) createFileDirect(pinode uint64, name string) (int32, uint64) {
 			return -1, 0
 		}
 	}
+
+	logger.Debug("createFileDirect  mc.CreateFileDirect failed ret %v", pCreateFileDirectAck.Ret)
+
 	if pCreateFileDirectAck.Ret == 1 {
 		return 1, 0
 	}
