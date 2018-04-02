@@ -190,7 +190,6 @@ message ListDirectReq{
     string VolID = 1;
     uint64 PInode = 2;
     string Name = 3;
-    uint64 GInode = 4;
 }
 message ListDirectAck{
     int32 Ret = 1;
@@ -233,7 +232,7 @@ message AsyncChunkReq {
     string Name = 3;
     uint64 BlockGroupID = 4;
     uint64 ChunkID = 5;
-    uint32  CommitSize = 6;
+    uint32 CommitSize = 6;
 }
 message AsyncChunkAck {
     int32 Ret = 1;

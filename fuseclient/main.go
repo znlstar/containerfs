@@ -212,21 +212,14 @@ func (d *dir) reviveNode(inodeType uint32, inode uint64, name string) (node, err
 
 // ReadDirAll ...
 func (d *dir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
-
-	logger.Debug("Dir ReadDirAll")
-
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	var res []fuse.Dirent
-	var ginode uint64
+	logger.Debug("Dir ReadDirAll")
 
-	if d.parent != nil {
-		ginode = d.parent.inode
-	} else {
-		ginode = 0
-	}
-	ret, dirents := d.fs.cfs.ListDirect(d.inode, ginode, d.name)
+	var res []fuse.Dirent
+
+	ret, dirents := d.fs.cfs.ListDirect(d.inode, d.name)
 
 	if ret == 0 {
 

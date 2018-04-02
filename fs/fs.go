@@ -23,8 +23,9 @@ import (
 )
 
 const (
-	FileNormal = 0
-	FileError  = 2
+	FileNormal   = 0
+	FileError    = 2
+	FileNotExist = 3
 )
 
 // BufferSize ...
@@ -813,7 +814,7 @@ func (cfs *CFS) StatDirect(pinode uint64, name string) (int32, uint32, uint64) {
 }
 
 // ListDirect ...
-func (cfs *CFS) ListDirect(pinode uint64, ginode uint64, name string) (int32, []*mp.DirentN) {
+func (cfs *CFS) ListDirect(pinode uint64, name string) (int32, []*mp.DirentN) {
 
 	ret := cfs.checkMetaConn()
 	if ret != 0 {
@@ -825,7 +826,6 @@ func (cfs *CFS) ListDirect(pinode uint64, ginode uint64, name string) (int32, []
 		PInode: pinode,
 		VolID:  cfs.VolID,
 		Name:   name,
-		GInode: ginode,
 	}
 	ctx, _ := context.WithTimeout(context.Background(), 60*time.Second)
 	pListDirectAck, err := mc.ListDirect(ctx, pListDirectReq)
@@ -1980,7 +1980,7 @@ func (cfile *CFile) WriteThread() {
 				return
 			} else {
 
-				if cfile.Status == FileError {
+				if cfile.Status != FileNormal {
 					continue
 				}
 
@@ -2038,7 +2038,7 @@ ALLOCATECHUNK:
 					}
 				}
 			}
-			if cfile.Status == FileError {
+			if cfile.Status != FileNormal {
 				return errors.New("file status err")
 			}
 			logger.Debug("WriteHandler: file %v, end wait after loop times %v\n", cfile.Name, ti)
@@ -2192,6 +2192,9 @@ func (cfile *CFile) AllocateChunk(IsStream bool) *Chunk {
 
 func (chunk *Chunk) Retry() {
 
+	if chunk.CFile.Status == FileNotExist {
+		return
+	}
 	chunk.CFile.DataCacheLocker.Lock()
 	defer chunk.CFile.DataCacheLocker.Unlock()
 
@@ -2269,11 +2272,30 @@ func (chunk *Chunk) C2MRecv() {
 			BlockGroupID:  in.BlockGroupID,
 		}
 		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
-		_, err2 := mc.AsyncChunk(ctx, pAsyncChunkReq)
+		pAsyncChunkAck, err2 := mc.AsyncChunk(ctx, pAsyncChunkReq)
 		if err2 != nil {
 			break
 		}
 
+		if pAsyncChunkAck.Ret == utils.ENOTFOUND {
+			logger.Error("Failed to write a not existing file: %v, inode: %v!", chunk.CFile.Name, chunk.CFile.Inode)
+			chunk.CFile.Status = FileNotExist
+			chunk.CFile.WriteErrSignal <- true
+			for _, dn := range chunk.ChunkInfo.BlockGroupWithHost.Hosts {
+				go func(host string) {
+					logger.Debug("Request datanode %v to remove junk data block chunk: %v bg: %v", host, chunk.ChunkInfo.ChunkID, chunk.ChunkInfo.BlockGroupWithHost.BlockGroupID)
+					if conn := chunk.CFile.newDataConn(host); conn != nil {
+						dc := dp.NewDataNodeClient(conn)
+						dpDeleteChunkReq := &dp.DeleteChunkReq{
+							ChunkID:      chunk.ChunkInfo.ChunkID,
+							BlockGroupID: chunk.ChunkInfo.BlockGroupWithHost.BlockGroupID,
+						}
+						dc.DeleteChunk(context.Background(), dpDeleteChunkReq)
+						conn.Close()
+					}
+				}(dn)
+			}
+		}
 		// comfirm data
 		chunk.CFile.DataCacheLocker.Lock()
 		//cfile.DataCache[in.CommitID].timer.Stop()
@@ -2372,7 +2394,7 @@ func (cfile *CFile) updateChunkSize(chunkinfo *mp.ChunkInfoWithBG, length int32)
 
 // Sync ...
 func (cfile *CFile) Sync() int32 {
-	if cfile.Status == FileError {
+	if cfile.Status != FileNormal {
 		return -1
 	}
 
@@ -2387,7 +2409,7 @@ func (cfile *CFile) Flush() int32 {
 		return 0
 	}
 
-	if cfile.Status == FileError {
+	if cfile.Status != FileNormal {
 		return -1
 	}
 

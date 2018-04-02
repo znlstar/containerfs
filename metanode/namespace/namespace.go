@@ -126,7 +126,7 @@ func initNameSpace(rs *raft.RaftServer, nameSpace *nameSpace, UUID string, bgs [
 	}
 	for _, v := range bgs {
 
-		err = nameSpace.BlockGroupDBSet(v.BlockGroupID, v)
+		err = nameSpace.blockGroupDBSet(v.BlockGroupID, v)
 		if err != nil {
 			logger.Error("Set BlockGroup ID:%v Info:%v failed, err:%v", v.BlockGroupID, v, err)
 			continue
@@ -138,7 +138,7 @@ func initNameSpace(rs *raft.RaftServer, nameSpace *nameSpace, UUID string, bgs [
 		ModifiTime: time.Now().Unix(),
 	}
 
-	err = nameSpace.InodeDBSet(0, &tmpInodeInfo)
+	err = nameSpace.inodeDBSet(0, &tmpInodeInfo)
 	if err != nil {
 		logger.Error("Set Inode Info:%v failed, err:%v", tmpInodeInfo, err)
 		return 1
@@ -226,14 +226,15 @@ func GetNameSpace(UUID string) (int32, *nameSpace) {
 
 //GetFSInfo ...
 func (ns *nameSpace) GetFSInfo(volID string) mp.GetFSInfoAck {
-
+	ns.RLock()
+	defer ns.RUnlock()
 	defer catchPanic()
 
 	ack := mp.GetFSInfoAck{}
 	var totalSpace uint64
 	var freeSpace uint64
 
-	ret, bgs := ns.BlockGroupDBGetAll()
+	ret, bgs := ns.blockGroupDBGetAll()
 	if !ret {
 		return ack
 	}
@@ -252,13 +253,15 @@ func (ns *nameSpace) GetFSInfo(volID string) mp.GetFSInfoAck {
 
 //GetFSInfo ...
 func (ns *nameSpace) ExpandNameSpace(blockGroups []*mp.BlockGroup) int32 {
+	ns.Lock()
+	defer ns.Unlock()
 
 	defer catchPanic()
 
 	logger.Debug("ExpandNameSpace %v , blockgroups num %v", blockGroups, len(blockGroups))
 
 	for _, v := range blockGroups {
-		err := ns.BlockGroupDBSet(v.BlockGroupID, v)
+		err := ns.blockGroupDBSet(v.BlockGroupID, v)
 		if err != nil {
 			return -1
 		}
@@ -268,8 +271,19 @@ func (ns *nameSpace) ExpandNameSpace(blockGroups []*mp.BlockGroup) int32 {
 
 //CreateDirDirect ...
 func (ns *nameSpace) CreateDirDirect(pinode uint64, name string) (int32, uint64) {
+	ns.Lock()
+	defer ns.Unlock()
 
 	defer catchPanic()
+
+	//to check parent dir's existence
+	if err, _ := ns.inodeDBGet(pinode); err != nil {
+		if err == raftopt.ErrKeyNotFound {
+			return utils.ENOTFOUND, 0
+		} else {
+			return 2, 0
+		}
+	}
 
 	/*update inode info*/
 	inodeID, err := ns.AllocateInodeID()
@@ -281,14 +295,14 @@ func (ns *nameSpace) CreateDirDirect(pinode uint64, name string) (int32, uint64)
 		ModifiTime: time.Now().Unix(),
 	}
 
-	err = ns.InodeDBSet(inodeID, &tmpInodeInfo)
+	err = ns.inodeDBSet(inodeID, &tmpInodeInfo)
 	if err != nil {
 		return 1, 0
 	}
 
-	err = ns.DentryDBSet(pinode, name, utils.INODE_DIR, inodeID)
+	err = ns.dentryDBSet(pinode, name, utils.INODE_DIR, inodeID)
 	if err != nil {
-		ns.InodeDBDelete(inodeID)
+		ns.inodeDBDelete(inodeID)
 		return 1, 0
 	}
 
@@ -297,10 +311,12 @@ func (ns *nameSpace) CreateDirDirect(pinode uint64, name string) (int32, uint64)
 
 //GetSymLinkInfoDirect ...
 func (ns *nameSpace) GetSymLinkInfoDirect(pinode uint64, name string) (int32, uint64) {
+	ns.RLock()
+	defer ns.RUnlock()
 
 	defer catchPanic()
 
-	gRet, dirent := ns.DentryDBGet(pinode, name)
+	gRet, dirent := ns.dentryDBGet(pinode, name)
 	if gRet != 0 {
 		return gRet, 0
 	}
@@ -310,18 +326,19 @@ func (ns *nameSpace) GetSymLinkInfoDirect(pinode uint64, name string) (int32, ui
 
 //GetInodeInfoDirect ...
 func (ns *nameSpace) GetInodeInfoDirect(pinode uint64, name string) (int32, *mp.InodeInfo, uint64) {
+	ns.RLock()
+	defer ns.RUnlock()
 
 	defer catchPanic()
 
-	var ok bool
 	var pInodeInfo *mp.InodeInfo
 
-	gRet, dirent := ns.DentryDBGet(pinode, name)
+	gRet, dirent := ns.dentryDBGet(pinode, name)
 	if gRet != 0 {
 		return gRet, nil, 0
 	}
-
-	if ok, pInodeInfo = ns.InodeDBGet(dirent.Inode); !ok {
+	var err error
+	if err, pInodeInfo = ns.inodeDBGet(dirent.Inode); err != nil {
 		return 2, nil, 0
 	}
 	return 0, pInodeInfo, dirent.Inode
@@ -329,10 +346,12 @@ func (ns *nameSpace) GetInodeInfoDirect(pinode uint64, name string) (int32, *mp.
 
 //StatDirect ...
 func (ns *nameSpace) StatDirect(pinode uint64, name string) (uint32, uint64, int32) {
+	ns.RLock()
+	ns.RUnlock()
 
 	defer catchPanic()
 
-	gRet, dirent := ns.DentryDBGet(pinode, name)
+	gRet, dirent := ns.dentryDBGet(pinode, name)
 	if gRet != 0 {
 		return 0, 0, gRet
 	}
@@ -340,12 +359,18 @@ func (ns *nameSpace) StatDirect(pinode uint64, name string) (uint32, uint64, int
 	return dirent.InodeType, dirent.Inode, 0
 }
 
-//  func (ms *KvStateMachine) DentryGetRange(raftGroupID uint64, minKey string, maxKey string) ([][]byte, error) {
-
 //ListDirect ...
 func (ns *nameSpace) ListDirect(pinode uint64) ([]*mp.DirentN, int32) {
+	ns.RLock()
+	defer ns.RUnlock()
 
-	ret, v := ns.DentryGetRange(pinode)
+	if err, _ := ns.inodeDBGet(pinode); err != nil {
+		if err == raftopt.ErrKeyNotFound {
+			return nil, utils.ENOTFOUND
+		}
+		return nil, 2
+	}
+	ret, v := ns.dentryGetRange(pinode)
 	if ret {
 		return v, 0
 	}
@@ -355,36 +380,40 @@ func (ns *nameSpace) ListDirect(pinode uint64) ([]*mp.DirentN, int32) {
 
 //DeleteDirDirect ...
 func (ns *nameSpace) DeleteDirDirect(pinode uint64, name string) int32 {
+	ns.Lock()
+	defer ns.Unlock()
 
 	defer catchPanic()
 
-	gRet, dirent := ns.DentryDBGet(pinode, name)
+	gRet, dirent := ns.dentryDBGet(pinode, name)
 	if gRet != 0 {
 		return 1
 	}
-	ns.InodeDBDelete(dirent.Inode)
-	ns.DentryDBDelete(pinode, name)
+	ns.inodeDBDelete(dirent.Inode)
+	ns.dentryDBDelete(pinode, name)
 
 	return 0
 }
 
 //RenameDirect ...
 func (ns *nameSpace) RenameDirect(oldpinode uint64, oldName string, newpinode uint64, newName string) int32 {
+	ns.Lock()
+	defer ns.Unlock()
 
 	defer catchPanic()
 
-	gRet, dirent := ns.DentryDBGet(oldpinode, oldName)
+	gRet, dirent := ns.dentryDBGet(oldpinode, oldName)
 	if gRet != 0 {
 		return gRet
 	}
 
-	err := ns.DentryDBSet(newpinode, newName, dirent.InodeType, dirent.Inode)
+	err := ns.dentryDBSet(newpinode, newName, dirent.InodeType, dirent.Inode)
 	if err != nil {
 		return 1
 	}
-	err = ns.DentryDBDelete(oldpinode, oldName)
+	err = ns.dentryDBDelete(oldpinode, oldName)
 	if err != nil {
-		ns.DentryDBDelete(newpinode, newName)
+		ns.dentryDBDelete(newpinode, newName)
 		return 1
 	}
 	return 0
@@ -392,8 +421,19 @@ func (ns *nameSpace) RenameDirect(oldpinode uint64, oldName string, newpinode ui
 
 //CreateFileDirect ...
 func (ns *nameSpace) CreateFileDirect(pinode uint64, name string) (int32, uint64) {
+	ns.Lock()
+	defer ns.Unlock()
 
 	defer catchPanic()
+
+	//to check parent dir's existence
+	if err, _ := ns.inodeDBGet(pinode); err != nil {
+		if err == raftopt.ErrKeyNotFound {
+			return utils.ENOTFOUND, 0
+		} else {
+			return 2, 0
+		}
+	}
 
 	/*update inode info*/
 	inodeID, err := ns.AllocateInodeID()
@@ -405,14 +445,14 @@ func (ns *nameSpace) CreateFileDirect(pinode uint64, name string) (int32, uint64
 		ModifiTime: time.Now().Unix(),
 	}
 
-	err = ns.InodeDBSet(inodeID, &tmpInodeInfo)
+	err = ns.inodeDBSet(inodeID, &tmpInodeInfo)
 	if err != nil {
 		return 1, 0
 	}
 
-	err = ns.DentryDBSet(pinode, name, utils.INODE_FILE, inodeID)
+	err = ns.dentryDBSet(pinode, name, utils.INODE_FILE, inodeID)
 	if err != nil {
-		ns.InodeDBDelete(inodeID)
+		ns.inodeDBDelete(inodeID)
 		return 1, 0
 	}
 
@@ -421,10 +461,12 @@ func (ns *nameSpace) CreateFileDirect(pinode uint64, name string) (int32, uint64
 
 //DeleteFileDirect ...
 func (ns *nameSpace) DeleteFileDirect(pinode uint64, name string) int32 {
+	ns.Lock()
+	defer ns.Unlock()
 
 	defer catchPanic()
 
-	gRet, pDirent := ns.DentryDBGet(pinode, name)
+	gRet, pDirent := ns.dentryDBGet(pinode, name)
 	if gRet != 0 {
 		return gRet
 	}
@@ -445,37 +487,50 @@ func (ns *nameSpace) DeleteFileDirect(pinode uint64, name string) int32 {
 	}
 
 	for _, v := range inodeInfo.Chunks {
-		ns.ReleaseBlockGroup(v.BlockGroupID, v.ChunkSize)
+		ns.releaseBlockGroup(v.BlockGroupID, v.ChunkSize)
 	}
 
-	ns.InodeDBDelete(pDirent.Inode)
-	ns.DentryDBDelete(pinode, name)
+	ns.inodeDBDelete(pDirent.Inode)
+	ns.dentryDBDelete(pinode, name)
 
 	return 0
 }
 
 //DeleteSymLinkDirect ...
 func (ns *nameSpace) DeleteSymLinkDirect(pinode uint64, name string) int32 {
+	ns.Lock()
+	defer ns.Unlock()
 
 	defer catchPanic()
 
-	ns.SymLinkDBDelete(pinode)
-	ns.DentryDBDelete(pinode, name)
+	ns.symLinkDBDelete(pinode)
+	ns.dentryDBDelete(pinode, name)
 
 	return 0
 }
 
 //GetFileChunksDirect ...
 func (ns *nameSpace) GetFileChunksDirect(pinode uint64, name string) (int32, []*mp.ChunkInfo, uint64) {
+	ns.RLock()
+	defer ns.RUnlock()
 
 	defer catchPanic()
 
-	gRet, dirent := ns.DentryDBGet(pinode, name)
+	//to check parent dir's existence
+	if err, _ := ns.inodeDBGet(pinode); err != nil {
+		if err == raftopt.ErrKeyNotFound {
+			return utils.ENOTFOUND, nil, 0
+		} else {
+			return 2, nil, 0
+		}
+	}
+
+	gRet, dirent := ns.dentryDBGet(pinode, name)
 	if gRet != 0 {
 		return gRet, nil, 0
 	}
-	ok, pInodeInfo := ns.InodeDBGet(dirent.Inode)
-	if !ok {
+	err, pInodeInfo := ns.inodeDBGet(dirent.Inode)
+	if err != nil {
 		return 1, nil, 0
 	}
 	return 0, pInodeInfo.Chunks, dirent.Inode
@@ -483,14 +538,16 @@ func (ns *nameSpace) GetFileChunksDirect(pinode uint64, name string) (int32, []*
 
 //AllocateChunk ...
 func (ns *nameSpace) AllocateChunk() (int32, *mp.ChunkInfoWithBG) {
+	ns.Lock()
+	defer ns.Unlock()
 
 	defer catchPanic()
 
 	var chunkInfo = mp.ChunkInfoWithBG{}
-	ret, _, blockGroup := ns.ChooseBlockGroup()
+	ret, _, blockGroup := ns.chooseBlockGroup()
 
 	if ret != 0 {
-		logger.Error("AllocateChunk ChooseBlockGroup Failed ret :%v", ret)
+		logger.Error("AllocateChunk chooseBlockGroup Failed ret :%v", ret)
 		return ret, nil //ENOSPC
 	}
 
@@ -510,19 +567,21 @@ func (ns *nameSpace) AllocateChunk() (int32, *mp.ChunkInfoWithBG) {
 
 //SyncChunk ...
 func (ns *nameSpace) SyncChunk(pinode uint64, name string, chunkinfo *mp.ChunkInfo) int32 {
+	ns.Lock()
+	defer ns.Unlock()
 
 	defer catchPanic()
 
 	var ret int32
 
-	gRet, dirent := ns.DentryDBGet(pinode, name)
+	gRet, dirent := ns.dentryDBGet(pinode, name)
 	if gRet != 0 {
 		ret = 2 /*ENOENT*/
 		return ret
 	}
 
-	ok, inodeInfo := ns.InodeDBGet(dirent.Inode)
-	if !ok {
+	err, inodeInfo := ns.inodeDBGet(dirent.Inode)
+	if err != nil {
 		ret = 2 /*ENOENT*/
 		return ret
 	}
@@ -549,16 +608,14 @@ func (ns *nameSpace) SyncChunk(pinode uint64, name string, chunkinfo *mp.ChunkIn
 		blockGroupUsed = chunkinfo.ChunkSize
 	}
 
-	err := ns.InodeDBSet(dirent.Inode, inodeInfo)
-	if err != nil {
-
+	if err := ns.inodeDBSet(dirent.Inode, inodeInfo); err != nil {
 		return 1
 	}
 
 	ns.Lock()
 
-	var pTmpBlockGroup *mp.BlockGroup
-	if ok, pTmpBlockGroup = ns.BlockGroupDBGet(chunkinfo.BlockGroupID); !ok {
+	ok, pTmpBlockGroup := ns.blockGroupDBGet(chunkinfo.BlockGroupID)
+	if !ok {
 		ns.Unlock()
 		return 2
 	}
@@ -569,7 +626,7 @@ func (ns *nameSpace) SyncChunk(pinode uint64, name string, chunkinfo *mp.ChunkIn
 		pTmpBlockGroup.Status = blockGroupFull
 	}
 
-	err = ns.BlockGroupDBSet(chunkinfo.BlockGroupID, pTmpBlockGroup)
+	err = ns.blockGroupDBSet(chunkinfo.BlockGroupID, pTmpBlockGroup)
 	if err != nil {
 		ns.Unlock()
 		return 1
@@ -582,21 +639,32 @@ func (ns *nameSpace) SyncChunk(pinode uint64, name string, chunkinfo *mp.ChunkIn
 
 //SyncChunk ...
 func (ns *nameSpace) AsyncChunk(pinode uint64, name string, chunkid uint64, commitSize uint32, blockGroupID uint64) int32 {
+	ns.Lock()
+	defer ns.Unlock()
 
 	defer catchPanic()
 
-	var ret int32
-
-	gRet, dirent := ns.DentryDBGet(pinode, name)
+	gRet, dirent := ns.dentryDBGet(pinode, name)
 	if gRet != 0 {
-		ret = 2 /*ENOENT*/
-		return ret
+		return gRet
 	}
 
-	ok, inodeInfo := ns.InodeDBGet(dirent.Inode)
-	if !ok {
-		ret = 2 /*ENOENT*/
-		return ret
+	err, inodeInfo := ns.inodeDBGet(dirent.Inode)
+	if err != nil {
+		if err == raftopt.ErrKeyNotFound {
+			return utils.ENOTFOUND
+		} else {
+			return 2
+		}
+	}
+
+	//to check parent dir's existence
+	if err, _ := ns.inodeDBGet(pinode); err != nil {
+		if err == raftopt.ErrKeyNotFound {
+			return utils.ENOTFOUND
+		} else {
+			return 2
+		}
 	}
 
 	inodeInfo.ModifiTime = time.Now().Unix()
@@ -623,33 +691,25 @@ func (ns *nameSpace) AsyncChunk(pinode uint64, name string, chunkid uint64, comm
 		blockGroupUsed = commitSize
 	}
 
-	err := ns.InodeDBSet(dirent.Inode, inodeInfo)
-	if err != nil {
-
+	if err = ns.inodeDBSet(dirent.Inode, inodeInfo); err != nil {
 		return 1
 	}
 
-	ns.Lock()
-
-	var pTmpBlockGroup *mp.BlockGroup
-	if ok, pTmpBlockGroup = ns.BlockGroupDBGet(blockGroupID); !ok {
-		ns.Unlock()
+	ok, pTmpBlockGroup := ns.blockGroupDBGet(blockGroupID)
+	if !ok {
 		return 2
 	}
-
 	pTmpBlockGroup.FreeSize = pTmpBlockGroup.FreeSize - int64(blockGroupUsed)
 
 	if pTmpBlockGroup.FreeSize <= utils.ChunkSize {
 		pTmpBlockGroup.Status = blockGroupFull
 	}
 
-	err = ns.BlockGroupDBSet(blockGroupID, pTmpBlockGroup)
+	err = ns.blockGroupDBSet(blockGroupID, pTmpBlockGroup)
 	if err != nil {
-		ns.Unlock()
 		return 1
 	}
 
-	ns.Unlock()
 	return 0
 
 }
@@ -659,14 +719,13 @@ const (
 	blockGroupFull = 2
 )
 
-//ChooseBlockGroup ...
-func (ns *nameSpace) ChooseBlockGroup() (int32, uint64, *mp.BlockGroupWithHost) {
-
+//chooseBlockGroup ...
+func (ns *nameSpace) chooseBlockGroup() (int32, uint64, *mp.BlockGroupWithHost) {
 	defer catchPanic()
 
 	var blockGroupIndexs []int
 
-	ret, bgs := ns.BlockGroupDBGetAll()
+	ret, bgs := ns.blockGroupDBGetAll()
 	if !ret {
 		return -1, 0, nil
 	}
@@ -695,7 +754,7 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, uint64, *mp.BlockGroupWithHost) 
 		ctx, _ := context.WithTimeout(context.Background(), 3*time.Second)
 		pGetBlockGroupByIDAck, err := vc.GetBlockGroupByID(ctx, pGetBlockGroupByIDReq)
 		if err != nil || pGetBlockGroupByIDAck.Ret != 0 {
-			logger.Error("ChooseBlockGroup GetBlockGroupByID failed ...")
+			logger.Error("chooseBlockGroup GetBlockGroupByID failed ...")
 			continue
 		} else {
 			if pGetBlockGroupByIDAck.BlockGroup.Status == 0 {
@@ -710,14 +769,12 @@ func (ns *nameSpace) ChooseBlockGroup() (int32, uint64, *mp.BlockGroupWithHost) 
 	return -3, 0, nil
 }
 
-//ReleaseBlockGroup ...
-func (ns *nameSpace) ReleaseBlockGroup(blockGroupID uint64, chunSize int32) {
+//releaseBlockGroup ...
+func (ns *nameSpace) releaseBlockGroup(blockGroupID uint64, chunSize int32) {
 
-	ns.Lock()
-	defer ns.Unlock()
 	defer catchPanic()
 
-	ok, blockGroup := ns.BlockGroupDBGet(blockGroupID)
+	ok, blockGroup := ns.blockGroupDBGet(blockGroupID)
 	if !ok {
 		return
 	}
@@ -738,12 +795,15 @@ func (ns *nameSpace) ReleaseBlockGroup(blockGroupID uint64, chunSize int32) {
 
 	}
 
-	ns.BlockGroupDBSet(blockGroupID, blockGroup)
+	ns.blockGroupDBSet(blockGroupID, blockGroup)
 
 }
 
 //SymLink ...
 func (ns *nameSpace) SymLink(pInode uint64, newName string, target string) (int32, uint64) {
+	ns.Lock()
+	defer ns.Unlock()
+
 	defer catchPanic()
 
 	/*update inode info*/
@@ -755,14 +815,14 @@ func (ns *nameSpace) SymLink(pInode uint64, newName string, target string) (int3
 		Target: target,
 	}
 
-	err = ns.SymLinkDBSet(inodeID, &tmpSymLinkInfo)
+	err = ns.symLinkDBSet(inodeID, &tmpSymLinkInfo)
 	if err != nil {
 		return 1, 0
 	}
 
-	err = ns.DentryDBSet(pInode, newName, utils.INODE_SYMLINK, inodeID)
+	err = ns.dentryDBSet(pInode, newName, utils.INODE_SYMLINK, inodeID)
 	if err != nil {
-		ns.SymLinkDBDelete(inodeID)
+		ns.symLinkDBDelete(inodeID)
 		return 1, 0
 	}
 
@@ -771,11 +831,14 @@ func (ns *nameSpace) SymLink(pInode uint64, newName string, target string) (int3
 
 //SymLink ...
 func (ns *nameSpace) ReadLink(inode uint64) (int32, string) {
+	ns.RLock()
+	defer ns.RUnlock()
+
 	defer catchPanic()
 
 	var ret int32
 
-	ok, symLinkInfo := ns.SymLinkDBGet(inode)
+	ok, symLinkInfo := ns.symLinkDBGet(inode)
 	if !ok {
 		ret = 2 /*ENOENT*/
 		return ret, ""
@@ -794,28 +857,28 @@ func (ns *nameSpace) AllocateChunkID() (uint64, error) {
 	return ns.RaftGroup.ChunkIDGET(ns.RaftGroupID)
 }
 
-//InodeDBGet ...
-func (ns *nameSpace) InodeDBGet(inode uint64) (bool, *mp.InodeInfo) {
+//inodeDBGet ...
+func (ns *nameSpace) inodeDBGet(inode uint64) (error, *mp.InodeInfo) {
 
 	value, err := ns.RaftGroup.InodeGet(ns.RaftGroupID, inode)
 	if err != nil {
 		value, err = ns.RaftGroup.InodeGet(ns.RaftGroupID, inode)
 		if err != nil {
-			return false, nil
+			return err, nil
 		}
 	}
 
 	inodeInfo := mp.InodeInfo{}
 	err = pbproto.Unmarshal(value, &inodeInfo)
 	if err != nil {
-		return false, nil
+		return err, nil
 	}
 
-	return true, &inodeInfo
+	return nil, &inodeInfo
 }
 
-//InodeDBSet ...
-func (ns *nameSpace) InodeDBSet(inode uint64, v *mp.InodeInfo) error {
+//inodeDBSet ...
+func (ns *nameSpace) inodeDBSet(inode uint64, v *mp.InodeInfo) error {
 
 	val, _ := pbproto.Marshal(v)
 	err := ns.RaftGroup.InodeSet(ns.RaftGroupID, inode, val)
@@ -831,22 +894,22 @@ func (ns *nameSpace) InodeDBSet(inode uint64, v *mp.InodeInfo) error {
 
 }
 
-//InodeDBDelete ...
-func (ns *nameSpace) InodeDBDelete(inode uint64) error {
+//inodeDBDelete ...
+func (ns *nameSpace) inodeDBDelete(inode uint64) error {
 
 	err := ns.RaftGroup.InodeDel(ns.RaftGroupID, inode)
 	if err != nil {
 		err := ns.RaftGroup.InodeDel(ns.RaftGroupID, inode)
 		if err != nil {
-			logger.Error("InodeDBDelete vol:%v,key:%v,err:%v\n", ns.VolID, inode, err)
+			logger.Error("inodeDBDelete vol:%v,key:%v,err:%v\n", ns.VolID, inode, err)
 			return err
 		}
 	}
 	return nil
 }
 
-//InodeDBGet ...
-func (ns *nameSpace) SymLinkDBGet(inode uint64) (bool, *mp.SymLinkInfo) {
+//inodeDBGet ...
+func (ns *nameSpace) symLinkDBGet(inode uint64) (bool, *mp.SymLinkInfo) {
 
 	value, err := ns.RaftGroup.InodeGet(ns.RaftGroupID, inode)
 	if err != nil {
@@ -865,15 +928,15 @@ func (ns *nameSpace) SymLinkDBGet(inode uint64) (bool, *mp.SymLinkInfo) {
 	return true, &symLinkInfo
 }
 
-//InodeDBSet ...
-func (ns *nameSpace) SymLinkDBSet(inode uint64, v *mp.SymLinkInfo) error {
+//inodeDBSet ...
+func (ns *nameSpace) symLinkDBSet(inode uint64, v *mp.SymLinkInfo) error {
 
 	val, _ := pbproto.Marshal(v)
 	err := ns.RaftGroup.InodeSet(ns.RaftGroupID, inode, val)
 	if err != nil {
 		err := ns.RaftGroup.InodeSet(ns.RaftGroupID, inode, val)
 		if err != nil {
-			logger.Error("InodeSet vol:%v,key:%v,err:%v\n", ns.VolID, inode, err)
+			logger.Error("symLinkDBSet vol:%v,key:%v,err:%v\n", ns.VolID, inode, err)
 			return err
 		}
 	}
@@ -882,14 +945,14 @@ func (ns *nameSpace) SymLinkDBSet(inode uint64, v *mp.SymLinkInfo) error {
 
 }
 
-//InodeDBDelete ...
-func (ns *nameSpace) SymLinkDBDelete(inode uint64) error {
+//inodeDBDelete ...
+func (ns *nameSpace) symLinkDBDelete(inode uint64) error {
 
 	err := ns.RaftGroup.InodeDel(ns.RaftGroupID, inode)
 	if err != nil {
 		err := ns.RaftGroup.InodeDel(ns.RaftGroupID, inode)
 		if err != nil {
-			logger.Error("InodeDBDelete vol:%v,key:%v,err:%v\n", ns.VolID, inode, err)
+			logger.Error("symLinkDBDelete vol:%v,key:%v,err:%v\n", ns.VolID, inode, err)
 			return err
 		}
 	}
@@ -907,8 +970,15 @@ func decodeKey(key string) (uint64, string) {
 	return binary.BigEndian.Uint64([]byte(key)), string([]byte(key)[9:])
 }
 
-//DentryDBGet ...
-func (ns *nameSpace) DentryDBGet(pinode uint64, name string) (int32, *mp.Dirent) {
+func (ns *nameSpace) DentryDBGet(pinode uint64, name string) (ret int32, d *mp.Dirent) {
+	ns.RLock()
+	defer ns.RUnlock()
+	ret, d = ns.dentryDBGet(pinode, name)
+	return
+}
+
+//dentryDBGet ...
+func (ns *nameSpace) dentryDBGet(pinode uint64, name string) (int32, *mp.Dirent) {
 	value, err := ns.RaftGroup.DentryGet(ns.RaftGroupID, encodeKey(pinode, name))
 	if err != nil {
 		value, err = ns.RaftGroup.DentryGet(ns.RaftGroupID, encodeKey(pinode, name))
@@ -930,13 +1000,13 @@ func (ns *nameSpace) DentryDBGet(pinode uint64, name string) (int32, *mp.Dirent)
 	return 0, &dirent
 }
 
-func (ns *nameSpace) DentryGetRange(pinode uint64) (bool, []*mp.DirentN) {
+func (ns *nameSpace) dentryGetRange(pinode uint64) (bool, []*mp.DirentN) {
 
 	value, err := ns.RaftGroup.DentryGetRange(ns.RaftGroupID, encodeKey(pinode, ""), encodeKey(pinode+1, ""))
 	if err != nil {
 		value, err = ns.RaftGroup.DentryGetRange(ns.RaftGroupID, encodeKey(pinode, ""), encodeKey(pinode+1, ""))
 		if err != nil {
-			//logger.Error("DentryDBGet vol:%v,key:%v,err:%v\n", ns.VolID, dentryKey, err)
+			//logger.Error("dentryDBGet vol:%v,key:%v,err:%v\n", ns.VolID, dentryKey, err)
 			return false, nil
 		}
 	}
@@ -950,9 +1020,9 @@ func (ns *nameSpace) DentryGetRange(pinode uint64) (bool, []*mp.DirentN) {
 		if err != nil {
 			return false, []*mp.DirentN{}
 		}
-		logger.Debug("DentryGetRange key %v", v.K)
+		logger.Debug("dentryGetRange key %v", v.K)
 		pid, name := decodeKey(v.K)
-		logger.Debug("DentryGetRange decodeKey %v,%v", pid, name)
+		logger.Debug("dentryGetRange decodeKey %v,%v", pid, name)
 
 		direntN := mp.DirentN{Name: name, Inode: dirent.Inode, InodeType: dirent.InodeType}
 
@@ -964,15 +1034,8 @@ func (ns *nameSpace) DentryGetRange(pinode uint64) (bool, []*mp.DirentN) {
 
 }
 
-/*
-//BlockGroupDBGet ...
-func (ns *nameSpace) DentryDBGetAll() (*map[string][]byte, error) {
-	return ns.RaftGroup.DentryGetAll(ns.RaftGroupID)
-}
-*/
-
-//DentryDBSet ...
-func (ns *nameSpace) DentryDBSet(pinode uint64, name string, inodeType uint32, inode uint64) error {
+//dentryDBSet ...
+func (ns *nameSpace) dentryDBSet(pinode uint64, name string, inodeType uint32, inode uint64) error {
 
 	dirent := &mp.Dirent{InodeType: inodeType, Inode: inode}
 
@@ -982,7 +1045,7 @@ func (ns *nameSpace) DentryDBSet(pinode uint64, name string, inodeType uint32, i
 	if err != nil {
 		err := ns.RaftGroup.DentrySet(ns.RaftGroupID, encodeKey(pinode, name), val)
 		if err != nil {
-			logger.Error("DentryDBSet vol:%v,key:%v,err:%v\n", ns.VolID, encodeKey(pinode, name), err)
+			logger.Error("dentryDBSet vol:%v,key:%v,err:%v\n", ns.VolID, encodeKey(pinode, name), err)
 			return err
 		}
 	}
@@ -991,28 +1054,34 @@ func (ns *nameSpace) DentryDBSet(pinode uint64, name string, inodeType uint32, i
 
 }
 
-//DentryDBDelete ...
-func (ns *nameSpace) DentryDBDelete(pinode uint64, name string) error {
+//dentryDBDelete ...
+func (ns *nameSpace) dentryDBDelete(pinode uint64, name string) error {
 
 	err := ns.RaftGroup.DentryDel(ns.RaftGroupID, encodeKey(pinode, name))
 	if err != nil {
 		err := ns.RaftGroup.DentryDel(ns.RaftGroupID, encodeKey(pinode, name))
 		if err != nil {
-			logger.Error("DentryDBDelete vol:%v,key:%v,err:%v\n", ns.VolID, encodeKey(pinode, name), err)
+			logger.Error("dentryDBDelete vol:%v,key:%v,err:%v\n", ns.VolID, encodeKey(pinode, name), err)
 			return err
 		}
 	}
 
 	return nil
 }
+func (ns *nameSpace) BlockGroupDBGet(k uint64) (ret bool, bg *mp.BlockGroup) {
+	ns.RLock()
+	defer ns.RUnlock()
+	ret, bg = ns.blockGroupDBGet(k)
+	return
+}
 
-//BlockGroupDBGet ...
-func (ns *nameSpace) BlockGroupDBGet(k uint64) (bool, *mp.BlockGroup) {
+//blockGroupDBGet ...
+func (ns *nameSpace) blockGroupDBGet(k uint64) (bool, *mp.BlockGroup) {
 	value, err := ns.RaftGroup.BGGet(ns.RaftGroupID, k)
 	if err != nil {
 		value, err = ns.RaftGroup.BGGet(ns.RaftGroupID, k)
 		if err != nil {
-			logger.Error("BlockGroupDBGet vol:%v,key:%v,err:%v\n", ns.VolID, k, err)
+			logger.Error("blockGroupDBGet vol:%v,key:%v,err:%v\n", ns.VolID, k, err)
 			return false, nil
 		}
 	}
@@ -1026,21 +1095,21 @@ func (ns *nameSpace) BlockGroupDBGet(k uint64) (bool, *mp.BlockGroup) {
 
 }
 
-//BlockGroupDBSet ...
-func (ns *nameSpace) BlockGroupDBSet(k uint64, v *mp.BlockGroup) error {
+//blockGroupDBSet ...
+func (ns *nameSpace) blockGroupDBSet(k uint64, v *mp.BlockGroup) error {
 	val, _ := pbproto.Marshal(v)
 	err := ns.RaftGroup.BGSet(ns.RaftGroupID, k, val)
 	if err != nil {
 		err := ns.RaftGroup.BGSet(ns.RaftGroupID, k, val)
 		if err != nil {
-			logger.Error("BlockGroupDBSet vol:%v,key:%v,err=%v\n", ns.VolID, k, err)
+			logger.Error("blockGroupDBSet vol:%v,key:%v,err=%v\n", ns.VolID, k, err)
 			return err
 		}
 	}
 	return nil
 }
 
-func (ns *nameSpace) BlockGroupDBGetAll() (bool, []*mp.BlockGroup) {
+func (ns *nameSpace) blockGroupDBGetAll() (bool, []*mp.BlockGroup) {
 
 	value, err := ns.RaftGroup.BGGetAll(ns.RaftGroupID)
 	if err != nil {
