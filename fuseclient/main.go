@@ -115,6 +115,7 @@ var _ fs.NodeRemover = (*dir)(nil)
 var _ fs.NodeRenamer = (*dir)(nil)
 var _ fs.NodeFsyncer = (*dir)(nil)
 var _ fs.NodeSymlinker = (*dir)(nil)
+var _ fs.NodeLinker = (*dir)(nil)
 var _ fs.NodeRequestLookuper = (*dir)(nil)
 var _ fs.HandleReadDirAller = (*dir)(nil)
 
@@ -549,6 +550,10 @@ func (d *dir) Symlink(ctx context.Context, req *fuse.SymlinkRequest) (fs.Node, e
 	d.active[req.NewName] = &refcount{node: child}
 
 	return child, nil
+}
+
+func (d *dir) Linker(ctx context.Context, req *fuse.LinkRequest) (fs.Node, error) {
+
 }
 
 // Fsync ...
