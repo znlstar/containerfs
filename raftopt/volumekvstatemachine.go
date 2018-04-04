@@ -15,11 +15,12 @@ import (
 	"time"
 
 	pbproto "github.com/golang/protobuf/proto"
+	"github.com/google/btree"
 	"github.com/tiglabs/containerfs/logger"
 	log "github.com/tiglabs/containerfs/logger"
 	kvp "github.com/tiglabs/containerfs/proto/kvp"
+	"github.com/tiglabs/containerfs/raftopt/btreeinstance"
 	com "github.com/tiglabs/containerfs/raftopt/common"
-	btree "github.com/tiglabs/containerfs/raftopt/common/BTree"
 	"github.com/tiglabs/raft"
 	"github.com/tiglabs/raft/proto"
 	"github.com/tiglabs/raft/storage/wal"
@@ -50,9 +51,9 @@ type VolumeKvStateMachine struct {
 	applied uint64
 	raft    *raft.RaftServer
 
-	dentryItem btree.DentryKV
-	inodeItem  btree.InodeKV
-	bgItem     btree.BGKV
+	dentryItem btreeinstance.DentryKV
+	inodeItem  btreeinstance.InodeKV
+	bgItem     btreeinstance.BGKV
 
 	dentryData     *btree.BTree
 	inodeData      *btree.BTree
@@ -161,32 +162,32 @@ func (ms *VolumeKvStateMachine) DentryGet(raftGroupID uint64, key string) ([]byt
 		return nil, errors.New("not leader")
 	}
 
-	var item btree.DentryKV
+	var item btreeinstance.DentryKV
 	item.K = key
 	newItem := ms.dentryData.Get(item)
 
 	if newItem != nil {
-		return newItem.(btree.DentryKV).V, nil
+		return newItem.(btreeinstance.DentryKV).V, nil
 	}
 	return []byte{}, ErrKeyNotFound
 
 }
 
-func (ms *VolumeKvStateMachine) DentryGetRange(raftGroupID uint64, minKey string, maxKey string) ([]btree.DentryKV, error) {
+func (ms *VolumeKvStateMachine) DentryGetRange(raftGroupID uint64, minKey string, maxKey string) ([]btreeinstance.DentryKV, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
 	}
 
-	var v []btree.DentryKV
+	var v []btreeinstance.DentryKV
 
-	var itemMin btree.DentryKV
+	var itemMin btreeinstance.DentryKV
 	itemMin.K = minKey
 
-	var itemMax btree.DentryKV
+	var itemMax btreeinstance.DentryKV
 	itemMax.K = maxKey
 
 	ms.dentryData.AscendRange(itemMin, itemMax, func(a btree.Item) bool {
-		v = append(v, a.(btree.DentryKV))
+		v = append(v, a.(btreeinstance.DentryKV))
 		return true
 	})
 
@@ -244,12 +245,12 @@ func (ms *VolumeKvStateMachine) InodeGet(raftGroupID uint64, key uint64) ([]byte
 		return nil, errors.New("not leader")
 	}
 
-	var item btree.InodeKV
+	var item btreeinstance.InodeKV
 	item.K = key
 	newItem := ms.inodeData.Get(item)
 
 	if newItem != nil {
-		return newItem.(btree.InodeKV).V, nil
+		return newItem.(btreeinstance.InodeKV).V, nil
 	}
 	return []byte{}, ErrKeyNotFound
 
@@ -307,12 +308,12 @@ func (ms *VolumeKvStateMachine) BGGet(raftGroupID uint64, key uint64) ([]byte, e
 		return nil, errors.New("not leader")
 	}
 
-	var item btree.BGKV
+	var item btreeinstance.BGKV
 	item.K = key
 	newItem := ms.blockGroupData.Get(item)
 
 	if newItem != nil {
-		return newItem.(btree.BGKV).V, nil
+		return newItem.(btreeinstance.BGKV).V, nil
 	}
 	return []byte{}, errNotExists
 
@@ -342,15 +343,15 @@ func (ms *VolumeKvStateMachine) BGSet(raftGroupID uint64, key uint64, value []by
 }
 
 //BGGetAll ...
-func (ms *VolumeKvStateMachine) BGGetAll(raftGroupID uint64) ([]btree.BGKV, error) {
+func (ms *VolumeKvStateMachine) BGGetAll(raftGroupID uint64) ([]btreeinstance.BGKV, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
 	}
 
-	var v []btree.BGKV
+	var v []btreeinstance.BGKV
 
 	ms.blockGroupData.Ascend(func(a btree.Item) bool {
-		v = append(v, a.(btree.BGKV))
+		v = append(v, a.(btreeinstance.BGKV))
 		return true
 	})
 
@@ -603,18 +604,18 @@ func (s *volumeKvSnapshot) Next() ([]byte, error) {
 		kv.Opt = OPT_SET_BG
 
 		s.bgTree.AscendGreaterOrEqual(s.curBgItem, func(a btree.Item) bool {
-			if a.(btree.BGKV).K > s.curBgItem.(btree.BGKV).K {
-				kv.K = strconv.Itoa(int(a.(btree.BGKV).K))
-				kv.V = a.(btree.BGKV).V
+			if a.(btreeinstance.BGKV).K > s.curBgItem.(btreeinstance.BGKV).K {
+				kv.K = strconv.Itoa(int(a.(btreeinstance.BGKV).K))
+				kv.V = a.(btreeinstance.BGKV).V
 				s.curBgItem = a
 				return false
 			}
-			kv.K = strconv.Itoa(int(a.(btree.BGKV).K))
-			kv.V = a.(btree.BGKV).V
+			kv.K = strconv.Itoa(int(a.(btreeinstance.BGKV).K))
+			kv.V = a.(btreeinstance.BGKV).V
 			return true
 		})
 
-		if s.curBgItem.(btree.BGKV).K == s.bgTree.Max().(btree.BGKV).K {
+		if s.curBgItem.(btreeinstance.BGKV).K == s.bgTree.Max().(btreeinstance.BGKV).K {
 			s.curBtree = "inode"
 		}
 
@@ -630,18 +631,18 @@ func (s *volumeKvSnapshot) Next() ([]byte, error) {
 		kv.Opt = OPT_SET_INODE
 
 		s.inodeTree.AscendGreaterOrEqual(s.curInodeItem, func(a btree.Item) bool {
-			if a.(btree.InodeKV).K > s.curInodeItem.(btree.InodeKV).K {
-				kv.K = strconv.FormatUint(a.(btree.InodeKV).K, 10)
-				kv.V = a.(btree.InodeKV).V
+			if a.(btreeinstance.InodeKV).K > s.curInodeItem.(btreeinstance.InodeKV).K {
+				kv.K = strconv.FormatUint(a.(btreeinstance.InodeKV).K, 10)
+				kv.V = a.(btreeinstance.InodeKV).V
 				s.curInodeItem = a
 				return false
 			}
-			kv.K = strconv.FormatUint(a.(btree.InodeKV).K, 10)
-			kv.V = a.(btree.InodeKV).V
+			kv.K = strconv.FormatUint(a.(btreeinstance.InodeKV).K, 10)
+			kv.V = a.(btreeinstance.InodeKV).V
 			return true
 		})
 
-		if s.curInodeItem.(btree.InodeKV).K == s.inodeTree.Max().(btree.InodeKV).K {
+		if s.curInodeItem.(btreeinstance.InodeKV).K == s.inodeTree.Max().(btreeinstance.InodeKV).K {
 			s.curBtree = "dentry"
 		}
 
@@ -655,18 +656,18 @@ func (s *volumeKvSnapshot) Next() ([]byte, error) {
 		kv.Opt = OPT_SET_DENTRY
 
 		s.dentryTree.AscendGreaterOrEqual(s.curDentryItem, func(a btree.Item) bool {
-			if a.(btree.DentryKV).K > s.curDentryItem.(btree.DentryKV).K {
-				kv.K = a.(btree.DentryKV).K
-				kv.V = a.(btree.DentryKV).V
+			if a.(btreeinstance.DentryKV).K > s.curDentryItem.(btreeinstance.DentryKV).K {
+				kv.K = a.(btreeinstance.DentryKV).K
+				kv.V = a.(btreeinstance.DentryKV).V
 				s.curDentryItem = a
 				return false
 			}
-			kv.K = a.(btree.DentryKV).K
-			kv.V = a.(btree.DentryKV).V
+			kv.K = a.(btreeinstance.DentryKV).K
+			kv.V = a.(btreeinstance.DentryKV).V
 			return true
 		})
 
-		if s.curDentryItem.(btree.DentryKV).K == s.dentryTree.Max().(btree.DentryKV).K {
+		if s.curDentryItem.(btreeinstance.DentryKV).K == s.dentryTree.Max().(btreeinstance.DentryKV).K {
 			s.curBtree = "done"
 		}
 
@@ -802,7 +803,7 @@ func TakeVolumeKvSnapShot(ms *VolumeKvStateMachine, rsg *wal.Storage, path strin
 
 	ms.dentryData.Ascend(func(a btree.Item) bool {
 
-		if data, err = json.Marshal(a.(btree.DentryKV)); err != nil {
+		if data, err = json.Marshal(a.(btreeinstance.DentryKV)); err != nil {
 			return false
 		}
 
@@ -823,7 +824,7 @@ func TakeVolumeKvSnapShot(ms *VolumeKvStateMachine, rsg *wal.Storage, path strin
 
 	ms.inodeData.Ascend(func(a btree.Item) bool {
 
-		if data, err = json.Marshal(a.(btree.InodeKV)); err != nil {
+		if data, err = json.Marshal(a.(btreeinstance.InodeKV)); err != nil {
 			return false
 		}
 
@@ -844,7 +845,7 @@ func TakeVolumeKvSnapShot(ms *VolumeKvStateMachine, rsg *wal.Storage, path strin
 
 	ms.blockGroupData.Ascend(func(a btree.Item) bool {
 
-		if data, err = json.Marshal(a.(btree.BGKV)); err != nil {
+		if data, err = json.Marshal(a.(btreeinstance.BGKV)); err != nil {
 			return false
 		}
 
@@ -899,7 +900,7 @@ func LoadVolumeKvSnapShot(ms *VolumeKvStateMachine, path string) (uint64, error)
 		return 0, err
 	}
 	buf := bufio.NewReader(fi)
-	var dentry btree.DentryKV
+	var dentry btreeinstance.DentryKV
 
 	for {
 		line, err := buf.ReadBytes('\n')
@@ -926,7 +927,7 @@ func LoadVolumeKvSnapShot(ms *VolumeKvStateMachine, path string) (uint64, error)
 		return 0, err
 	}
 	buf = bufio.NewReader(fi)
-	var inode btree.InodeKV
+	var inode btreeinstance.InodeKV
 
 	for {
 		line, err := buf.ReadBytes('\n')
@@ -953,7 +954,7 @@ func LoadVolumeKvSnapShot(ms *VolumeKvStateMachine, path string) (uint64, error)
 		return 0, err
 	}
 	buf = bufio.NewReader(fi)
-	var bg btree.BGKV
+	var bg btreeinstance.BGKV
 
 	for {
 		line, err := buf.ReadBytes('\n')
