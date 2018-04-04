@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
+	"time"
+
 	"github.com/tiglabs/containerfs/proto/mp"
 	"github.com/tiglabs/containerfs/proto/vp"
 	"github.com/tiglabs/containerfs/utils"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"time"
 )
 
 var (

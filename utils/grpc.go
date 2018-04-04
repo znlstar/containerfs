@@ -2,12 +2,13 @@ package utils
 
 import (
 	"errors"
+	"time"
+
 	"github.com/tiglabs/containerfs/logger"
 	"github.com/tiglabs/containerfs/proto/mp"
 	"github.com/tiglabs/containerfs/proto/vp"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"time"
 )
 
 // GetLeader ...

@@ -5,25 +5,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	pbproto "github.com/golang/protobuf/proto"
-	"github.com/tiglabs/containerfs/logger"
-	log "github.com/tiglabs/containerfs/logger"
-	"github.com/tiglabs/containerfs/proto/kvp"
-	"github.com/tiglabs/containerfs/proto/vp"
-	com "github.com/tiglabs/containerfs/raftopt/common"
-	"github.com/tiglabs/containerfs/raftopt/common/BTree"
-	"github.com/tiglabs/raft"
-	"github.com/tiglabs/raft/proto"
-	"github.com/tiglabs/raft/storage/wal"
 	"io"
 	"io/ioutil"
 	"os"
 	"path"
 	"strconv"
-	//strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	pbproto "github.com/golang/protobuf/proto"
+	"github.com/google/btree"
+	"github.com/tiglabs/containerfs/logger"
+	log "github.com/tiglabs/containerfs/logger"
+	"github.com/tiglabs/containerfs/proto/kvp"
+	"github.com/tiglabs/containerfs/proto/vp"
+	"github.com/tiglabs/containerfs/raftopt/btreeinstance"
+	com "github.com/tiglabs/containerfs/raftopt/common"
+	"github.com/tiglabs/raft"
+	"github.com/tiglabs/raft/proto"
+	"github.com/tiglabs/raft/storage/wal"
 )
 
 var (
@@ -64,22 +65,22 @@ type ClusterKvStateMachine struct {
 	bgIDLocker sync.Mutex
 	bgID       uint64
 
-	volItem btree.VOLKV
+	volItem btreeinstance.VOLKV
 	volData *btree.BTree
 
-	dataNodeItem btree.DataNodeKV
+	dataNodeItem btreeinstance.DataNodeKV
 	dataNodeData *btree.BTree
 
-	dataNodeBGPItem btree.DataNodeBGPKV
+	dataNodeBGPItem btreeinstance.DataNodeBGPKV
 	dataNodeBGPData *btree.BTree
 
-	metaNodeItem btree.MetaNodeKV
+	metaNodeItem btreeinstance.MetaNodeKV
 	metaNodeData *btree.BTree
 
-	blockGroupItem btree.BlockGroupKV
+	blockGroupItem btreeinstance.BlockGroupKV
 	blockGroupData *btree.BTree
 
-	mnrgItem btree.MNRGKV
+	mnrgItem btreeinstance.MNRGKV
 	mnrgData *btree.BTree
 }
 
@@ -215,7 +216,7 @@ func (ms *ClusterKvStateMachine) BlockGroupGet(key uint64) (*vp.BlockGroup, erro
 	// 	return nil, errors.New("not leader")
 	// }
 
-	var item btree.BlockGroupKV
+	var item btreeinstance.BlockGroupKV
 	item.K = key
 	newItem := ms.blockGroupData.Get(item)
 
@@ -223,7 +224,7 @@ func (ms *ClusterKvStateMachine) BlockGroupGet(key uint64) (*vp.BlockGroup, erro
 		return nil, errNotExists
 	}
 	blockGroup := &vp.BlockGroup{}
-	err := pbproto.Unmarshal(newItem.(btree.BlockGroupKV).V, blockGroup)
+	err := pbproto.Unmarshal(newItem.(btreeinstance.BlockGroupKV).V, blockGroup)
 	if err != nil {
 		return nil, err
 	}
@@ -285,10 +286,10 @@ func (ms *ClusterKvStateMachine) BlockGroupGetAll() ([]*vp.BlockGroup, error) {
 		return nil, errors.New("not leader")
 	}
 
-	var v []btree.BlockGroupKV
+	var v []btreeinstance.BlockGroupKV
 
 	ms.blockGroupData.Ascend(func(a btree.Item) bool {
-		v = append(v, a.(btree.BlockGroupKV))
+		v = append(v, a.(btreeinstance.BlockGroupKV))
 		return true
 	})
 
@@ -308,10 +309,10 @@ func (ms *ClusterKvStateMachine) DataNodeGetAll(raftGroupID uint64) ([]*vp.DataN
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
 	}
-	var v []btree.DataNodeKV
+	var v []btreeinstance.DataNodeKV
 
 	ms.dataNodeData.Ascend(func(a btree.Item) bool {
-		v = append(v, a.(btree.DataNodeKV))
+		v = append(v, a.(btreeinstance.DataNodeKV))
 		return true
 	})
 
@@ -332,13 +333,13 @@ func (ms *ClusterKvStateMachine) DataNodeGetRange(raftGroupID uint64, minKey str
 		return nil, errors.New("not leader")
 	}
 
-	var v []btree.DataNodeKV
+	var v []btreeinstance.DataNodeKV
 
-	var itemMin btree.DataNodeKV
+	var itemMin btreeinstance.DataNodeKV
 	itemMin.K = minKey
 
 	ms.dataNodeData.AscendGreaterOrEqual(itemMin, func(a btree.Item) bool {
-		v = append(v, a.(btree.DataNodeKV))
+		v = append(v, a.(btreeinstance.DataNodeKV))
 		return true
 	})
 
@@ -355,13 +356,13 @@ func (ms *ClusterKvStateMachine) DataNodeGetRange(raftGroupID uint64, minKey str
 }
 
 func (ms *ClusterKvStateMachine) DataNodeGet(raftGroupID uint64, key string) (*vp.DataNode, error) {
-	var item btree.DataNodeKV
+	var item btreeinstance.DataNodeKV
 	item.K = key
 	newItem := ms.dataNodeData.Get(item)
 
 	if newItem != nil {
 		dataNode := &vp.DataNode{}
-		err := pbproto.Unmarshal(newItem.(btree.DataNodeKV).V, dataNode)
+		err := pbproto.Unmarshal(newItem.(btreeinstance.DataNodeKV).V, dataNode)
 		if err != nil {
 			return nil, err
 		}
@@ -420,10 +421,10 @@ func (ms *ClusterKvStateMachine) DataNodeBGPGetAll() ([]*vp.DataNodeBGPS, error)
 	if !ms.raft.IsLeader(1) {
 		return nil, errors.New("not leader")
 	}
-	var v []btree.DataNodeBGPKV
+	var v []btreeinstance.DataNodeBGPKV
 
 	ms.dataNodeBGPData.Ascend(func(a btree.Item) bool {
-		v = append(v, a.(btree.DataNodeBGPKV))
+		v = append(v, a.(btreeinstance.DataNodeBGPKV))
 		return true
 	})
 	var err error
@@ -442,14 +443,14 @@ func (ms *ClusterKvStateMachine) DataNodeBGPGet(key string) (*vp.DataNodeBGPS, e
 	if !ms.raft.IsLeader(1) {
 		return nil, errors.New("not leader")
 	}
-	var item btree.DataNodeBGPKV
+	var item btreeinstance.DataNodeBGPKV
 	item.K = key
 	newItem := ms.dataNodeBGPData.Get(item)
 	if newItem == nil {
 		return nil, ErrKeyNotFound
 	}
 	dataNodeBGPS := &vp.DataNodeBGPS{}
-	err := pbproto.Unmarshal(newItem.(btree.DataNodeBGPKV).V, dataNodeBGPS)
+	err := pbproto.Unmarshal(newItem.(btreeinstance.DataNodeBGPKV).V, dataNodeBGPS)
 	if err != nil {
 		return nil, err
 	}
@@ -506,7 +507,7 @@ func (ms *ClusterKvStateMachine) DataNodeBGPDelBGP(key string, bgps []uint64) er
 	if !ms.raft.IsLeader(1) {
 		return errNotLeader
 	}
-	var item btree.DataNodeBGPKV
+	var item btreeinstance.DataNodeBGPKV
 	item.K = key
 	newItem := ms.dataNodeBGPData.Get(item)
 
@@ -514,7 +515,7 @@ func (ms *ClusterKvStateMachine) DataNodeBGPDelBGP(key string, bgps []uint64) er
 	var err error
 	tmpDataNodeBGP := &vp.DataNodeBGPS{Host: key}
 	if newItem != nil {
-		err = pbproto.Unmarshal(newItem.(btree.DataNodeBGPKV).V, tmpDataNodeBGP)
+		err = pbproto.Unmarshal(newItem.(btreeinstance.DataNodeBGPKV).V, tmpDataNodeBGP)
 		if err != nil {
 			logger.Error("parse failed: %v", err)
 			return err
@@ -545,7 +546,7 @@ func (ms *ClusterKvStateMachine) DataNodeBGPDelBGP(key string, bgps []uint64) er
 	return err
 }
 func (ms *ClusterKvStateMachine) DataNodeBGPAddBGP(key string, bgp uint64) error {
-	var item btree.DataNodeBGPKV
+	var item btreeinstance.DataNodeBGPKV
 	item.K = key
 	newItem := ms.dataNodeBGPData.Get(item)
 
@@ -553,7 +554,7 @@ func (ms *ClusterKvStateMachine) DataNodeBGPAddBGP(key string, bgp uint64) error
 	var err error
 	tmpDataNodeBGP := &vp.DataNodeBGPS{Host: key}
 	if newItem != nil {
-		err = pbproto.Unmarshal(newItem.(btree.DataNodeBGPKV).V, tmpDataNodeBGP)
+		err = pbproto.Unmarshal(newItem.(btreeinstance.DataNodeBGPKV).V, tmpDataNodeBGP)
 		if err != nil {
 			logger.Debug("parse failed: %v", err)
 			return err
@@ -632,7 +633,7 @@ func (ms *ClusterKvStateMachine) BGIDGET(raftGroupID uint64) (uint64, error) {
 }
 
 func (ms *ClusterKvStateMachine) VolumeGet(raftGroupID uint64, key string) (*vp.Volume, error) {
-	var item btree.VOLKV
+	var item btreeinstance.VOLKV
 	item.K = key
 	newItem := ms.volData.Get(item)
 
@@ -641,17 +642,17 @@ func (ms *ClusterKvStateMachine) VolumeGet(raftGroupID uint64, key string) (*vp.
 	}
 
 	volume := &vp.Volume{}
-	if err := pbproto.Unmarshal(newItem.(btree.VOLKV).V, volume); err != nil {
+	if err := pbproto.Unmarshal(newItem.(btreeinstance.VOLKV).V, volume); err != nil {
 		return nil, err
 	}
 	return volume, nil
 }
 
 func (ms *ClusterKvStateMachine) VolumeGetAll(raftGroupID uint64) ([]*vp.Volume, error) {
-	var v []btree.VOLKV
+	var v []btreeinstance.VOLKV
 
 	ms.volData.Ascend(func(a btree.Item) bool {
-		v = append(v, a.(btree.VOLKV))
+		v = append(v, a.(btreeinstance.VOLKV))
 		return true
 	})
 
@@ -713,10 +714,10 @@ func (ms *ClusterKvStateMachine) VolumeDel(raftGroupID uint64, key string) error
 
 }
 func (ms *ClusterKvStateMachine) MetaNodeGetAll(raftGroupID uint64) ([]*vp.MetaNode, error) {
-	var v []btree.MetaNodeKV
+	var v []btreeinstance.MetaNodeKV
 
 	ms.metaNodeData.Ascend(func(a btree.Item) bool {
-		v = append(v, a.(btree.MetaNodeKV))
+		v = append(v, a.(btreeinstance.MetaNodeKV))
 		return true
 	})
 
@@ -734,13 +735,13 @@ func (ms *ClusterKvStateMachine) MetaNodeGetAll(raftGroupID uint64) ([]*vp.MetaN
 
 // cluster ...
 func (ms *ClusterKvStateMachine) MetaNodeGetRange(raftGroupID uint64, minKey uint64) ([]*vp.MetaNode, error) {
-	var v []btree.MetaNodeKV
+	var v []btreeinstance.MetaNodeKV
 
-	var itemMin btree.MetaNodeKV
+	var itemMin btreeinstance.MetaNodeKV
 	itemMin.K = minKey
 
 	ms.dataNodeData.AscendGreaterOrEqual(itemMin, func(a btree.Item) bool {
-		v = append(v, a.(btree.MetaNodeKV))
+		v = append(v, a.(btreeinstance.MetaNodeKV))
 		return true
 	})
 
@@ -757,7 +758,7 @@ func (ms *ClusterKvStateMachine) MetaNodeGetRange(raftGroupID uint64, minKey uin
 }
 
 func (ms *ClusterKvStateMachine) MetaNodeGet(raftGroupID uint64, key uint64) (*vp.MetaNode, error) {
-	var item btree.MetaNodeKV
+	var item btreeinstance.MetaNodeKV
 	item.K = key
 	newItem := ms.metaNodeData.Get(item)
 
@@ -766,7 +767,7 @@ func (ms *ClusterKvStateMachine) MetaNodeGet(raftGroupID uint64, key uint64) (*v
 	}
 
 	metaNode := &vp.MetaNode{}
-	if err := pbproto.Unmarshal(newItem.(btree.MetaNodeKV).V, metaNode); err != nil {
+	if err := pbproto.Unmarshal(newItem.(btreeinstance.MetaNodeKV).V, metaNode); err != nil {
 		return nil, err
 	}
 	return metaNode, nil
@@ -821,7 +822,7 @@ func (ms *ClusterKvStateMachine) DelMetaNode(raftGroupID uint64, key uint64) err
 
 }
 func (ms *ClusterKvStateMachine) MetaNodeRGGet(key uint64) (*vp.MetaNodeRG, error) {
-	var item btree.MNRGKV
+	var item btreeinstance.MNRGKV
 	item.K = key
 	newItem := ms.mnrgData.Get(item)
 	if newItem == nil {
@@ -829,7 +830,7 @@ func (ms *ClusterKvStateMachine) MetaNodeRGGet(key uint64) (*vp.MetaNodeRG, erro
 	}
 
 	metaNodeRG := &vp.MetaNodeRG{}
-	err := pbproto.Unmarshal(newItem.(btree.MNRGKV).V, metaNodeRG)
+	err := pbproto.Unmarshal(newItem.(btreeinstance.MNRGKV).V, metaNodeRG)
 	if err != nil {
 		return nil, err
 	}
@@ -861,13 +862,13 @@ func (ms *ClusterKvStateMachine) MetaNodeRGSet(key uint64, metaNodeRG *vp.MetaNo
 	return nil
 }
 func (ms *ClusterKvStateMachine) MetaNodeRGGetRange(minKey uint64) ([]*vp.MetaNodeRG, error) {
-	var v []btree.MNRGKV
+	var v []btreeinstance.MNRGKV
 
-	var itemMin btree.MNRGKV
+	var itemMin btreeinstance.MNRGKV
 	itemMin.K = minKey
 
 	ms.mnrgData.AscendGreaterOrEqual(itemMin, func(a btree.Item) bool {
-		v = append(v, a.(btree.MNRGKV))
+		v = append(v, a.(btreeinstance.MNRGKV))
 		return true
 	})
 
@@ -884,10 +885,10 @@ func (ms *ClusterKvStateMachine) MetaNodeRGGetRange(minKey uint64) ([]*vp.MetaNo
 }
 func (ms *ClusterKvStateMachine) MetaNodeRGGetAll() ([]*vp.MetaNodeRG, error) {
 	logger.Debug("MetaNodeRGGetAll")
-	var v []btree.MNRGKV
+	var v []btreeinstance.MNRGKV
 
 	ms.mnrgData.Ascend(func(a btree.Item) bool {
-		v = append(v, a.(btree.MNRGKV))
+		v = append(v, a.(btreeinstance.MNRGKV))
 		return true
 	})
 
@@ -1216,7 +1217,7 @@ func TakeClusterKvSnapShot(ms *ClusterKvStateMachine, rsg *wal.Storage, dir stri
 	}
 	w = bufio.NewWriter(f)
 	ms.volData.Ascend(func(a btree.Item) bool {
-		if data, err = json.Marshal(a.(btree.VOLKV)); err != nil {
+		if data, err = json.Marshal(a.(btreeinstance.VOLKV)); err != nil {
 			return false
 		}
 		w.Write(data)
@@ -1232,7 +1233,7 @@ func TakeClusterKvSnapShot(ms *ClusterKvStateMachine, rsg *wal.Storage, dir stri
 	}
 	w = bufio.NewWriter(f)
 	ms.dataNodeData.Ascend(func(a btree.Item) bool {
-		if data, err = json.Marshal(a.(btree.DataNodeKV)); err != nil {
+		if data, err = json.Marshal(a.(btreeinstance.DataNodeKV)); err != nil {
 			return false
 		}
 		w.Write(data)
@@ -1248,7 +1249,7 @@ func TakeClusterKvSnapShot(ms *ClusterKvStateMachine, rsg *wal.Storage, dir stri
 	}
 	w = bufio.NewWriter(f)
 	ms.dataNodeBGPData.Ascend(func(a btree.Item) bool {
-		if data, err = json.Marshal(a.(btree.DataNodeBGPKV)); err != nil {
+		if data, err = json.Marshal(a.(btreeinstance.DataNodeBGPKV)); err != nil {
 			return false
 		}
 		w.Write(data)
@@ -1264,7 +1265,7 @@ func TakeClusterKvSnapShot(ms *ClusterKvStateMachine, rsg *wal.Storage, dir stri
 	}
 	w = bufio.NewWriter(f)
 	ms.metaNodeData.Ascend(func(a btree.Item) bool {
-		if data, err = json.Marshal(a.(btree.MetaNodeKV)); err != nil {
+		if data, err = json.Marshal(a.(btreeinstance.MetaNodeKV)); err != nil {
 			return false
 		}
 		w.Write(data)
@@ -1280,7 +1281,7 @@ func TakeClusterKvSnapShot(ms *ClusterKvStateMachine, rsg *wal.Storage, dir stri
 	}
 	w = bufio.NewWriter(f)
 	ms.blockGroupData.Ascend(func(a btree.Item) bool {
-		if data, err = json.Marshal(a.(btree.BlockGroupKV)); err != nil {
+		if data, err = json.Marshal(a.(btreeinstance.BlockGroupKV)); err != nil {
 			return false
 		}
 		w.Write(data)
@@ -1296,7 +1297,7 @@ func TakeClusterKvSnapShot(ms *ClusterKvStateMachine, rsg *wal.Storage, dir stri
 	}
 	w = bufio.NewWriter(f)
 	ms.mnrgData.Ascend(func(a btree.Item) bool {
-		if data, err = json.Marshal(a.(btree.MNRGKV)); err != nil {
+		if data, err = json.Marshal(a.(btreeinstance.MNRGKV)); err != nil {
 			return false
 		}
 		w.Write(data)
@@ -1356,7 +1357,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 	}
 	buf := bufio.NewReader(f)
 
-	var vol btree.VOLKV
+	var vol btreeinstance.VOLKV
 	for {
 		line, err := buf.ReadBytes('\n')
 		if err != nil {
@@ -1382,7 +1383,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 	}
 	buf = bufio.NewReader(f)
 
-	var dataNode btree.DataNodeKV
+	var dataNode btreeinstance.DataNodeKV
 	for {
 		line, err := buf.ReadBytes('\n')
 		if err != nil {
@@ -1408,7 +1409,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 	}
 	buf = bufio.NewReader(f)
 
-	var dataNodeBGP btree.DataNodeBGPKV
+	var dataNodeBGP btreeinstance.DataNodeBGPKV
 	for {
 		line, err := buf.ReadBytes('\n')
 		if err != nil {
@@ -1433,7 +1434,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 		return 0, nil
 	}
 	buf = bufio.NewReader(f)
-	var metaNode btree.MetaNodeKV
+	var metaNode btreeinstance.MetaNodeKV
 	for {
 		line, err := buf.ReadBytes('\n')
 		if err != nil {
@@ -1459,7 +1460,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 	}
 	buf = bufio.NewReader(f)
 
-	var blockGroup btree.BlockGroupKV
+	var blockGroup btreeinstance.BlockGroupKV
 	for {
 		line, err := buf.ReadBytes('\n')
 		if err != nil {
@@ -1485,7 +1486,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 	}
 	buf = bufio.NewReader(f)
 
-	var mnrg btree.MNRGKV
+	var mnrg btreeinstance.MNRGKV
 	for {
 		line, err := buf.ReadBytes('\n')
 		if err != nil {
