@@ -750,7 +750,7 @@ func (ns *nameSpace) chooseBlockGroup() (int32, uint64, *mp.BlockGroupWithHost) 
 	var blockGroup mp.BlockGroupWithHost
 
 	for _, v := range in {
-		pGetBlockGroupByIDReq.BlockGroupID = bgs[v].BlockGroupID
+		pGetBlockGroupByIDReq.BlockGroupID = bgs[blockGroupIndexs[v]].BlockGroupID
 		ctx, _ := context.WithTimeout(context.Background(), 3*time.Second)
 		pGetBlockGroupByIDAck, err := vc.GetBlockGroupByID(ctx, pGetBlockGroupByIDReq)
 		if err != nil || pGetBlockGroupByIDAck.Ret != 0 {
@@ -758,7 +758,7 @@ func (ns *nameSpace) chooseBlockGroup() (int32, uint64, *mp.BlockGroupWithHost) 
 			continue
 		} else {
 			if pGetBlockGroupByIDAck.BlockGroup.Status == 0 {
-				blockGroup.BlockGroupID = bgs[v].BlockGroupID
+				blockGroup.BlockGroupID = bgs[blockGroupIndexs[v]].BlockGroupID
 				blockGroup.Hosts = pGetBlockGroupByIDAck.BlockGroup.Hosts
 				return 0, blockGroup.BlockGroupID, &blockGroup
 			}
