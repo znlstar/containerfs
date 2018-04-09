@@ -4,4 +4,4 @@ clean:
 	rm build -rf
  
 build:
-	./make.sh	
+	sh ./make.sh	
