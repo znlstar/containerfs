@@ -6,7 +6,6 @@ import (
 	"path"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/tiglabs/containerfs/logger"
@@ -14,45 +13,9 @@ import (
 	"github.com/tiglabs/containerfs/proto/mp"
 	"github.com/tiglabs/containerfs/proto/vp"
 	"github.com/tiglabs/containerfs/raftopt"
-	com "github.com/tiglabs/containerfs/raftopt/common"
 	"github.com/tiglabs/containerfs/utils"
-	"github.com/tiglabs/raft"
-	"github.com/tiglabs/raft/proto"
-	"github.com/tiglabs/raft/storage/wal"
 	"golang.org/x/net/context"
 )
-
-var errNotLeader = fmt.Errorf("not leader")
-
-type VolMgrServerAddr struct {
-	Host   string
-	NodeID uint64
-	Peers  []proto.Peer
-	Ips    []string
-	Waldir string
-	Log    string
-}
-
-var va VolMgrServerAddr
-
-type Cluster struct {
-	sync.Mutex
-	RaftGroup   *raftopt.ClusterKvStateMachine
-	RaftStorage *wal.Storage
-	IsLoaded    bool
-}
-
-type VolMgrServer struct {
-	NodeID          uint64
-	Addr            *com.Address
-	Resolver        com.Resolver
-	RaftServer      *raft.RaftServer
-	Cluster         *Cluster
-	wg              sync.WaitGroup
-	BgStatusMap     map[uint64]int32
-	BgStatusMapSync sync.Mutex
-	sync.Mutex
-}
 
 func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.CreateVolAck, error) {
 
