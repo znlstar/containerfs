@@ -3,57 +3,21 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
-	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"runtime"
 	"strconv"
 	"strings"
-	//"sync"
-	"time"
 
-	"github.com/tiglabs/containerfs/volmgr"
 	"github.com/tiglabs/containerfs/logger"
-	"github.com/tiglabs/containerfs/proto/vp"
 	"github.com/tiglabs/containerfs/raftopt"
-	com "github.com/tiglabs/containerfs/raftopt/common"
 	"github.com/tiglabs/containerfs/utils"
-	//"github.com/tiglabs/raft"
+	"github.com/tiglabs/containerfs/volmgr"
 	"github.com/tiglabs/raft/proto"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
-
 )
 
-
 var Va volmgr.VolMgrServerAddr
-
-func startVolMgrService(volMgrServer *volmgr.VolMgrServer) {
-
-	lis, err := net.Listen("tcp", volMgrServer.Addr.Grpc)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to listen on:%v", volMgrServer.Addr.Grpc))
-	}
-	s := grpc.NewServer()
-	vp.RegisterVolMgrServer(s, volMgrServer)
-	// Register reflection service on gRPC server.
-	reflection.Register(s)
-	if err := s.Serve(lis); err != nil {
-		panic("Failed to serve")
-	}
-}
-
-func load(vs *volmgr.VolMgrServer, va *volmgr.VolMgrServerAddr) error {
-	sm, sg, err := raftopt.CreateClusterKvStateMachine(vs.RaftServer, va.Peers, va.NodeID, va.Waldir, "Cluster", 1)
-	if err != nil {
-		return err
-	}
-	vs.Cluster = &volmgr.Cluster{RaftGroup: sm, RaftStorage: sg}
-	logger.Debug("VolMgrServer.load success...")
-	return nil
-}
 
 func init() {
 
@@ -105,102 +69,31 @@ func parsePeers(peersstr []string) (peers []proto.Peer, err error) {
 	return
 }
 
-func showLeaders(s *volmgr.VolMgrServer) {
-	l, t := s.RaftServer.LeaderTerm(1)
-	logger.Debug("--------- RaftGroup LeaderID %v Term %v ---------", l, t)
-	return
-
-}
-
-func logleveldebug(w http.ResponseWriter, req *http.Request) {
-	logger.SetLevel(logger.DEBUG)
-	io.WriteString(w, "ok!\n")
-}
-
-func loglevelerror(w http.ResponseWriter, req *http.Request) {
-	logger.SetLevel(logger.ERROR)
-	io.WriteString(w, "ok!\n")
-}
-
 func main() {
 
-	//for multi-cpu scheduling
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
 
 	raftopt.AddInit(Va.Ips)
 
-	fmt.Println("VolMgrServerAddr:")
-	fmt.Println(Va)
+	fmt.Printf("VolMgrServerAddr: %v", Va)
 
-	var volMgrServer volmgr.VolMgrServer
-
-	volMgrServer.BgStatusMap = make(map[uint64]int32)
-	// resolver
-	r := raftopt.NewClusterResolver()
-	volMgrServer.Resolver = r
-
-	// address
-	addrInfo, ok := raftopt.ClusterAddrDatabase[Va.NodeID]
-	if !ok {
-		logger.Error("no such address info. nodeId: %d", Va.NodeID)
-	}
-	volMgrServer.Addr = addrInfo
-
-	//  new raft server
-	err := com.StartRaftServer(&volMgrServer.RaftServer, volMgrServer.Resolver, addrInfo, Va.NodeID)
+	vs, err := volmgr.NewVolMgrServer(&Va)
 	if err != nil {
-		logger.Error("StartRaftServer failed ...")
-		os.Exit(1)
+		logger.Fatal("init volmgr service failed: %v, volmgr stopped!", err)
 	}
-	logger.Debug("StartRaftServer success ...")
 
-	// parse peers
-	for _, p := range Va.Peers {
-		r.AddNode(p.ID, nil)
-	}
-	logger.Debug("AddNode success ...")
-
-	if err := load(&volMgrServer,&Va); err != nil {
-		logger.Error("loadMetaData failed: %v..", err)
+	if err = vs.Load(); err != nil {
+		logger.Fatal("load cluster data failed: %v, volmgr stopped!", err)
 		os.Exit(1)
 	}
 
-	http.HandleFunc("/logleveldebug", logleveldebug)
-	http.HandleFunc("/loglevelerror", loglevelerror)
+	http.HandleFunc("/logleveldebug", utils.Logleveldebug)
+	http.HandleFunc("/loglevelerror", utils.Loglevelerror)
 	go func() {
-		http.ListenAndServe(volMgrServer.Addr.Pprof, nil)
+		http.ListenAndServe(vs.Addr.Pprof, nil)
 	}()
-
-	ticker := time.NewTicker(time.Second * 10)
-	go func() {
-		for range ticker.C {
-			showLeaders(&volMgrServer)
-		}
-	}()
-
-	startClusterHealthCheck(&volMgrServer)
-
-	startVolMgrService(&volMgrServer)
-
-}
-
-func startClusterHealthCheck(s *volmgr.VolMgrServer) {
-	td := time.NewTicker(time.Second * 1)
-	go func() {
-		for range td.C {
-			if s.RaftServer.IsLeader(1) {
-				s.DetectDataNodes()
-			}
-		}
-	}()
-
-	tm := time.NewTicker(time.Second * 1)
-	go func() {
-		for range tm.C {
-			if s.RaftServer.IsLeader(1) {
-				s.DetectMetaNodes()
-			}
-		}
-	}()
+	vs.ShowLeaders()
+	vs.StartHealthCheck()
+	vs.StartService()
 }
