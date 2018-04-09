@@ -17,16 +17,16 @@ import (
 	"github.com/tiglabs/raft/proto"
 )
 
-var Va volmgr.VolMgrServerAddr
+var volmgrAddr volmgr.VolMgrServerAddr
 
 func init() {
 
-	flag.StringVar(&Va.Host, "host", "127.0.0.1", "ContainerFS VolMgr Host")
+	flag.StringVar(&volmgrAddr.Host, "host", "127.0.0.1", "ContainerFS VolMgr Host")
 	nodeid := flag.Int64("nodeid", 1, "ContainerFS VolMgr ID")
 	peers := flag.String("nodepeer", "1,2,3", "ContainerFS VolMgr peers")
 	ips := flag.String("nodeips", "127.0.0.1,127.0.0.1,127.0.0.1", "ContainerFS VolMgr ips")
-	flag.StringVar(&Va.Waldir, "wal", "/export/containerfs/VolMgr/data", "ContainerFS VolMgr waldir")
-	flag.StringVar(&Va.Log, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS VolMgr log")
+	flag.StringVar(&volmgrAddr.Waldir, "wal", "/export/containerfs/VolMgr/data", "ContainerFS VolMgr waldir")
+	flag.StringVar(&volmgrAddr.Log, "logpath", "/export/Logs/containerfs/logs/", "ContainerFS VolMgr log")
 	loglevel := flag.String("loglevel", "error", "ContainerFS VolMgr log level")
 
 	flag.Parse()
@@ -34,17 +34,18 @@ func init() {
 		fmt.Println(utils.Version())
 		os.Exit(0)
 	}
-	Va.NodeID = uint64(*nodeid)
-	Va.Ips = strings.Split(*ips, ",")
+	volmgrAddr.NodeID = uint64(*nodeid)
+	volmgrAddr.Ips = strings.Split(*ips, ",")
 	peerarray := strings.Split(*peers, ",")
 	var err error
-	Va.Peers, err = parsePeers(peerarray)
+	volmgrAddr.Peers, err = parsePeers(peerarray)
 	if err != nil {
-		logger.Error("parse peers failed!. peers=%v", peers)
+		logger.Fatal("parse peers failed!. peers=%v", peers)
+		os.Exit(1)
 	}
 
 	logger.SetConsole(true)
-	logger.SetRollingFile(Va.Log, "volmgr.log", 10, 100, logger.MB) //each 100M rolling
+	logger.SetRollingFile(volmgrAddr.Log, "volmgr.log", 10, 100, logger.MB) //each 100M rolling
 	switch *loglevel {
 	case "error":
 		logger.SetLevel(logger.ERROR)
@@ -55,6 +56,8 @@ func init() {
 	default:
 		logger.SetLevel(logger.ERROR)
 	}
+
+	logger.Info("VolMgrServerAddr: %v version %v", volmgrAddr, utils.Version())
 
 }
 
@@ -71,16 +74,14 @@ func parsePeers(peersstr []string) (peers []proto.Peer, err error) {
 
 func main() {
 
-	numCPU := runtime.NumCPU()
-	runtime.GOMAXPROCS(numCPU)
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	raftopt.AddInit(Va.Ips)
+	raftopt.AddInit(volmgrAddr.Ips)
 
-	fmt.Printf("VolMgrServerAddr: %v", Va)
-
-	vs, err := volmgr.NewVolMgrServer(&Va)
+	vs, err := volmgr.NewVolMgrServer(&volmgrAddr)
 	if err != nil {
 		logger.Fatal("init volmgr service failed: %v, volmgr stopped!", err)
+		os.Exit(1)
 	}
 
 	if err = vs.Load(); err != nil {
@@ -93,7 +94,6 @@ func main() {
 	go func() {
 		http.ListenAndServe(vs.Addr.Pprof, nil)
 	}()
-	vs.ShowLeaders()
-	vs.StartHealthCheck()
+
 	vs.StartService()
 }
