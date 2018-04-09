@@ -3,34 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
-	"net"
 	"os"
 	"runtime"
-	"runtime/debug"
 	"strings"
 
 	dt "github.com/tiglabs/containerfs/datanode"
 	"github.com/tiglabs/containerfs/logger"
-	"github.com/tiglabs/containerfs/proto/dp"
 	"github.com/tiglabs/containerfs/utils"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/reflection"
 )
-
-
-func startDataService() {
-
-	lis, err := net.Listen("tcp", dt.DtAddr.Host)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to listen on:%v", dt.DtAddr.Host))
-	}
-	s := grpc.NewServer()
-	dp.RegisterDataNodeServer(s, &dt.DataNodeServer{M2SReplClientStreamCache: make(map[uint64]*dt.M2SReplClientStream), C2MReplServerStreamCache: make(map[uint64]*dt.C2MReplServerStream)})
-	reflection.Register(s)
-	if err := s.Serve(lis); err != nil {
-		panic(fmt.Sprintf("Failed to start Serve on:%v", dt.DtAddr.Host))
-	}
-}
 
 func init() {
 
@@ -85,16 +65,6 @@ func init() {
 
 func main() {
 
-	numCPU := runtime.NumCPU()
-	runtime.GOMAXPROCS(numCPU)
-
-	defer func() {
-		if err := recover(); err != nil {
-			logger.Error("panic !!! :%v", err)
-			logger.Error("stacks:%v", string(debug.Stack()))
-		}
-	}()
-
-	startDataService()
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	dt.StartDataService()
 }
-
