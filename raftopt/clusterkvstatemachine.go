@@ -17,11 +17,10 @@ import (
 	pbproto "github.com/golang/protobuf/proto"
 	"github.com/google/btree"
 	"github.com/tiglabs/containerfs/logger"
-	log "github.com/tiglabs/containerfs/logger"
 	"github.com/tiglabs/containerfs/proto/kvp"
 	"github.com/tiglabs/containerfs/proto/vp"
 	"github.com/tiglabs/containerfs/raftopt/btreeinstance"
-	com "github.com/tiglabs/containerfs/raftopt/common"
+	"github.com/tiglabs/containerfs/raftopt/common"
 	"github.com/tiglabs/raft"
 	"github.com/tiglabs/raft/proto"
 	"github.com/tiglabs/raft/storage/wal"
@@ -31,26 +30,6 @@ var (
 	errNotExists   = errors.New("Key not exists")
 	errNotLeader   = errors.New("Not leader")
 	ErrKeyNotFound = errors.New("Key not found")
-)
-
-const (
-	OPT_ALLOCATE_RGID   = 1
-	OPT_ALLOCATE_BGID   = 2
-	OPT_SET_DATANODE    = 3
-	OPT_DEL_DATANODE    = 4
-	OPT_SET_DATANODEBGP = 5
-	OPT_DEL_DATANODEBGP = 6
-	OPT_SET_BGP         = 7
-	OPT_DEL_BGP         = 8
-	OPT_SET_VOL         = 9
-	OPT_DEL_VOL         = 10
-	OPT_SET_METANODE    = 11
-	OPT_DEL_METANODE    = 12
-	OPT_SET_MNRG        = 13
-	OPT_DEL_MNRG        = 14
-
-	//opt applied idx
-	OPT_APPLIED = 15
 )
 
 //KvStateMachine ...
@@ -71,8 +50,8 @@ type ClusterKvStateMachine struct {
 	dataNodeItem btreeinstance.DataNodeKV
 	dataNodeData *btree.BTree
 
-	dataNodeBGPItem btreeinstance.DataNodeBGPKV
-	dataNodeBGPData *btree.BTree
+	dataNodeBGItem btreeinstance.DataNodeBGKV
+	dataNodeBGData *btree.BTree
 
 	metaNodeItem btreeinstance.MetaNodeKV
 	metaNodeData *btree.BTree
@@ -86,15 +65,15 @@ type ClusterKvStateMachine struct {
 
 func newClusterKvStatemachine(id uint64, raft *raft.RaftServer) *ClusterKvStateMachine {
 	return &ClusterKvStateMachine{
-		id:              id,
-		raft:            raft,
-		blockGroupData:  btree.New(8),
-		dataNodeData:    btree.New(8),
-		dataNodeBGPData: btree.New(8),
-		volData:         btree.New(8),
-		metaNodeData:    btree.New(8),
-		mnrgData:        btree.New(8),
-		rgID:            1,
+		id:             id,
+		raft:           raft,
+		blockGroupData: btree.New(8),
+		dataNodeData:   btree.New(8),
+		dataNodeBGData: btree.New(8),
+		volData:        btree.New(8),
+		metaNodeData:   btree.New(8),
+		mnrgData:       btree.New(8),
+		rgID:           1,
 	}
 }
 
@@ -103,7 +82,7 @@ func CreateClusterKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID
 	wc := &wal.Config{}
 	raftStroage, err := wal.NewStorage(path.Join(dir, UUID, "wal"), wc)
 	if err != nil {
-		log.Error("new raft log stroage error: %v", err)
+		logger.Error("new raft log stroage error: %v", err)
 		return nil, nil, err
 	}
 
@@ -117,7 +96,7 @@ func CreateClusterKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID
 		return nil, nil, err
 	}
 
-	log.Debug("CreateKvStateMachine Success index : %v", index)
+	logger.Debug("CreateKvStateMachine Success index : %v", index)
 
 	rc := &raft.RaftConfig{
 		ID:           raftGroupID,
@@ -128,10 +107,10 @@ func CreateClusterKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID
 	}
 	err = rs.CreateRaft(rc)
 	if err != nil {
-		log.Error("creat raft failed. %v", err)
+		logger.Error("creat raft failed. %v", err)
 	}
 
-	log.Debug("CreateRaft Success index : %v", rc.Applied)
+	logger.Debug("CreateRaft Success index : %v", rc.Applied)
 
 	return kvsm, raftStroage, nil
 
@@ -160,20 +139,20 @@ func (ms *ClusterKvStateMachine) Apply(data []byte, index uint64) (interface{}, 
 		ms.dataNodeItem.K = kv.K
 		ms.dataNodeData.Delete(ms.dataNodeItem)
 
-	case OPT_SET_DATANODEBGP: // set OPT_SET_DATANODEBGP
-		ms.dataNodeBGPItem.K = kv.K
-		ms.dataNodeBGPItem.V = kv.V
-		ms.dataNodeBGPData.ReplaceOrInsert(ms.dataNodeBGPItem)
-	case OPT_DEL_DATANODEBGP: // del OPT_DEL_DATANODEBGP
-		ms.dataNodeBGPItem.K = kv.K
-		ms.dataNodeBGPData.Delete(ms.dataNodeBGPItem)
+	case OPT_SET_DATANODEBG: // set OPT_SET_DATANODEBG
+		ms.dataNodeBGItem.K = kv.K
+		ms.dataNodeBGItem.V = kv.V
+		ms.dataNodeBGData.ReplaceOrInsert(ms.dataNodeBGItem)
+	case OPT_DEL_DATANODEBG: // del OPT_DEL_DATANODEBG
+		ms.dataNodeBGItem.K = kv.K
+		ms.dataNodeBGData.Delete(ms.dataNodeBGItem)
 
-	case OPT_SET_BGP: // set OPT_SET_BGP
+	case OPT_SET_BG: // set OPT_SET_BG
 		uint64ID, _ := strconv.ParseUint(kv.K, 10, 64)
 		ms.blockGroupItem.K = uint64ID
 		ms.blockGroupItem.V = kv.V
 		ms.blockGroupData.ReplaceOrInsert(ms.blockGroupItem)
-	case OPT_DEL_BGP: // del OPT_DEL_BGP
+	case OPT_DEL_BG: // del OPT_DEL_BG
 		uint64ID, _ := strconv.ParseUint(kv.K, 10, 64)
 		ms.blockGroupItem.K = uint64ID
 		ms.blockGroupData.Delete(ms.blockGroupItem)
@@ -245,7 +224,7 @@ func (ms *ClusterKvStateMachine) BlockGroupSet(key uint64, blockGroup *vp.BlockG
 
 	var data []byte
 	k := strconv.FormatUint(key, 10)
-	kv := &kvp.Kv{Opt: OPT_SET_BGP, K: k, V: value}
+	kv := &kvp.Kv{Opt: OPT_SET_BG, K: k, V: value}
 
 	if data, err = pbproto.Marshal(kv); err != nil {
 		return err
@@ -266,7 +245,7 @@ func (ms *ClusterKvStateMachine) BlockGroupDel(raftGroupID uint64, key string) e
 	var data []byte
 	var err error
 
-	kv := &kvp.Kv{Opt: OPT_DEL_BGP, K: key}
+	kv := &kvp.Kv{Opt: OPT_DEL_BG, K: key}
 
 	if data, err = pbproto.Marshal(kv); err != nil {
 		return err
@@ -417,47 +396,47 @@ func (ms *ClusterKvStateMachine) DelDataNode(raftGroupID uint64, key string) err
 
 }
 
-func (ms *ClusterKvStateMachine) DataNodeBGPGetAll() ([]*vp.DataNodeBGPS, error) {
+func (ms *ClusterKvStateMachine) DataNodeBGGetAll() ([]*vp.DataNodeBGS, error) {
 	if !ms.raft.IsLeader(1) {
 		return nil, errors.New("not leader")
 	}
-	var v []btreeinstance.DataNodeBGPKV
+	var v []btreeinstance.DataNodeBGKV
 
-	ms.dataNodeBGPData.Ascend(func(a btree.Item) bool {
-		v = append(v, a.(btreeinstance.DataNodeBGPKV))
+	ms.dataNodeBGData.Ascend(func(a btree.Item) bool {
+		v = append(v, a.(btreeinstance.DataNodeBGKV))
 		return true
 	})
 	var err error
-	var dataNodeBGPS []*vp.DataNodeBGPS
+	var dataNodeBGS []*vp.DataNodeBGS
 	for _, vv := range v {
-		dataNodeBGP := &vp.DataNodeBGPS{}
-		if err = pbproto.Unmarshal(vv.V, dataNodeBGP); err != nil {
+		dataNodeBG := &vp.DataNodeBGS{}
+		if err = pbproto.Unmarshal(vv.V, dataNodeBG); err != nil {
 			return nil, err
 		}
-		dataNodeBGPS = append(dataNodeBGPS, dataNodeBGP)
+		dataNodeBGS = append(dataNodeBGS, dataNodeBG)
 	}
-	return dataNodeBGPS, nil
+	return dataNodeBGS, nil
 }
 
-func (ms *ClusterKvStateMachine) DataNodeBGPGet(key string) (*vp.DataNodeBGPS, error) {
+func (ms *ClusterKvStateMachine) DataNodeBGGet(key string) (*vp.DataNodeBGS, error) {
 	if !ms.raft.IsLeader(1) {
 		return nil, errors.New("not leader")
 	}
-	var item btreeinstance.DataNodeBGPKV
+	var item btreeinstance.DataNodeBGKV
 	item.K = key
-	newItem := ms.dataNodeBGPData.Get(item)
+	newItem := ms.dataNodeBGData.Get(item)
 	if newItem == nil {
 		return nil, ErrKeyNotFound
 	}
-	dataNodeBGPS := &vp.DataNodeBGPS{}
-	err := pbproto.Unmarshal(newItem.(btreeinstance.DataNodeBGPKV).V, dataNodeBGPS)
+	dataNodeBGS := &vp.DataNodeBGS{}
+	err := pbproto.Unmarshal(newItem.(btreeinstance.DataNodeBGKV).V, dataNodeBGS)
 	if err != nil {
 		return nil, err
 	}
-	return dataNodeBGPS, nil
+	return dataNodeBGS, nil
 }
 
-func (ms *ClusterKvStateMachine) DataNodeBGPSet(key string, dataNodeBGPS *vp.DataNodeBGPS) error {
+func (ms *ClusterKvStateMachine) DataNodeBGSet(key string, dataNodeBGS *vp.DataNodeBGS) error {
 	if !ms.raft.IsLeader(1) {
 		return errors.New("not leader")
 	}
@@ -465,11 +444,11 @@ func (ms *ClusterKvStateMachine) DataNodeBGPSet(key string, dataNodeBGPS *vp.Dat
 	var value []byte
 	var err error
 
-	if value, err = pbproto.Marshal(dataNodeBGPS); err != nil {
+	if value, err = pbproto.Marshal(dataNodeBGS); err != nil {
 		return err
 	}
 
-	kv := &kvp.Kv{Opt: OPT_SET_DATANODEBGP, K: key, V: value}
+	kv := &kvp.Kv{Opt: OPT_SET_DATANODEBG, K: key, V: value}
 	if data, err = pbproto.Marshal(kv); err != nil {
 		return err
 	}
@@ -482,14 +461,14 @@ func (ms *ClusterKvStateMachine) DataNodeBGPSet(key string, dataNodeBGPS *vp.Dat
 
 }
 
-func (ms *ClusterKvStateMachine) DelDataNodeBGP(key string) error {
+func (ms *ClusterKvStateMachine) DelDataNodeBG(key string) error {
 	if !ms.raft.IsLeader(1) {
 		return errors.New("not leader")
 	}
 	var data []byte
 	var err error
 
-	kv := &kvp.Kv{Opt: OPT_DEL_DATANODEBGP, K: key}
+	kv := &kvp.Kv{Opt: OPT_DEL_DATANODEBG, K: key}
 
 	if data, err = pbproto.Marshal(kv); err != nil {
 		return err
@@ -503,19 +482,19 @@ func (ms *ClusterKvStateMachine) DelDataNodeBGP(key string) error {
 
 }
 
-func (ms *ClusterKvStateMachine) DataNodeBGPDelBGP(key string, bgps []uint64) error {
+func (ms *ClusterKvStateMachine) DataNodeBGDelBG(key string, bgs []uint64) error {
 	if !ms.raft.IsLeader(1) {
 		return errNotLeader
 	}
-	var item btreeinstance.DataNodeBGPKV
+	var item btreeinstance.DataNodeBGKV
 	item.K = key
-	newItem := ms.dataNodeBGPData.Get(item)
+	newItem := ms.dataNodeBGData.Get(item)
 
 	var data, value []byte
 	var err error
-	tmpDataNodeBGP := &vp.DataNodeBGPS{Host: key}
+	tmpDataNodeBG := &vp.DataNodeBGS{Host: key}
 	if newItem != nil {
-		err = pbproto.Unmarshal(newItem.(btreeinstance.DataNodeBGPKV).V, tmpDataNodeBGP)
+		err = pbproto.Unmarshal(newItem.(btreeinstance.DataNodeBGKV).V, tmpDataNodeBG)
 		if err != nil {
 			logger.Error("parse failed: %v", err)
 			return err
@@ -523,21 +502,21 @@ func (ms *ClusterKvStateMachine) DataNodeBGPDelBGP(key string, bgps []uint64) er
 	}
 
 	tmpMap := make(map[uint64]struct{})
-	for _, bgp := range bgps {
-		tmpMap[bgp] = struct{}{}
+	for _, bg := range bgs {
+		tmpMap[bg] = struct{}{}
 	}
 
-	dataNodeBGP := &vp.DataNodeBGPS{Host: key}
-	for _, bgp := range tmpDataNodeBGP.BGPS {
-		if _, ok := tmpMap[bgp]; !ok {
-			dataNodeBGP.BGPS = append(dataNodeBGP.BGPS, bgp)
+	dataNodeBG := &vp.DataNodeBGS{Host: key}
+	for _, bg := range tmpDataNodeBG.BGS {
+		if _, ok := tmpMap[bg]; !ok {
+			dataNodeBG.BGS = append(dataNodeBG.BGS, bg)
 		}
 	}
-	if value, err = pbproto.Marshal(dataNodeBGP); err != nil {
+	if value, err = pbproto.Marshal(dataNodeBG); err != nil {
 		logger.Debug("serialize failed: %v", err)
 		return err
 	}
-	kv := &kvp.Kv{Opt: OPT_SET_DATANODEBGP, K: key, V: value}
+	kv := &kvp.Kv{Opt: OPT_SET_DATANODEBG, K: key, V: value}
 	if data, err = pbproto.Marshal(kv); err != nil {
 		return err
 	}
@@ -545,27 +524,27 @@ func (ms *ClusterKvStateMachine) DataNodeBGPDelBGP(key string, bgps []uint64) er
 	_, err = resp.Response()
 	return err
 }
-func (ms *ClusterKvStateMachine) DataNodeBGPAddBGP(key string, bgp uint64) error {
-	var item btreeinstance.DataNodeBGPKV
+func (ms *ClusterKvStateMachine) DataNodeBGAddBG(key string, bg uint64) error {
+	var item btreeinstance.DataNodeBGKV
 	item.K = key
-	newItem := ms.dataNodeBGPData.Get(item)
+	newItem := ms.dataNodeBGData.Get(item)
 
 	var data, value []byte
 	var err error
-	tmpDataNodeBGP := &vp.DataNodeBGPS{Host: key}
+	tmpDataNodeBG := &vp.DataNodeBGS{Host: key}
 	if newItem != nil {
-		err = pbproto.Unmarshal(newItem.(btreeinstance.DataNodeBGPKV).V, tmpDataNodeBGP)
+		err = pbproto.Unmarshal(newItem.(btreeinstance.DataNodeBGKV).V, tmpDataNodeBG)
 		if err != nil {
 			logger.Debug("parse failed: %v", err)
 			return err
 		}
 	}
-	tmpDataNodeBGP.BGPS = append(tmpDataNodeBGP.BGPS, bgp)
-	if value, err = pbproto.Marshal(tmpDataNodeBGP); err != nil {
+	tmpDataNodeBG.BGS = append(tmpDataNodeBG.BGS, bg)
+	if value, err = pbproto.Marshal(tmpDataNodeBG); err != nil {
 		logger.Debug("serialize failed: %v", err)
 		return err
 	}
-	kv := &kvp.Kv{Opt: OPT_SET_DATANODEBGP, K: key, V: value}
+	kv := &kvp.Kv{Opt: OPT_SET_DATANODEBG, K: key, V: value}
 	if data, err = pbproto.Marshal(kv); err != nil {
 		return err
 	}
@@ -974,9 +953,9 @@ func (ms *ClusterKvStateMachine) Snapshot() (proto.Snapshot, error) {
 	}
 	ss.snap[0] = &snapItem{tree: ms.volData, curItem: ms.volData.Min(), opt: OPT_SET_VOL}
 	ss.snap[1] = &snapItem{tree: ms.dataNodeData, curItem: ms.dataNodeData.Min(), opt: OPT_SET_DATANODE}
-	ss.snap[2] = &snapItem{tree: ms.dataNodeBGPData, curItem: ms.dataNodeBGPData.Min(), opt: OPT_SET_DATANODEBGP}
+	ss.snap[2] = &snapItem{tree: ms.dataNodeBGData, curItem: ms.dataNodeBGData.Min(), opt: OPT_SET_DATANODEBG}
 	ss.snap[3] = &snapItem{tree: ms.metaNodeData, curItem: ms.metaNodeData.Min(), opt: OPT_SET_METANODE}
-	ss.snap[4] = &snapItem{tree: ms.blockGroupData, curItem: ms.blockGroupData.Min(), opt: OPT_SET_BGP}
+	ss.snap[4] = &snapItem{tree: ms.blockGroupData, curItem: ms.blockGroupData.Min(), opt: OPT_SET_BG}
 	ss.snap[5] = &snapItem{tree: ms.mnrgData, curItem: ms.mnrgData.Min(), opt: OPT_SET_MNRG}
 
 	return ss, nil
@@ -1014,7 +993,7 @@ func (ms *ClusterKvStateMachine) ApplySnapshot(peers []proto.Peer, iter proto.Sn
 			case OPT_ALLOCATE_BGID:
 				uint64ID, _ = strconv.ParseUint(kv.K, 10, 64)
 				ms.bgID = uint64ID
-			case OPT_SET_BGP:
+			case OPT_SET_BG:
 				uintID, _ := strconv.ParseUint(kv.K, 10, 64)
 				ms.blockGroupItem.K = uintID
 				ms.blockGroupItem.V = kv.V
@@ -1243,13 +1222,13 @@ func TakeClusterKvSnapShot(ms *ClusterKvStateMachine, rsg *wal.Storage, dir stri
 	})
 	f.Close()
 
-	fpath = path.Join(dir, "dataNodeBGPData")
+	fpath = path.Join(dir, "dataNodeBGData")
 	if f, err = os.OpenFile(fpath, flag, perm); err != nil {
 		return err
 	}
 	w = bufio.NewWriter(f)
-	ms.dataNodeBGPData.Ascend(func(a btree.Item) bool {
-		if data, err = json.Marshal(a.(btreeinstance.DataNodeBGPKV)); err != nil {
+	ms.dataNodeBGData.Ascend(func(a btree.Item) bool {
+		if data, err = json.Marshal(a.(btreeinstance.DataNodeBGKV)); err != nil {
 			return false
 		}
 		w.Write(data)
@@ -1309,7 +1288,7 @@ func TakeClusterKvSnapShot(ms *ClusterKvStateMachine, rsg *wal.Storage, dir stri
 
 	err = rsg.Truncate(ms.applied)
 	if err != nil {
-		log.Error("TakeKvSnapShot Truncate failed index : %v , err :%v", ms.applied, err)
+		logger.Error("TakeKvSnapShot Truncate failed index : %v , err :%v", ms.applied, err)
 		return err
 	}
 
@@ -1328,7 +1307,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 	}
 	data, err := ioutil.ReadAll(f)
 	ms.applied, err = strconv.ParseUint(string(data), 10, 64)
-	log.Debug("ms.applied %v", ms.applied)
+	logger.Debug("ms.applied %v", ms.applied)
 	f.Close()
 
 	fpath = path.Join(dir, "rgid")
@@ -1338,7 +1317,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 	}
 	data, err = ioutil.ReadAll(f)
 	ms.rgID, err = strconv.ParseUint(string(data), 10, 64)
-	log.Debug("ms.rgID %v", ms.rgID)
+	logger.Debug("ms.rgID %v", ms.rgID)
 	f.Close()
 
 	fpath = path.Join(dir, "bgid")
@@ -1348,7 +1327,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 	}
 	data, err = ioutil.ReadAll(f)
 	ms.bgID, err = strconv.ParseUint(string(data), 10, 64)
-	log.Debug("ms.bgID %v", ms.bgID)
+	logger.Debug("ms.bgID %v", ms.bgID)
 	f.Close()
 
 	fpath = path.Join(dir, "volData")
@@ -1372,7 +1351,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 			f.Close()
 			return 0, err
 		}
-		log.Debug("vol %v", vol)
+		logger.Debug("vol %v", vol)
 		ms.volData.ReplaceOrInsert(vol)
 	}
 	f.Close()
@@ -1398,18 +1377,18 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 			f.Close()
 			return 0, err
 		}
-		log.Debug("dataNode %v", dataNode)
+		logger.Debug("dataNode %v", dataNode)
 		ms.dataNodeData.ReplaceOrInsert(dataNode)
 	}
 	f.Close()
 
-	fpath = path.Join(dir, "dataNodeBGPData")
+	fpath = path.Join(dir, "dataNodeBGData")
 	if f, err = os.Open(fpath); err != nil {
 		return 0, nil
 	}
 	buf = bufio.NewReader(f)
 
-	var dataNodeBGP btreeinstance.DataNodeBGPKV
+	var dataNodeBG btreeinstance.DataNodeBGKV
 	for {
 		line, err := buf.ReadBytes('\n')
 		if err != nil {
@@ -1419,13 +1398,13 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 			f.Close()
 			return 0, err
 		}
-		err = json.Unmarshal(line, &dataNodeBGP)
+		err = json.Unmarshal(line, &dataNodeBG)
 		if err != nil {
 			f.Close()
 			return 0, err
 		}
-		log.Debug("dataNodeBGP %v", dataNodeBGP)
-		ms.dataNodeBGPData.ReplaceOrInsert(dataNodeBGP)
+		logger.Debug("dataNodeBG %v", dataNodeBG)
+		ms.dataNodeBGData.ReplaceOrInsert(dataNodeBG)
 	}
 	f.Close()
 
@@ -1449,7 +1428,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 			f.Close()
 			return 0, err
 		}
-		log.Debug("metaNode %v", metaNode)
+		logger.Debug("metaNode %v", metaNode)
 		ms.metaNodeData.ReplaceOrInsert(metaNode)
 	}
 	f.Close()
@@ -1475,7 +1454,7 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 			f.Close()
 			return 0, err
 		}
-		log.Debug("blockGroup %v", blockGroup)
+		logger.Debug("blockGroup %v", blockGroup)
 		ms.blockGroupData.ReplaceOrInsert(blockGroup)
 	}
 	f.Close()
@@ -1501,12 +1480,12 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 			f.Close()
 			return 0, err
 		}
-		log.Debug("mnrg %v", mnrg)
+		logger.Debug("mnrg %v", mnrg)
 		ms.mnrgData.ReplaceOrInsert(mnrg)
 	}
 	f.Close()
 
-	log.Debug("ms.applied end %v", ms.applied)
+	logger.Debug("ms.applied end %v", ms.applied)
 
 	return ms.applied, nil
 
@@ -1515,13 +1494,13 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 ////////////////////////////////////////////////////////////////////////////
 
 //AddrDatabase ...
-var ClusterAddrDatabase = make(map[uint64]*com.Address)
+var ClusterAddrDatabase = make(map[uint64]*common.Address)
 
 //AddInit ...
 func AddInit(ips []string) {
 	fmt.Println("IPS:")
 	for i := range ips {
-		ClusterAddrDatabase[uint64(i+1)] = &com.Address{
+		ClusterAddrDatabase[uint64(i+1)] = &common.Address{
 			Heartbeat: fmt.Sprintf("%s:77%d1", ips[i], i),
 			Replicate: fmt.Sprintf("%s:77%d2", ips[i], i),
 			Grpc:      fmt.Sprintf("%s:77%d3", ips[i], i),
@@ -1543,14 +1522,14 @@ func NewClusterResolver() *ClusterResolver {
 }
 
 //AddNode ...
-func (r *ClusterResolver) AddNode(nodeID uint64, addr *com.Address) {
+func (r *ClusterResolver) AddNode(nodeID uint64, addr *common.Address) {
 	r.Lock()
 	r.nodes[nodeID] = struct{}{}
 	r.Unlock()
 }
 
 //RemoveNode ...
-func (r *ClusterResolver) RemoveNode(nodeID uint64, addr *com.Address) {
+func (r *ClusterResolver) RemoveNode(nodeID uint64, addr *common.Address) {
 	r.Lock()
 	delete(r.nodes, nodeID)
 	r.Unlock()

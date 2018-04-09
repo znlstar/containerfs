@@ -1,4 +1,3 @@
-//package main
 package volmgr
 
 import (
@@ -17,16 +16,16 @@ import (
 	"golang.org/x/net/context"
 )
 
-func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.CreateVolAck, error) {
+func (vs *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.CreateVolAck, error) {
 
-	s.Lock()
-	defer s.Unlock()
+	vs.Lock()
+	defer vs.Unlock()
 	ack := vp.CreateVolAck{}
 
 	//todo: check raft leader
-	if !s.RaftServer.IsLeader(1) {
+	if !vs.RaftServer.IsLeader(1) {
 		ack.Ret = -1
-		return &ack, errNotLeader
+		return &ack, utils.ErrNotLeader
 	}
 
 	voluuid, err := utils.GenUUID()
@@ -35,30 +34,29 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		return &ack, err
 	}
 
-	rgID, err := s.Cluster.RaftGroup.RGIDGET(1)
+	rgID, err := vs.Cluster.RaftGroup.RGIDGET(1)
 	if err != nil {
 		logger.Error("Create Volume name:%v uuid:%v raftGroupID error:%v", voluuid, in.VolName, err)
 		return &ack, err
 	}
 
-	logger.Error("Create Volume name:%v uuid:%v size:%v", in.VolName, voluuid, in.SpaceQuota)
 	//choose 3 metanodes as a raftgroup
-	mng, err := s.chooseMetaNodes()
+	mng, err := vs.chooseMetaNodes()
 	if err != nil {
 		logger.Error("Create Volume name:%v  error:%v", in.VolName, err)
 		return &ack, err
 	}
 
 	//the volume need block group total numbers
-	var blkgrpnum int32
+	var blockGroupNum int32
 	if in.SpaceQuota%utils.BlkSizeG == 0 {
-		blkgrpnum = in.SpaceQuota / utils.BlkSizeG
+		blockGroupNum = in.SpaceQuota / utils.BlkSizeG
 	} else {
-		blkgrpnum = in.SpaceQuota/utils.BlkSizeG + 1
-		in.SpaceQuota = blkgrpnum * utils.BlkSizeG
+		blockGroupNum = in.SpaceQuota/utils.BlkSizeG + 1
+		in.SpaceQuota = blockGroupNum * utils.BlkSizeG
 	}
 
-	v, err := s.Cluster.RaftGroup.DataNodeGetAll(1)
+	v, err := vs.Cluster.RaftGroup.DataNodeGetAll(1)
 	if err != nil {
 		logger.Error("GetAllDataNode Info failed:%v for CreateVol", err)
 		return &ack, err
@@ -97,15 +95,15 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		Tier:          in.Tier,
 		Copies:        int32(copies),
 		TotalSize:     in.SpaceQuota,
-		AllocatedSize: blkgrpnum * 5,
+		AllocatedSize: blockGroupNum * 5,
 		RGID:          rgID,
 	}
 
 	dataNodesUsedMap := make(map[string][]uint64)
 	dataNodesForUpdate := make(map[string]*vp.DataNode)
 	var blockGroups []*mp.BlockGroup
-	for i := int32(0); i < blkgrpnum; i++ {
-		bgID, err := s.Cluster.RaftGroup.BGIDGET(1)
+	for i := int32(0); i < blockGroupNum; i++ {
+		bgID, err := vs.Cluster.RaftGroup.BGIDGET(1)
 		if err != nil {
 			logger.Error("AllocateBGID for CreateVol failed, err:%v", err)
 			return &ack, err
@@ -148,7 +146,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		}
 		allip = newAllIp
 
-		err = s.Cluster.RaftGroup.BlockGroupSet(bgID, bg)
+		err = vs.Cluster.RaftGroup.BlockGroupSet(bgID, bg)
 		if err != nil {
 			logger.Error("Create Volume:%v Set blockgroup:%v blocks:%v failed:%v", voluuid, bgID, bg, err)
 			return &ack, err
@@ -156,8 +154,8 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		//to set hosts blockgroups
 		for _, host := range hosts {
 			dataNodesUsedMap[host] = append(dataNodesUsedMap[host], bgID)
-			if err = s.Cluster.RaftGroup.DataNodeBGPAddBGP(host, bgID); err != nil {
-				logger.Error("failed to add bgp to datandoe: %v", err)
+			if err = vs.Cluster.RaftGroup.DataNodeBGAddBG(host, bgID); err != nil {
+				logger.Error("failed to add bg to datandoe: %v", err)
 				return &ack, err
 			}
 		}
@@ -169,8 +167,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		blockGroups = append(blockGroups, blockGroup)
 	}
 
-	logger.Error("CreateVolume =============== %v", vol)
-	s.Cluster.RaftGroup.VolumeSet(1, voluuid, vol)
+	vs.Cluster.RaftGroup.VolumeSet(1, voluuid, vol)
 	ack.Ret = 0
 	ack.UUID = voluuid
 	ack.RaftGroupID = rgID
@@ -216,9 +213,9 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 
 	//clean kv data on fail
 	if !flag {
-		//clean DataNodeBGP kv
+		//clean DataNodeBG kv
 		for host, _ := range dataNodesUsedMap {
-			s.Cluster.RaftGroup.DataNodeBGPDelBGP(host, dataNodesUsedMap[host])
+			vs.Cluster.RaftGroup.DataNodeBGDelBG(host, dataNodesUsedMap[host])
 		}
 	}
 
@@ -229,7 +226,7 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 		metaNode := &vp.MetaNode{Id: mn.Id}
 		metaNodeRG.MetaNodes = append(metaNodeRG.MetaNodes, metaNode)
 	}
-	err = s.Cluster.RaftGroup.MetaNodeRGSet(rgID, metaNodeRG)
+	err = vs.Cluster.RaftGroup.MetaNodeRGSet(rgID, metaNodeRG)
 	if err != nil {
 		logger.Error("set kv failed: %v", err)
 		return &ack, err
@@ -237,44 +234,42 @@ func (s *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.
 
 	// update datanode kv data
 	for host, dataNode := range dataNodesForUpdate {
-		s.Cluster.RaftGroup.DataNodeSet(1, host, dataNode)
+		vs.Cluster.RaftGroup.DataNodeSet(1, host, dataNode)
 	}
 	return &ack, nil
 }
 
-//todo: check leader
-func (s *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp.ExpandVolAck, error) {
+func (vs *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp.ExpandVolAck, error) {
 
-	s.Lock()
-	defer s.Unlock()
+	vs.Lock()
+	defer vs.Unlock()
 	ack := vp.ExpandVolAck{}
 
-	//todo: check raft leader
-	if !s.RaftServer.IsLeader(1) {
+	if !vs.RaftServer.IsLeader(1) {
 		ack.Ret = -1
-		return &ack, errNotLeader
+		return &ack, utils.ErrNotLeader
 	}
 
-	vol, err := s.Cluster.RaftGroup.VolumeGet(1, in.UUID)
+	vol, err := vs.Cluster.RaftGroup.VolumeGet(1, in.UUID)
 	if err != nil {
 		logger.Error("Get volume info[%v] faield: %v", in.UUID, err)
 		return &ack, err
 	}
 
 	//the volume need block group total numbers
-	var blkgrpnum int32
+	var blockGroupNum int32
 	if in.Space%utils.BlkSizeG == 0 {
-		blkgrpnum = in.Space / utils.BlkSizeG
+		blockGroupNum = in.Space / utils.BlkSizeG
 	} else {
-		blkgrpnum = in.Space/utils.BlkSizeG + 1
-		in.Space = blkgrpnum * utils.BlkSizeG
+		blockGroupNum = in.Space/utils.BlkSizeG + 1
+		in.Space = blockGroupNum * utils.BlkSizeG
 	}
-	if blkgrpnum > 6 {
-		blkgrpnum = 6
+	if blockGroupNum > 6 {
+		blockGroupNum = 6
 	}
 	vol.TotalSize = vol.TotalSize + in.Space
-	vol.AllocatedSize = vol.AllocatedSize + blkgrpnum*5
-	v, err := s.Cluster.RaftGroup.DataNodeGetAll(1)
+	vol.AllocatedSize = vol.AllocatedSize + blockGroupNum*5
+	v, err := vs.Cluster.RaftGroup.DataNodeGetAll(1)
 	if err != nil {
 		logger.Error("GetAllDataNode Info failed:%v for CreateVol", err)
 		return &ack, err
@@ -307,8 +302,8 @@ func (s *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp.
 
 	dataNodesUsedMap := make(map[string][]uint64)
 	var blockGroups []*mp.BlockGroup
-	for i := int32(0); i < blkgrpnum; i++ {
-		bgID, err := s.Cluster.RaftGroup.BGIDGET(1)
+	for i := int32(0); i < blockGroupNum; i++ {
+		bgID, err := vs.Cluster.RaftGroup.BGIDGET(1)
 		if err != nil {
 			logger.Error("AllocateBGID for CreateVol failed, err:%v", err)
 			return &ack, err
@@ -334,7 +329,7 @@ func (s *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp.
 			hosts = append(hosts, host)
 
 		}
-		err = s.Cluster.RaftGroup.BlockGroupSet(bgID, bg)
+		err = vs.Cluster.RaftGroup.BlockGroupSet(bgID, bg)
 		if err != nil {
 			logger.Error("Expand Volume:%v Set blockgroup:%v blocks:%v failed:%v", vol.UUID, bgID, bg, err)
 			return &ack, err
@@ -342,8 +337,8 @@ func (s *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp.
 		//to set hosts blockgroups
 		for _, host := range hosts {
 			dataNodesUsedMap[host] = append(dataNodesUsedMap[host], bgID)
-			if err = s.Cluster.RaftGroup.DataNodeBGPAddBGP(host, bgID); err != nil {
-				logger.Error("failed to add bgp to datandoe: %v", err)
+			if err = vs.Cluster.RaftGroup.DataNodeBGAddBG(host, bgID); err != nil {
+				logger.Error("failed to add bg to datandoe: %v", err)
 				return &ack, err
 			}
 		}
@@ -355,19 +350,19 @@ func (s *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp.
 		blockGroups = append(blockGroups, blockGroup)
 	}
 
-	if err = s.Cluster.RaftGroup.VolumeSet(1, vol.UUID, vol); err != nil {
+	if err = vs.Cluster.RaftGroup.VolumeSet(1, vol.UUID, vol); err != nil {
 		ack.Ret = -1
 		for host, _ := range dataNodesUsedMap {
-			s.Cluster.RaftGroup.DataNodeBGPDelBGP(host, dataNodesUsedMap[host])
+			vs.Cluster.RaftGroup.DataNodeBGDelBG(host, dataNodesUsedMap[host])
 		}
 	}
 
-	metaNodeRG, err := s.Cluster.RaftGroup.MetaNodeRGGet(vol.RGID)
+	metaNodeRG, err := vs.Cluster.RaftGroup.MetaNodeRGGet(vol.RGID)
 	if err != nil {
 		logger.Error("MetaNodeRGGet failed: %v", err)
 		return &ack, err
 	}
-	metaNodes, err := s.getMetaNodesViaIds(metaNodeRG.MetaNodes)
+	metaNodes, err := vs.getMetaNodesViaIds(metaNodeRG.MetaNodes)
 	if err != nil {
 		logger.Error("MetaNodes Get failed: %v", err)
 		return &ack, err
@@ -408,10 +403,10 @@ func (s *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp.
 }
 
 //todo: not implemented yet
-func (s *VolMgrServer) ExpandVolRS(ctx context.Context, in *vp.ExpandVolRSReq) (*vp.ExpandVolRSAck, error) {
+func (vs *VolMgrServer) ExpandVolRS(ctx context.Context, in *vp.ExpandVolRSReq) (*vp.ExpandVolRSAck, error) {
 
-	s.Lock()
-	defer s.Unlock()
+	vs.Lock()
+	defer vs.Unlock()
 
 	ack := vp.ExpandVolRSAck{}
 	ack.Ret = 0
@@ -419,51 +414,51 @@ func (s *VolMgrServer) ExpandVolRS(ctx context.Context, in *vp.ExpandVolRSReq) (
 }
 
 //todo: not implemented yet
-func (s *VolMgrServer) DelVolRSForExpand(ctx context.Context, in *vp.DelVolRSForExpandReq) (*vp.DelVolRSForExpandAck, error) {
+func (vs *VolMgrServer) DelVolRSForExpand(ctx context.Context, in *vp.DelVolRSForExpandReq) (*vp.DelVolRSForExpandAck, error) {
 	ack := vp.DelVolRSForExpandAck{}
 	ack.Ret = 0
 	return &ack, nil
 }
 
-func (s *VolMgrServer) DeleteVol(ctx context.Context, in *vp.DeleteVolReq) (*vp.DeleteVolAck, error) {
+func (vs *VolMgrServer) DeleteVol(ctx context.Context, in *vp.DeleteVolReq) (*vp.DeleteVolAck, error) {
 	ack := vp.DeleteVolAck{}
 
-	volume, err := s.Cluster.RaftGroup.VolumeGet(1, in.UUID)
+	volume, err := vs.Cluster.RaftGroup.VolumeGet(1, in.UUID)
 	if err != nil {
-		logger.Error("Get BGPS map from Cluster MetaNodeAddr for DeleteVol:%v failed, err:%v", in.UUID, err)
+		logger.Error("Get BGS map from Cluster MetaNodeAddr for DeleteVol:%v failed, err:%v", in.UUID, err)
 		return &ack, err
 	}
 
 	delBlockGroupBadNum := 0
-	var bgp *vp.BlockGroup
+	var bg *vp.BlockGroup
 	for _, v := range volume.BlockGroups {
-		if bgp, err = s.Cluster.RaftGroup.BlockGroupGet(v); err != nil {
+		if bg, err = vs.Cluster.RaftGroup.BlockGroupGet(v); err != nil {
 			logger.Error("DeleteVol BlockGroupGet failed: %v, bgID: %v", err, v)
 			delBlockGroupBadNum = delBlockGroupBadNum + 1
 			continue
 		}
-		delDataNodeBlkBadNum := 0
-		for _, vv := range bgp.Hosts {
+		delBlockBadNum := 0
+		for _, vv := range bg.Hosts {
 			datanodeKey := vv
-			tmpDataNode, err := s.Cluster.RaftGroup.DataNodeGet(1, datanodeKey)
+			tmpDataNode, err := vs.Cluster.RaftGroup.DataNodeGet(1, datanodeKey)
 			if err != nil {
 				logger.Error("Get DataNode:%v map from Cluster MetaNodeAddr for Update Free+5:%v failed for DeleteVol, err:%v", datanodeKey, err)
-				delDataNodeBlkBadNum += 1
+				delBlockBadNum += 1
 				continue
 			}
 
 			tmpDataNode.Free = tmpDataNode.Free + 5
-			err = s.Cluster.RaftGroup.DataNodeSet(1, datanodeKey, tmpDataNode)
+			err = vs.Cluster.RaftGroup.DataNodeSet(1, datanodeKey, tmpDataNode)
 			if err != nil {
 				logger.Error("Set DataNode:%v map value.Free Add 5G from Cluster MetaNodeAddr for failed for DeleteVol, err:%v", datanodeKey, err)
-				delDataNodeBlkBadNum += 1
+				delBlockBadNum += 1
 				continue
 			}
 		}
 
-		bgKey := in.UUID + fmt.Sprintf("-%d", bgp.BlockGroupID)
-		err = s.Cluster.RaftGroup.BlockGroupDel(1, bgKey)
-		if err != nil || delDataNodeBlkBadNum != 0 {
+		bgKey := in.UUID + fmt.Sprintf("-%d", bg.BlockGroupID)
+		err = vs.Cluster.RaftGroup.BlockGroupDel(1, bgKey)
+		if err != nil || delBlockBadNum != 0 {
 			logger.Error("Delete BG:%v from Cluster MetaNodeAddr failed", bgKey)
 			delBlockGroupBadNum += 1
 		}
@@ -472,7 +467,7 @@ func (s *VolMgrServer) DeleteVol(ctx context.Context, in *vp.DeleteVolReq) (*vp.
 		ack.Ret = -1
 		return &ack, nil
 	}
-	err = s.Cluster.RaftGroup.VolumeDel(1, in.UUID)
+	err = vs.Cluster.RaftGroup.VolumeDel(1, in.UUID)
 	if err != nil {
 		logger.Error("Delete Volume:%v map from Cluster MetaNodeAddr failed, err:%v", in.UUID, err)
 		return &ack, err
@@ -483,11 +478,11 @@ func (s *VolMgrServer) DeleteVol(ctx context.Context, in *vp.DeleteVolReq) (*vp.
 }
 
 //todo: not implemented yet
-func (s *VolMgrServer) Migrate(ctx context.Context, in *vp.MigrateReq) (*vp.MigrateAck, error) {
+func (vs *VolMgrServer) Migrate(ctx context.Context, in *vp.MigrateReq) (*vp.MigrateAck, error) {
 	ack := vp.MigrateAck{}
 
 	//DataNode
-	dataNode, err := s.Cluster.RaftGroup.DataNodeGet(1, in.DataNodeHost)
+	dataNode, err := vs.Cluster.RaftGroup.DataNodeGet(1, in.DataNodeHost)
 	if err != nil {
 		logger.Error("DataNodeGet for datanode[%v] failed: %v", in.DataNodeHost, err)
 		return &ack, err
@@ -495,17 +490,17 @@ func (s *VolMgrServer) Migrate(ctx context.Context, in *vp.MigrateReq) (*vp.Migr
 
 	tier := dataNode.Tier
 
-	//DataNodeBGPS
-	dataNodeBGPS, err := s.Cluster.RaftGroup.DataNodeBGPGet(in.DataNodeHost)
+	//DataNodeBGS
+	dataNodeBGS, err := vs.Cluster.RaftGroup.DataNodeBGGet(in.DataNodeHost)
 	if err != nil {
-		logger.Error("DataNodeBGPGet for datanode[%v] failed: %v", in.DataNodeHost, err)
+		logger.Error("DataNodeBGGet for datanode[%v] failed: %v", in.DataNodeHost, err)
 		return &ack, err
 	}
 	go func() {
 		var ret int
-		for _, bg := range dataNodeBGPS.BGPS {
+		for _, bg := range dataNodeBGS.BGS {
 			logger.Debug("Begin Migrage BlockGroup %v ...", bg)
-			ret = s.BeginMigrate(bg, in.DataNodeHost, tier)
+			ret = vs.BeginMigrate(bg, in.DataNodeHost, tier)
 			logger.Debug("End Migrage BlockGroup %v ret %v ...", bg, ret)
 		}
 	}()
@@ -514,11 +509,10 @@ func (s *VolMgrServer) Migrate(ctx context.Context, in *vp.MigrateReq) (*vp.Migr
 	return &ack, nil
 }
 
-//todo: not implemented yet
-func (s *VolMgrServer) BeginMigrate(bgID uint64, badHost string, tier string) int {
+func (vs *VolMgrServer) BeginMigrate(bgID uint64, badHost string, tier string) int {
 	var shost string
 
-	blockGroup, err := s.Cluster.RaftGroup.BlockGroupGet(bgID)
+	blockGroup, err := vs.Cluster.RaftGroup.BlockGroupGet(bgID)
 	if err != nil {
 		logger.Error("BlockGroupGet[%v] faild: %v", bgID, err)
 		return -1
@@ -529,9 +523,8 @@ func (s *VolMgrServer) BeginMigrate(bgID uint64, badHost string, tier string) in
 			break
 		}
 	}
-	//All DataNodes
 	var dataNodes []*vp.DataNode
-	v, err := s.Cluster.RaftGroup.DataNodeGetAll(1)
+	v, err := vs.Cluster.RaftGroup.DataNodeGetAll(1)
 	if err != nil {
 		logger.Error("DataNodeGetAll failed: %v", err)
 		return -3
@@ -558,37 +551,37 @@ func (s *VolMgrServer) BeginMigrate(bgID uint64, badHost string, tier string) in
 	idxs := utils.GenerateRandomNumber(0, len(dataNodes), 1)
 	dHost := dataNodes[idxs[0]].Host
 	//migrate blockgroup
-	ret := s.migrateBlockGroup(bgID, shost, dHost)
+	ret := vs.migrateBlockGroup(bgID, shost, dHost)
 	if ret != 0 {
 		return -6
 	}
 
-	//update datanode/datanodebgps/blockgroup
-	dataNode, err := s.Cluster.RaftGroup.DataNodeGet(1, dHost)
+	//update datanode/datanodebgs/blockgroup
+	dataNode, err := vs.Cluster.RaftGroup.DataNodeGet(1, dHost)
 	if err != nil {
 		logger.Error("DataNodeGet[%v] failed: %v", dHost, err)
 		return -7
 	}
 	dataNode.Free = dataNode.Free - utils.BlkSizeG
 
-	if err = s.Cluster.RaftGroup.DataNodeSet(1, dHost, dataNode); err != nil {
+	if err = vs.Cluster.RaftGroup.DataNodeSet(1, dHost, dataNode); err != nil {
 		logger.Error("DataNodeSet failed: %v", err)
 		return -10
 	}
-	dataNodeBGPS, err := s.Cluster.RaftGroup.DataNodeBGPGet(dHost)
+	dataNodeBGS, err := vs.Cluster.RaftGroup.DataNodeBGGet(dHost)
 	if err != nil && err != raftopt.ErrKeyNotFound {
-		logger.Error("DataNodeBGPGet failed: %v", err)
+		logger.Error("DataNodeBGGet failed: %v", err)
 		return -11
 	}
 	if err == raftopt.ErrKeyNotFound {
-		dataNodeBGPS = &vp.DataNodeBGPS{Host: dHost}
+		dataNodeBGS = &vp.DataNodeBGS{Host: dHost}
 	}
 	flag := true
 	if flag {
-		dataNodeBGPS.BGPS = append(dataNodeBGPS.BGPS, bgID)
-		err = s.Cluster.RaftGroup.DataNodeBGPSet(dHost, dataNodeBGPS)
+		dataNodeBGS.BGS = append(dataNodeBGS.BGS, bgID)
+		err = vs.Cluster.RaftGroup.DataNodeBGSet(dHost, dataNodeBGS)
 		if err != nil {
-			logger.Error("DataNodeBGPSet failed: %v", err)
+			logger.Error("DataNodeBGSet failed: %v", err)
 			return -14
 		}
 	}
@@ -598,14 +591,14 @@ func (s *VolMgrServer) BeginMigrate(bgID uint64, badHost string, tier string) in
 			blockGroup.Hosts[i] = dHost
 		}
 	}
-	if err = s.Cluster.RaftGroup.BlockGroupSet(bgID, blockGroup); err != nil {
+	if err = vs.Cluster.RaftGroup.BlockGroupSet(bgID, blockGroup); err != nil {
 		logger.Error("BlockGroupSet failed: %v", err)
 		return -15
 	}
 	return 0
 }
 
-func (s *VolMgrServer) migrateBlockGroup(bgID uint64, shost string, dhost string) int32 {
+func (vs *VolMgrServer) migrateBlockGroup(bgID uint64, shost string, dhost string) int32 {
 	//migrate
 	pRecvMigrateReq := &dp.RecvMigrateReq{BlockGroupID: bgID, DstHost: dhost}
 	conn, err := utils.Dial(shost)
@@ -628,10 +621,10 @@ func (s *VolMgrServer) migrateBlockGroup(bgID uint64, shost string, dhost string
 
 }
 
-func (s *VolMgrServer) GetBlockGroupByID(ctx context.Context, in *vp.GetBlockGroupByIDReq) (*vp.GetBlockGroupByIDAck, error) {
+func (vs *VolMgrServer) GetBlockGroupByID(ctx context.Context, in *vp.GetBlockGroupByIDReq) (*vp.GetBlockGroupByIDAck, error) {
 	ack := vp.GetBlockGroupByIDAck{}
 
-	blockGroup, err := s.Cluster.RaftGroup.BlockGroupGet(in.BlockGroupID)
+	blockGroup, err := vs.Cluster.RaftGroup.BlockGroupGet(in.BlockGroupID)
 	if err != nil {
 		return &ack, err
 	}
@@ -639,35 +632,35 @@ func (s *VolMgrServer) GetBlockGroupByID(ctx context.Context, in *vp.GetBlockGro
 	return &ack, nil
 }
 
-func (s *VolMgrServer) updateBlockGroupStatus() {
+func (vs *VolMgrServer) updateBlockGroupStatus() {
 	var blockGroup *vp.BlockGroup
 	var err error
-	for bgID, status := range s.BgStatusMap {
+	for bgID, status := range vs.BgStatusMap {
 		if status > 0 {
-			s.BgStatusMap[bgID] = 0
+			vs.BgStatusMap[bgID] = 0
 			status = 1
 		}
-		blockGroup, err = s.Cluster.RaftGroup.BlockGroupGet(bgID)
+		blockGroup, err = vs.Cluster.RaftGroup.BlockGroupGet(bgID)
 		if err != nil {
 			logger.Error("updateBlockGroup BlockGroupGet failed: %v", err)
 			continue
 		}
 		if blockGroup.Status != status {
 			blockGroup.Status = status
-			s.Cluster.RaftGroup.BlockGroupSet(bgID, blockGroup)
+			vs.Cluster.RaftGroup.BlockGroupSet(bgID, blockGroup)
 		}
 	}
 }
 
-func (s *VolMgrServer) SnapShotCluster(ctx context.Context, in *vp.SnapShotClusterReq) (*vp.SnapShotClusterAck, error) {
-	go raftopt.TakeClusterKvSnapShot(s.Cluster.RaftGroup, s.Cluster.RaftStorage, path.Join(va.Waldir, "Cluster", "wal", "snap"))
+func (vs *VolMgrServer) SnapShotCluster(ctx context.Context, in *vp.SnapShotClusterReq) (*vp.SnapShotClusterAck, error) {
+	go raftopt.TakeClusterKvSnapShot(vs.Cluster.RaftGroup, vs.Cluster.RaftStorage, path.Join(vs.volmgrAddr.Waldir, "Cluster", "wal", "snap"))
 	return &vp.SnapShotClusterAck{Ret: 0}, nil
 }
 
 // GetMetaLeader ...
-func (s *VolMgrServer) GetVolMgrRG(ctx context.Context, in *vp.GetVolMgrRGReq) (*vp.GetVolMgrRGAck, error) {
+func (vs *VolMgrServer) GetVolMgrRG(ctx context.Context, in *vp.GetVolMgrRGReq) (*vp.GetVolMgrRGAck, error) {
 	ack := vp.GetVolMgrRGAck{}
-	leaderID, _ := s.RaftServer.LeaderTerm(1)
+	leaderID, _ := vs.RaftServer.LeaderTerm(1)
 	if leaderID <= 0 {
 		ack.Ret = 1
 		return &ack, nil

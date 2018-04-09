@@ -10,15 +10,13 @@ import (
 	"github.com/tiglabs/containerfs/logger"
 	"github.com/tiglabs/containerfs/proto/vp"
 	"github.com/tiglabs/containerfs/raftopt"
-	com "github.com/tiglabs/containerfs/raftopt/common"
+	"github.com/tiglabs/containerfs/raftopt/common"
 	"github.com/tiglabs/raft"
 	"github.com/tiglabs/raft/proto"
 	"github.com/tiglabs/raft/storage/wal"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
-
-var errNotLeader = fmt.Errorf("not leader")
 
 type VolMgrServerAddr struct {
 	Host   string
@@ -29,8 +27,6 @@ type VolMgrServerAddr struct {
 	Log    string
 }
 
-var va VolMgrServerAddr
-
 type Cluster struct {
 	sync.Mutex
 	RaftGroup   *raftopt.ClusterKvStateMachine
@@ -40,50 +36,55 @@ type Cluster struct {
 
 type VolMgrServer struct {
 	NodeID          uint64
-	Addr            *com.Address
-	Resolver        com.Resolver
+	Addr            *common.Address
+	Resolver        common.Resolver
 	RaftServer      *raft.RaftServer
 	Cluster         *Cluster
 	wg              sync.WaitGroup
 	BgStatusMap     map[uint64]int32
 	BgStatusMapSync sync.Mutex
-	va              *VolMgrServerAddr
+	volmgrAddr      *VolMgrServerAddr
 	sync.Mutex
 }
 
-func NewVolMgrServer(va *VolMgrServerAddr) (vs *VolMgrServer, err error) {
+func NewVolMgrServer(volmgrAddr *VolMgrServerAddr) (vs *VolMgrServer, err error) {
 
-	addr, ok := raftopt.ClusterAddrDatabase[va.NodeID]
+	addr, ok := raftopt.ClusterAddrDatabase[volmgrAddr.NodeID]
 	if !ok {
-		return nil, fmt.Errorf("no such address info. nodeId: %d", va.NodeID)
+		logger.Error("NewVolMgrServer ClusterAddrDatabase get failed")
+		return nil, fmt.Errorf("no such address info. nodeId: %d", volmgrAddr.NodeID)
 	}
 
-	err = com.StartRaftServer(&vs.RaftServer, vs.Resolver, addr, va.NodeID)
+	err = common.StartRaftServer(&vs.RaftServer, vs.Resolver, addr, volmgrAddr.NodeID)
 	if err != nil {
-		logger.Error("StartRaftServer failed ...")
+		logger.Error("NewVolMgrServer StartRaftServer failed err %v", err)
 		return nil, fmt.Errorf("failed to start raft service %v", err)
 	}
 
 	r := raftopt.NewClusterResolver()
-	for _, p := range va.Peers {
+	for _, p := range volmgrAddr.Peers {
 		r.AddNode(p.ID, nil)
 	}
 
-	vs = &VolMgrServer{NodeID: va.NodeID,
+	vs = &VolMgrServer{NodeID: volmgrAddr.NodeID,
 		Addr:        addr,
 		Resolver:    r,
 		BgStatusMap: make(map[uint64]int32),
-		va:          va}
+		volmgrAddr:  volmgrAddr}
+
+	vs.showLeaders()
+	vs.startHealthCheck()
+
 	return vs, nil
 }
 
 func (vs *VolMgrServer) Load() error {
-	sm, sg, err := raftopt.CreateClusterKvStateMachine(vs.RaftServer, vs.va.Peers, vs.va.NodeID, vs.va.Waldir, "Cluster", 1)
+	sm, sg, err := raftopt.CreateClusterKvStateMachine(vs.RaftServer, vs.volmgrAddr.Peers, vs.volmgrAddr.NodeID, vs.volmgrAddr.Waldir, "Cluster", 1)
 	if err != nil {
 		return err
 	}
 	vs.Cluster = &Cluster{RaftGroup: sm, RaftStorage: sg}
-	logger.Debug("VolMgrServer.load success...")
+	logger.Debug("VolMgrServer.Load success...")
 	return nil
 }
 
@@ -95,29 +96,28 @@ func (vs *VolMgrServer) StartService() {
 	}
 	s := grpc.NewServer()
 	vp.RegisterVolMgrServer(s, vs)
-	// Register reflection service on gRPC server.
 	reflection.Register(s)
 	if err := s.Serve(lis); err != nil {
 		panic("Failed to serve")
 	}
 }
 
-func (s *VolMgrServer) ShowLeaders() {
+func (vs *VolMgrServer) showLeaders() {
 	ticker := time.NewTicker(time.Second * 10)
 	go func() {
 		for range ticker.C {
-			l, t := s.RaftServer.LeaderTerm(1)
-			logger.Debug("--------- RaftGroup LeaderID %v Term %v ---------", l, t)
+			l, t := vs.RaftServer.LeaderTerm(1)
+			logger.Debug("ShowLeaders RaftGroup LeaderID %v Term %v", l, t)
 		}
 	}()
 }
 
-func (s *VolMgrServer) StartHealthCheck() {
+func (vs *VolMgrServer) startHealthCheck() {
 	td := time.NewTicker(time.Second * 1)
 	go func() {
 		for range td.C {
-			if s.RaftServer.IsLeader(1) {
-				s.DetectDataNodes()
+			if vs.RaftServer.IsLeader(1) {
+				vs.DetectDataNodes()
 			}
 		}
 	}()
@@ -125,8 +125,8 @@ func (s *VolMgrServer) StartHealthCheck() {
 	tm := time.NewTicker(time.Second * 1)
 	go func() {
 		for range tm.C {
-			if s.RaftServer.IsLeader(1) {
-				s.DetectMetaNodes()
+			if vs.RaftServer.IsLeader(1) {
+				vs.DetectMetaNodes()
 			}
 		}
 	}()

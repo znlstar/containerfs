@@ -46,9 +46,9 @@ message DataNodeRegistryAck {
     int32 Ret = 1;
 }
 
-message DataNodeBGPS {
+message DataNodeBGS {
     string Host = 1;
-    repeated uint64 BGPS = 2;
+    repeated uint64 BGS = 2;
 }
 
 message MetaNode {

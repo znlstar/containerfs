@@ -59,13 +59,13 @@ func (a DataNodeKV) Less(b btree.Item) bool {
 }
 
 //for datanodebgp
-type DataNodeBGPKV struct {
+type DataNodeBGKV struct {
 	K string
 	V []byte
 }
 
-func (a DataNodeBGPKV) Less(b btree.Item) bool {
-	return a.K < b.(DataNodeBGPKV).K
+func (a DataNodeBGKV) Less(b btree.Item) bool {
+	return a.K < b.(DataNodeBGKV).K
 }
 
 //for meatanode
@@ -116,10 +116,10 @@ func (a DataNodeKV) Value() []byte {
 	return a.V
 }
 
-func (a DataNodeBGPKV) Key() string {
+func (a DataNodeBGKV) Key() string {
 	return a.Key()
 }
-func (a DataNodeBGPKV) Value() []byte {
+func (a DataNodeBGKV) Value() []byte {
 	return a.V
 }
 

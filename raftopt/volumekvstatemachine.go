@@ -17,33 +17,14 @@ import (
 	pbproto "github.com/golang/protobuf/proto"
 	"github.com/google/btree"
 	"github.com/tiglabs/containerfs/logger"
-	log "github.com/tiglabs/containerfs/logger"
-	kvp "github.com/tiglabs/containerfs/proto/kvp"
+	"github.com/tiglabs/containerfs/proto/kvp"
 	"github.com/tiglabs/containerfs/raftopt/btreeinstance"
-	com "github.com/tiglabs/containerfs/raftopt/common"
+	"github.com/tiglabs/containerfs/raftopt/common"
 	"github.com/tiglabs/raft"
 	"github.com/tiglabs/raft/proto"
 	"github.com/tiglabs/raft/storage/wal"
 )
 
-const (
-	// OPT_ALLOCATE_INODEID ...
-	OPT_ALLOCATE_INODEID = 1
-	// OPT_ALLOCATE_CHUNKID ...
-	OPT_ALLOCATE_CHUNKID = 2
-	// OPT_SET_DENTRY ...
-	OPT_SET_DENTRY = 3
-	// OPT_DEL_DENTRY ...
-	OPT_DEL_DENTRY = 4
-	// OPT_SET_INODE ...
-	OPT_SET_INODE = 5
-	// OPT_DEL_INODE ...
-	OPT_DEL_INODE = 6
-	// OPT_SET_BG ...
-	OPT_SET_BG = 7
-	// OPT_DEL_BG ...
-	OPT_DEL_BG = 8
-)
 
 //VolumeKvStateMachine ...
 type VolumeKvStateMachine struct {
@@ -81,7 +62,7 @@ func CreateVolumeKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID 
 	wc := &wal.Config{}
 	raftStroage, err := wal.NewStorage(path.Join(dir, UUID, "wal"), wc)
 	if err != nil {
-		log.Error("new raft log stroage error: %v", err)
+		logger.Error("new raft log stroage error: %v", err)
 		return nil, nil, err
 	}
 
@@ -95,7 +76,7 @@ func CreateVolumeKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID 
 		return nil, nil, err
 	}
 
-	log.Debug("CreateVolumeKvStateMachine Success index : %v", index)
+	logger.Debug("CreateVolumeKvStateMachine Success index : %v", index)
 
 	rc := &raft.RaftConfig{
 		ID:           raftGroupID,
@@ -106,10 +87,10 @@ func CreateVolumeKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID 
 	}
 	err = rs.CreateRaft(rc)
 	if err != nil {
-		log.Error("creat raft failed. %v", err)
+		logger.Error("creat raft failed. %v", err)
 	}
 
-	log.Debug("CreateRaft Success index : %v", rc.Applied)
+	logger.Debug("CreateRaft Success index : %v", rc.Applied)
 
 	return kvsm, raftStroage, nil
 
@@ -694,7 +675,7 @@ func (s *volumeKvSnapshot) Close() {
 ////////////////////////////////////////////////////////////////////////////
 
 //AddrDatabase ...
-var VolumeAddrDatabase = make(map[uint64]*com.Address)
+var VolumeAddrDatabase = make(map[uint64]*common.Address)
 
 //Resolver ...
 type VolumeResolver struct {
@@ -708,7 +689,7 @@ func NewVolumeResolver() *VolumeResolver {
 }
 
 //AddNode ...
-func (r *VolumeResolver) AddNode(nodeID uint64, addr *com.Address) {
+func (r *VolumeResolver) AddNode(nodeID uint64, addr *common.Address) {
 	r.Lock()
 	r.nodes[nodeID] = struct{}{}
 	VolumeAddrDatabase[nodeID] = addr
@@ -716,7 +697,7 @@ func (r *VolumeResolver) AddNode(nodeID uint64, addr *com.Address) {
 }
 
 //RemoveNode ...
-func (r *VolumeResolver) RemoveNode(nodeID uint64, addr *com.Address) {
+func (r *VolumeResolver) RemoveNode(nodeID uint64, addr *common.Address) {
 	r.Lock()
 	delete(r.nodes, nodeID)
 	delete(VolumeAddrDatabase, nodeID)
@@ -858,10 +839,10 @@ func TakeVolumeKvSnapShot(ms *VolumeKvStateMachine, rsg *wal.Storage, path strin
 	f.Close()
 	err = rsg.Truncate(ms.applied)
 	if err != nil {
-		log.Error("TakeKvSnapShoot Truncate failed index : %v , err :%v", ms.applied, err)
+		logger.Error("TakeKvSnapShoot Truncate failed index : %v , err :%v", ms.applied, err)
 		return err
 	}
-	log.Error("TakeKvSnapShoot Truncate Success index : %v ", ms.applied)
+	logger.Error("TakeKvSnapShoot Truncate Success index : %v ", ms.applied)
 
 	return nil
 }
@@ -874,7 +855,7 @@ func LoadVolumeKvSnapShot(ms *VolumeKvStateMachine, path string) (uint64, error)
 	}
 	data, err := ioutil.ReadAll(fi)
 	ms.applied, err = strconv.ParseUint(string(data), 10, 64)
-	log.Debug("ms.applied %v", ms.applied)
+	logger.Debug("ms.applied %v", ms.applied)
 	fi.Close()
 
 	fi, err = os.Open(path + "/chunkid")
@@ -883,7 +864,7 @@ func LoadVolumeKvSnapShot(ms *VolumeKvStateMachine, path string) (uint64, error)
 	}
 	data, err = ioutil.ReadAll(fi)
 	ms.chunkID, err = strconv.ParseUint(string(data), 10, 64)
-	log.Debug("ms.chunkID %v", ms.chunkID)
+	logger.Debug("ms.chunkID %v", ms.chunkID)
 	fi.Close()
 
 	fi, err = os.Open(path + "/inodeid")
@@ -892,7 +873,7 @@ func LoadVolumeKvSnapShot(ms *VolumeKvStateMachine, path string) (uint64, error)
 	}
 	data, err = ioutil.ReadAll(fi)
 	ms.inodeID, err = strconv.ParseUint(string(data), 10, 64)
-	log.Debug("ms.inodeID %v", ms.inodeID)
+	logger.Debug("ms.inodeID %v", ms.inodeID)
 	fi.Close()
 
 	fi, err = os.Open(path + "/dentrydata")
@@ -916,7 +897,7 @@ func LoadVolumeKvSnapShot(ms *VolumeKvStateMachine, path string) (uint64, error)
 			fi.Close()
 			return 0, err
 		}
-		log.Debug("dentry %v", dentry)
+		logger.Debug("dentry %v", dentry)
 
 		ms.dentryData.ReplaceOrInsert(dentry)
 	}
@@ -943,7 +924,7 @@ func LoadVolumeKvSnapShot(ms *VolumeKvStateMachine, path string) (uint64, error)
 			fi.Close()
 			return 0, err
 		}
-		log.Debug("inode %v", inode)
+		logger.Debug("inode %v", inode)
 
 		ms.inodeData.ReplaceOrInsert(inode)
 	}
@@ -970,13 +951,13 @@ func LoadVolumeKvSnapShot(ms *VolumeKvStateMachine, path string) (uint64, error)
 			fi.Close()
 			return 0, err
 		}
-		log.Debug("bg %v", bg)
+		logger.Debug("bg %v", bg)
 
 		ms.blockGroupData.ReplaceOrInsert(bg)
 	}
 	fi.Close()
 
-	log.Debug("ms.applied end %v", ms.applied)
+	logger.Debug("ms.applied end %v", ms.applied)
 
 	return ms.applied, nil
 

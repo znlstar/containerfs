@@ -86,12 +86,12 @@ func (s *VolMgrServer) DetectDataNode(v *vp.DataNode) {
 
 	if v.Status != pDataNodeHealthCheckAck.Status {
 		v.Status = pDataNodeHealthCheckAck.Status
-		dataNodeBGPs, err := s.Cluster.RaftGroup.DataNodeBGPGet(v.Host)
+		dataNodeBGs, err := s.Cluster.RaftGroup.DataNodeBGGet(v.Host)
 		if err != nil && raftopt.ErrKeyNotFound != err {
 			return
 		}
-		if dataNodeBGPs != nil {
-			for _, bgID := range dataNodeBGPs.BGPS {
+		if dataNodeBGs != nil {
+			for _, bgID := range dataNodeBGs.BGS {
 				s.BgStatusMapSync.Lock()
 				s.BgStatusMap[bgID] += v.Status
 				s.BgStatusMapSync.Unlock()
@@ -133,7 +133,7 @@ func (s *VolMgrServer) SetDataNodeMap(v *vp.DataNode) int {
 		logger.Error("Datanode  failed:%v", err)
 		return -1
 	}
-	dataNodeBGP, err := s.Cluster.RaftGroup.DataNodeBGPGet(v.Host)
+	dataNodeBG, err := s.Cluster.RaftGroup.DataNodeBGGet(v.Host)
 	if err == raftopt.ErrKeyNotFound {
 		return 0
 	}
@@ -141,7 +141,7 @@ func (s *VolMgrServer) SetDataNodeMap(v *vp.DataNode) int {
 		logger.Error("SetDataNodeMap [%v %v] failed: %v", v.Host, v.Status, err)
 		return -2
 	}
-	for _, bgId := range dataNodeBGP.BGPS {
+	for _, bgId := range dataNodeBG.BGS {
 		blockGroup, err := s.Cluster.RaftGroup.BlockGroupGet(bgId)
 		if err != nil {
 			logger.Error("SetDataNodeMap failed: %v", err)
@@ -315,7 +315,7 @@ func (s *VolMgrServer) GetMetaNodeRG(ctx context.Context, in *vp.GetMetaNodeRGRe
 	return &ack, nil
 }
 
-// GetMetaNodeBGPS ...
+// GetMetaNodeBGS ...
 func (s *VolMgrServer) GetMetaNodeRGPeers(ctx context.Context, in *vp.GetMetaNodeRGPeersReq) (*vp.GetMetaNodeRGPeersAck, error) {
 	ack := vp.GetMetaNodeRGPeersAck{}
 	v, _ := s.Cluster.RaftGroup.MetaNodeRGGetAll()
