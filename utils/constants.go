@@ -6,10 +6,10 @@ import (
 
 //cfs global errno
 const (
-	EOK        = iota
-	ENOTFOUND  = 20
-	ENOENT     = 21
-	ENOTDEFIND = 22
+	ENO_OK         = iota
+	ENO_NOTEXIST   = 20
+	ENO_NOENT      = 21
+	ENO_NOTDEFINED = 22
 )
 
 //filetype
@@ -26,7 +26,6 @@ const (
 )
 
 //block and chunk
-
 const (
 	BlkSizeG       = 16
 	BlockGroupSize = int64(BlkSizeG * 1024 * 1024 * 1024)

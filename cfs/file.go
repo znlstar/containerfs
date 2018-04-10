@@ -1019,7 +1019,7 @@ func (chunk *Chunk) C2MRecv() {
 			break
 		}
 
-		if pAsyncChunkAck.Ret == utils.ENOTFOUND {
+		if pAsyncChunkAck.Ret == utils.ENO_NOTEXIST {
 			logger.Error("Failed to write a not existing file: %v, inode: %v!", chunk.CFile.Name, chunk.CFile.Inode)
 			chunk.CFile.Status = FileNotExist
 			chunk.CFile.WriteErrSignal <- true
