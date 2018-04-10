@@ -361,7 +361,7 @@ func (ms *MetaNodeServer) ReadLink(ctx context.Context, in *mp.ReadLinkReq) (*mp
 	return &ack, nil
 }
 
-//GetSymLinkInfoDirect ...
+// GetSymLinkInfoDirect ...
 func (ms *MetaNodeServer) GetSymLinkInfoDirect(ctx context.Context, in *mp.GetSymLinkInfoDirectReq) (*mp.GetSymLinkInfoDirectAck, error) {
 	ack := mp.GetSymLinkInfoDirectAck{}
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
@@ -373,6 +373,7 @@ func (ms *MetaNodeServer) GetSymLinkInfoDirect(ctx context.Context, in *mp.GetSy
 	return &ack, nil
 }
 
+// StartMetaDataService ...
 func StartMetaDataService(metaServer *MetaNodeServer) {
 
 	lis, err := net.Listen("tcp", metaServer.Addr.Grpc)
@@ -388,6 +389,7 @@ func StartMetaDataService(metaServer *MetaNodeServer) {
 	}
 }
 
+// LoadMetaData ...
 func (ms *MetaNodeServer) LoadMetaData() int32 {
 
 	vc := vp.NewVolMgrClient(ns.VolMgrConn)
@@ -426,11 +428,13 @@ func (ms *MetaNodeServer) LoadMetaData() int32 {
 	return 0
 }
 
+// MetaNodeHealthCheck ...
 func (ms *MetaNodeServer) MetaNodeHealthCheck(ctx context.Context, in *mp.MetaNodeHealthCheckReq) (*mp.MetaNodeHealthCheckAck, error) {
 	ack := mp.MetaNodeHealthCheckAck{}
 	return &ack, nil
 }
 
+// GetBlockGroupInfo ...
 func (ms *MetaNodeServer) GetBlockGroupInfo(ctx context.Context, in *mp.GetBlockGroupInfoReq) (*mp.GetBlockGroupInfoAck, error) {
 
 	ack := mp.GetBlockGroupInfoAck{}
@@ -448,6 +452,7 @@ func (ms *MetaNodeServer) GetBlockGroupInfo(ctx context.Context, in *mp.GetBlock
 	return &ack, nil
 }
 
+// RegistryToVolMgr ...
 func (ms *MetaNodeServer) RegistryToVolMgr() int {
 
 	_, conn, err := utils.DialVolMgr(MetaNodeServerAddr.VolmgrHosts)

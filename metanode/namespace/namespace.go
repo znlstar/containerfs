@@ -21,11 +21,19 @@ import (
 	"google.golang.org/grpc"
 )
 
+// VolMgrConn ...
 var VolMgrConn *grpc.ClientConn
+
+// VolMgrLeader ...
 var VolMgrLeader string
+
+// VolMgrHosts ...
 var VolMgrHosts []string
+
+// VolMgrInit ...
 var VolMgrInit bool
 
+// nameSpace ..
 type nameSpace struct {
 	sync.RWMutex
 	VolID       string
@@ -88,13 +96,14 @@ func catchPanic() {
 	}
 }
 
-//CreateGNameSpace ...
+// CreateGNameSpace ...
 func CreateGNameSpace() {
 	gMutex.Lock()
 	AllNameSpace = make(map[string]*nameSpace)
 	gMutex.Unlock()
 }
 
+// createRaftGroup ...
 func createRaftGroup(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir string, UUID string, raftGroupID uint64) (*raftopt.VolumeKvStateMachine, *wal.Storage, error) {
 	sm, sg, err := raftopt.CreateVolumeKvStateMachine(rs, peers, nodeID, dir, UUID, raftGroupID)
 	if err != nil {
@@ -103,6 +112,7 @@ func createRaftGroup(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir
 	return sm, sg, nil
 }
 
+// initNameSpace ...
 func initNameSpace(rs *raft.RaftServer, nameSpace *nameSpace, UUID string, bgs []*mp.BlockGroup) int32 {
 
 	defer catchPanic()
@@ -147,7 +157,7 @@ func initNameSpace(rs *raft.RaftServer, nameSpace *nameSpace, UUID string, bgs [
 	return 0
 }
 
-//CreateNameSpace ...
+// CreateNameSpace ...
 func CreateNameSpace(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir string, UUID string, raftGroupID uint64, bgs []*mp.BlockGroup, IsLoad bool) int32 {
 
 	defer catchPanic()
@@ -178,7 +188,7 @@ func CreateNameSpace(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir
 	return errno
 }
 
-//SnapShootNameSpace ...
+// SnapShootNameSpace ...
 func SnapShotNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
 
 	defer catchPanic()
@@ -192,7 +202,7 @@ func SnapShotNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
 	return 0
 }
 
-//DeleteNameSpace ...
+// DeleteNameSpace ...
 func DeleteNameSpace(rs *raft.RaftServer, UUID string) int32 {
 
 	defer catchPanic()
@@ -209,7 +219,7 @@ func DeleteNameSpace(rs *raft.RaftServer, UUID string) int32 {
 	return 0
 }
 
-//GetNameSpace ...
+// GetNameSpace ...
 func GetNameSpace(UUID string) (int32, *nameSpace) {
 
 	defer catchPanic()
@@ -224,7 +234,7 @@ func GetNameSpace(UUID string) (int32, *nameSpace) {
 	return -1, nil
 }
 
-//GetFSInfo ...
+// GetFSInfo ...
 func (ns *nameSpace) GetFSInfo(volID string) mp.GetFSInfoAck {
 	ns.RLock()
 	defer ns.RUnlock()
@@ -251,7 +261,7 @@ func (ns *nameSpace) GetFSInfo(volID string) mp.GetFSInfoAck {
 	return ack
 }
 
-//GetFSInfo ...
+// GetFSInfo ...
 func (ns *nameSpace) ExpandNameSpace(blockGroups []*mp.BlockGroup) int32 {
 	ns.Lock()
 	defer ns.Unlock()
@@ -269,7 +279,7 @@ func (ns *nameSpace) ExpandNameSpace(blockGroups []*mp.BlockGroup) int32 {
 	return 0
 }
 
-//CreateDirDirect ...
+// CreateDirDirect ...
 func (ns *nameSpace) CreateDirDirect(pinode uint64, name string) (int32, uint64) {
 	ns.Lock()
 	defer ns.Unlock()
@@ -309,7 +319,7 @@ func (ns *nameSpace) CreateDirDirect(pinode uint64, name string) (int32, uint64)
 	return 0, inodeID
 }
 
-//GetSymLinkInfoDirect ...
+// GetSymLinkInfoDirect ...
 func (ns *nameSpace) GetSymLinkInfoDirect(pinode uint64, name string) (int32, uint64) {
 	ns.RLock()
 	defer ns.RUnlock()
@@ -324,7 +334,7 @@ func (ns *nameSpace) GetSymLinkInfoDirect(pinode uint64, name string) (int32, ui
 	return 0, dirent.Inode
 }
 
-//GetInodeInfoDirect ...
+// GetInodeInfoDirect ...
 func (ns *nameSpace) GetInodeInfoDirect(pinode uint64, name string) (int32, *mp.InodeInfo, uint64) {
 	ns.RLock()
 	defer ns.RUnlock()
@@ -344,7 +354,7 @@ func (ns *nameSpace) GetInodeInfoDirect(pinode uint64, name string) (int32, *mp.
 	return 0, pInodeInfo, dirent.Inode
 }
 
-//StatDirect ...
+// StatDirect ...
 func (ns *nameSpace) StatDirect(pinode uint64, name string) (uint32, uint64, int32) {
 	ns.RLock()
 	ns.RUnlock()
@@ -359,7 +369,7 @@ func (ns *nameSpace) StatDirect(pinode uint64, name string) (uint32, uint64, int
 	return dirent.InodeType, dirent.Inode, 0
 }
 
-//ListDirect ...
+// ListDirect ...
 func (ns *nameSpace) ListDirect(pinode uint64) ([]*mp.DirentN, int32) {
 	ns.RLock()
 	defer ns.RUnlock()
@@ -378,7 +388,7 @@ func (ns *nameSpace) ListDirect(pinode uint64) ([]*mp.DirentN, int32) {
 	return nil, utils.ENO_NOENT
 }
 
-//DeleteDirDirect ...
+// DeleteDirDirect ...
 func (ns *nameSpace) DeleteDirDirect(pinode uint64, name string) int32 {
 	ns.Lock()
 	defer ns.Unlock()
@@ -395,7 +405,7 @@ func (ns *nameSpace) DeleteDirDirect(pinode uint64, name string) int32 {
 	return 0
 }
 
-//RenameDirect ...
+// RenameDirect ...
 func (ns *nameSpace) RenameDirect(oldpinode uint64, oldName string, newpinode uint64, newName string) int32 {
 	ns.Lock()
 	defer ns.Unlock()
@@ -419,7 +429,7 @@ func (ns *nameSpace) RenameDirect(oldpinode uint64, oldName string, newpinode ui
 	return 0
 }
 
-//CreateFileDirect ...
+// CreateFileDirect ...
 func (ns *nameSpace) CreateFileDirect(pinode uint64, name string) (int32, uint64) {
 	ns.Lock()
 	defer ns.Unlock()
@@ -459,7 +469,7 @@ func (ns *nameSpace) CreateFileDirect(pinode uint64, name string) (int32, uint64
 	return 0, inodeID
 }
 
-//DeleteFileDirect ...
+// DeleteFileDirect ...
 func (ns *nameSpace) DeleteFileDirect(pinode uint64, name string) int32 {
 	ns.Lock()
 	defer ns.Unlock()
@@ -496,7 +506,7 @@ func (ns *nameSpace) DeleteFileDirect(pinode uint64, name string) int32 {
 	return 0
 }
 
-//DeleteSymLinkDirect ...
+// DeleteSymLinkDirect ...
 func (ns *nameSpace) DeleteSymLinkDirect(pinode uint64, name string) int32 {
 	ns.Lock()
 	defer ns.Unlock()
@@ -509,7 +519,7 @@ func (ns *nameSpace) DeleteSymLinkDirect(pinode uint64, name string) int32 {
 	return 0
 }
 
-//GetFileChunksDirect ...
+// GetFileChunksDirect ...
 func (ns *nameSpace) GetFileChunksDirect(pinode uint64, name string) (int32, []*mp.ChunkInfo, uint64) {
 	ns.RLock()
 	defer ns.RUnlock()
@@ -536,7 +546,7 @@ func (ns *nameSpace) GetFileChunksDirect(pinode uint64, name string) (int32, []*
 	return 0, pInodeInfo.Chunks, dirent.Inode
 }
 
-//AllocateChunk ...
+// AllocateChunk ...
 func (ns *nameSpace) AllocateChunk() (int32, *mp.ChunkInfoWithBG) {
 	ns.Lock()
 	defer ns.Unlock()
@@ -565,7 +575,7 @@ func (ns *nameSpace) AllocateChunk() (int32, *mp.ChunkInfoWithBG) {
 
 }
 
-//SyncChunk ...
+// SyncChunk ...
 func (ns *nameSpace) SyncChunk(pinode uint64, name string, chunkinfo *mp.ChunkInfo) int32 {
 	ns.Lock()
 	defer ns.Unlock()
@@ -637,7 +647,7 @@ func (ns *nameSpace) SyncChunk(pinode uint64, name string, chunkinfo *mp.ChunkIn
 
 }
 
-//SyncChunk ...
+// AsyncChunk ...
 func (ns *nameSpace) AsyncChunk(pinode uint64, name string, chunkid uint64, commitSize uint32, blockGroupID uint64) int32 {
 	ns.Lock()
 	defer ns.Unlock()
@@ -719,7 +729,7 @@ const (
 	blockGroupFull = 2
 )
 
-//chooseBlockGroup ...
+// chooseBlockGroup ...
 func (ns *nameSpace) chooseBlockGroup() (int32, uint64, *mp.BlockGroupWithHost) {
 	defer catchPanic()
 
@@ -769,7 +779,7 @@ func (ns *nameSpace) chooseBlockGroup() (int32, uint64, *mp.BlockGroupWithHost) 
 	return -3, 0, nil
 }
 
-//releaseBlockGroup ...
+// releaseBlockGroup ...
 func (ns *nameSpace) releaseBlockGroup(blockGroupID uint64, chunSize int32) {
 
 	defer catchPanic()
@@ -799,7 +809,7 @@ func (ns *nameSpace) releaseBlockGroup(blockGroupID uint64, chunSize int32) {
 
 }
 
-//SymLink ...
+// SymLink ...
 func (ns *nameSpace) SymLink(pInode uint64, newName string, target string) (int32, uint64) {
 	ns.Lock()
 	defer ns.Unlock()
@@ -829,7 +839,7 @@ func (ns *nameSpace) SymLink(pInode uint64, newName string, target string) (int3
 	return 0, inodeID
 }
 
-//SymLink ...
+// SymLink ...
 func (ns *nameSpace) ReadLink(inode uint64) (int32, string) {
 	ns.RLock()
 	defer ns.RUnlock()
@@ -847,17 +857,17 @@ func (ns *nameSpace) ReadLink(inode uint64) (int32, string) {
 	return 0, symLinkInfo.Target
 }
 
-//AllocateInodeID ...
+// AllocateInodeID ...
 func (ns *nameSpace) AllocateInodeID() (uint64, error) {
 	return ns.RaftGroup.InodeIDGET(ns.RaftGroupID)
 }
 
-//AllocateChunkID ...
+// AllocateChunkID ...
 func (ns *nameSpace) AllocateChunkID() (uint64, error) {
 	return ns.RaftGroup.ChunkIDGET(ns.RaftGroupID)
 }
 
-//inodeDBGet ...
+// inodeDBGet ...
 func (ns *nameSpace) inodeDBGet(inode uint64) (error, *mp.InodeInfo) {
 
 	value, err := ns.RaftGroup.InodeGet(ns.RaftGroupID, inode)
@@ -877,7 +887,7 @@ func (ns *nameSpace) inodeDBGet(inode uint64) (error, *mp.InodeInfo) {
 	return nil, &inodeInfo
 }
 
-//inodeDBSet ...
+// inodeDBSet ...
 func (ns *nameSpace) inodeDBSet(inode uint64, v *mp.InodeInfo) error {
 
 	val, _ := pbproto.Marshal(v)
@@ -894,7 +904,7 @@ func (ns *nameSpace) inodeDBSet(inode uint64, v *mp.InodeInfo) error {
 
 }
 
-//inodeDBDelete ...
+// inodeDBDelete ...
 func (ns *nameSpace) inodeDBDelete(inode uint64) error {
 
 	err := ns.RaftGroup.InodeDel(ns.RaftGroupID, inode)
@@ -908,7 +918,7 @@ func (ns *nameSpace) inodeDBDelete(inode uint64) error {
 	return nil
 }
 
-//inodeDBGet ...
+// symLinkDBGet ...
 func (ns *nameSpace) symLinkDBGet(inode uint64) (bool, *mp.SymLinkInfo) {
 
 	value, err := ns.RaftGroup.InodeGet(ns.RaftGroupID, inode)
@@ -928,7 +938,7 @@ func (ns *nameSpace) symLinkDBGet(inode uint64) (bool, *mp.SymLinkInfo) {
 	return true, &symLinkInfo
 }
 
-//inodeDBSet ...
+// symLinkDBSet ...
 func (ns *nameSpace) symLinkDBSet(inode uint64, v *mp.SymLinkInfo) error {
 
 	val, _ := pbproto.Marshal(v)
@@ -945,7 +955,7 @@ func (ns *nameSpace) symLinkDBSet(inode uint64, v *mp.SymLinkInfo) error {
 
 }
 
-//inodeDBDelete ...
+// symLinkDBDelete ...
 func (ns *nameSpace) symLinkDBDelete(inode uint64) error {
 
 	err := ns.RaftGroup.InodeDel(ns.RaftGroupID, inode)
@@ -959,17 +969,20 @@ func (ns *nameSpace) symLinkDBDelete(inode uint64) error {
 	return nil
 }
 
+// encodeKey ...
 func encodeKey(pid uint64, name string) string {
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, pid)
 	return string(b) + "-" + name
 }
 
+// decodeKey ...
 func decodeKey(key string) (uint64, string) {
 
 	return binary.BigEndian.Uint64([]byte(key)), string([]byte(key)[9:])
 }
 
+// DentryDBGet ...
 func (ns *nameSpace) DentryDBGet(pinode uint64, name string) (ret int32, d *mp.Dirent) {
 	ns.RLock()
 	defer ns.RUnlock()
@@ -977,7 +990,7 @@ func (ns *nameSpace) DentryDBGet(pinode uint64, name string) (ret int32, d *mp.D
 	return
 }
 
-//dentryDBGet ...
+// dentryDBGet ...
 func (ns *nameSpace) dentryDBGet(pinode uint64, name string) (int32, *mp.Dirent) {
 	value, err := ns.RaftGroup.DentryGet(ns.RaftGroupID, encodeKey(pinode, name))
 	if err != nil {
@@ -1000,6 +1013,7 @@ func (ns *nameSpace) dentryDBGet(pinode uint64, name string) (int32, *mp.Dirent)
 	return 0, &dirent
 }
 
+// dentryGetRange ...
 func (ns *nameSpace) dentryGetRange(pinode uint64) (bool, []*mp.DirentN) {
 
 	value, err := ns.RaftGroup.DentryGetRange(ns.RaftGroupID, encodeKey(pinode, ""), encodeKey(pinode+1, ""))
@@ -1034,7 +1048,7 @@ func (ns *nameSpace) dentryGetRange(pinode uint64) (bool, []*mp.DirentN) {
 
 }
 
-//dentryDBSet ...
+// dentryDBSet ...
 func (ns *nameSpace) dentryDBSet(pinode uint64, name string, inodeType uint32, inode uint64) error {
 
 	dirent := &mp.Dirent{InodeType: inodeType, Inode: inode}
@@ -1054,7 +1068,7 @@ func (ns *nameSpace) dentryDBSet(pinode uint64, name string, inodeType uint32, i
 
 }
 
-//dentryDBDelete ...
+// dentryDBDelete ...
 func (ns *nameSpace) dentryDBDelete(pinode uint64, name string) error {
 
 	err := ns.RaftGroup.DentryDel(ns.RaftGroupID, encodeKey(pinode, name))
@@ -1068,6 +1082,8 @@ func (ns *nameSpace) dentryDBDelete(pinode uint64, name string) error {
 
 	return nil
 }
+
+// BlockGroupDBGet ...
 func (ns *nameSpace) BlockGroupDBGet(k uint64) (ret bool, bg *mp.BlockGroup) {
 	ns.RLock()
 	defer ns.RUnlock()
@@ -1075,7 +1091,7 @@ func (ns *nameSpace) BlockGroupDBGet(k uint64) (ret bool, bg *mp.BlockGroup) {
 	return
 }
 
-//blockGroupDBGet ...
+// blockGroupDBGet ...
 func (ns *nameSpace) blockGroupDBGet(k uint64) (bool, *mp.BlockGroup) {
 	value, err := ns.RaftGroup.BGGet(ns.RaftGroupID, k)
 	if err != nil {
@@ -1095,7 +1111,7 @@ func (ns *nameSpace) blockGroupDBGet(k uint64) (bool, *mp.BlockGroup) {
 
 }
 
-//blockGroupDBSet ...
+// blockGroupDBSet ...
 func (ns *nameSpace) blockGroupDBSet(k uint64, v *mp.BlockGroup) error {
 	val, _ := pbproto.Marshal(v)
 	err := ns.RaftGroup.BGSet(ns.RaftGroupID, k, val)
@@ -1109,6 +1125,7 @@ func (ns *nameSpace) blockGroupDBSet(k uint64, v *mp.BlockGroup) error {
 	return nil
 }
 
+// blockGroupDBGetAll ...
 func (ns *nameSpace) blockGroupDBGetAll() (bool, []*mp.BlockGroup) {
 
 	value, err := ns.RaftGroup.BGGetAll(ns.RaftGroupID)
