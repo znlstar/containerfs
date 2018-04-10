@@ -12,7 +12,7 @@ import (
 	"github.com/tiglabs/containerfs/metanode"
 	ns "github.com/tiglabs/containerfs/metanode/namespace"
 	"github.com/tiglabs/containerfs/raftopt"
-	com "github.com/tiglabs/containerfs/raftopt/common"
+	"github.com/tiglabs/containerfs/raftopt/common"
 	"github.com/tiglabs/containerfs/utils"
 )
 
@@ -70,14 +70,14 @@ func main() {
 	metaServer.Resolver = r
 
 	//  new raft server
-	addr := &com.Address{
+	addr := &common.Address{
 		Grpc:      metanode.MetaNodeServerAddr.Host + ":9901",
 		Heartbeat: metanode.MetaNodeServerAddr.Host + ":9902",
 		Replicate: metanode.MetaNodeServerAddr.Host + ":9903",
 		Pprof:     metanode.MetaNodeServerAddr.Host + ":9904",
 	}
 	metaServer.Addr = addr
-	err := com.StartRaftServer(&metaServer.RaftServer, metaServer.Resolver, addr, metanode.MetaNodeServerAddr.NodeID)
+	err := common.StartRaftServer(&metaServer.RaftServer, metaServer.Resolver, addr, metanode.MetaNodeServerAddr.NodeID)
 	if err != nil {
 		logger.Error("StartRaftServer failed ...")
 		os.Exit(1)

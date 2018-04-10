@@ -12,7 +12,7 @@ import (
 	"github.com/tiglabs/containerfs/proto/mp"
 	"github.com/tiglabs/containerfs/proto/vp"
 	"github.com/tiglabs/containerfs/raftopt"
-	com "github.com/tiglabs/containerfs/raftopt/common"
+	"github.com/tiglabs/containerfs/raftopt/common"
 	"github.com/tiglabs/containerfs/utils"
 	"github.com/tiglabs/raft"
 	"github.com/tiglabs/raft/proto"
@@ -35,14 +35,14 @@ var MetaNodeServerAddr addr
 // MetaNodeServer ...
 type MetaNodeServer struct {
 	NodeID     uint64
-	Addr       *com.Address
-	Resolver   com.Resolver
+	Addr       *common.Address
+	Resolver   common.Resolver
 	RaftServer *raft.RaftServer
 	sync.Mutex
 }
 
 // GetMetaLeader ...
-func (s *MetaNodeServer) GetMetaLeader(ctx context.Context, in *mp.GetMetaLeaderReq) (*mp.GetMetaLeaderAck, error) {
+func (ms *MetaNodeServer) GetMetaLeader(ctx context.Context, in *mp.GetMetaLeaderReq) (*mp.GetMetaLeaderAck, error) {
 	ack := mp.GetMetaLeaderAck{}
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
@@ -52,7 +52,7 @@ func (s *MetaNodeServer) GetMetaLeader(ctx context.Context, in *mp.GetMetaLeader
 	for id, addr := range raftopt.VolumeAddrDatabase {
 		logger.Debug("id:%v addr:%v", id, *addr)
 	}
-	leaderID, _ := s.RaftServer.LeaderTerm(nameSpace.RaftGroupID)
+	leaderID, _ := ms.RaftServer.LeaderTerm(nameSpace.RaftGroupID)
 	if leaderID <= 0 {
 		ack.Ret = 1
 		return &ack, nil
@@ -63,17 +63,17 @@ func (s *MetaNodeServer) GetMetaLeader(ctx context.Context, in *mp.GetMetaLeader
 }
 
 //CreateNameSpace ...
-func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameSpaceReq) (*mp.CreateNameSpaceAck, error) {
+func (ms *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameSpaceReq) (*mp.CreateNameSpaceAck, error) {
 	ack := mp.CreateNameSpaceAck{}
 
 	for _, v := range in.Volume.VolumePeers {
-		addr := &com.Address{
+		addr := &common.Address{
 			Grpc:      v.Host + ":9901",
 			Heartbeat: v.Host + ":9902",
 			Replicate: v.Host + ":9903",
 			Pprof:     v.Host + ":9904",
 		}
-		s.Resolver.AddNode(v.NodeID, addr)
+		ms.Resolver.AddNode(v.NodeID, addr)
 	}
 
 	var peers []proto.Peer
@@ -81,12 +81,12 @@ func (s *MetaNodeServer) CreateNameSpace(ctx context.Context, in *mp.CreateNameS
 		peers = append(peers, proto.Peer{ID: v.NodeID})
 	}
 
-	ack.Ret = ns.CreateNameSpace(s.RaftServer, peers, MetaNodeServerAddr.NodeID, MetaNodeServerAddr.Waldir, in.VolID, in.Volume.RaftGroupID, in.Volume.BlockGroups, false)
+	ack.Ret = ns.CreateNameSpace(ms.RaftServer, peers, MetaNodeServerAddr.NodeID, MetaNodeServerAddr.Waldir, in.VolID, in.Volume.RaftGroupID, in.Volume.BlockGroups, false)
 	return &ack, nil
 }
 
 //ExpandNameSpace ...
-func (s *MetaNodeServer) ExpandNameSpace(ctx context.Context, in *mp.ExpandNameSpaceReq) (*mp.ExpandNameSpaceAck, error) {
+func (ms *MetaNodeServer) ExpandNameSpace(ctx context.Context, in *mp.ExpandNameSpaceReq) (*mp.ExpandNameSpaceAck, error) {
 
 	ack := mp.ExpandNameSpaceAck{}
 
@@ -101,20 +101,20 @@ func (s *MetaNodeServer) ExpandNameSpace(ctx context.Context, in *mp.ExpandNameS
 }
 
 // SnapShootNameSpace ...
-func (s *MetaNodeServer) SnapShotNameSpace(ctx context.Context, in *mp.SnapShotNameSpaceReq) (*mp.SnapShotNameSpaceAck, error) {
-	go ns.SnapShotNameSpace(s.RaftServer, in.VolID, MetaNodeServerAddr.Waldir)
+func (ms *MetaNodeServer) SnapShotNameSpace(ctx context.Context, in *mp.SnapShotNameSpaceReq) (*mp.SnapShotNameSpaceAck, error) {
+	go ns.SnapShotNameSpace(ms.RaftServer, in.VolID, MetaNodeServerAddr.Waldir)
 	return &mp.SnapShotNameSpaceAck{Ret: 0}, nil
 }
 
 // DeleteNameSpace ...
-func (s *MetaNodeServer) DeleteNameSpace(ctx context.Context, in *mp.DeleteNameSpaceReq) (*mp.DeleteNameSpaceAck, error) {
+func (ms *MetaNodeServer) DeleteNameSpace(ctx context.Context, in *mp.DeleteNameSpaceReq) (*mp.DeleteNameSpaceAck, error) {
 	ack := mp.DeleteNameSpaceAck{}
-	ack.Ret = ns.DeleteNameSpace(s.RaftServer, in.VolID)
+	ack.Ret = ns.DeleteNameSpace(ms.RaftServer, in.VolID)
 	return &ack, nil
 }
 
 //GetFSInfo ...
-func (s *MetaNodeServer) GetFSInfo(ctx context.Context, in *mp.GetFSInfoReq) (*mp.GetFSInfoAck, error) {
+func (ms *MetaNodeServer) GetFSInfo(ctx context.Context, in *mp.GetFSInfoReq) (*mp.GetFSInfoAck, error) {
 	ack := mp.GetFSInfoAck{}
 
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
@@ -128,7 +128,7 @@ func (s *MetaNodeServer) GetFSInfo(ctx context.Context, in *mp.GetFSInfoReq) (*m
 }
 
 //CreateDirDirect ...
-func (s *MetaNodeServer) CreateDirDirect(ctx context.Context, in *mp.CreateDirDirectReq) (*mp.CreateDirDirectAck, error) {
+func (ms *MetaNodeServer) CreateDirDirect(ctx context.Context, in *mp.CreateDirDirectReq) (*mp.CreateDirDirectAck, error) {
 	ack := mp.CreateDirDirectAck{}
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
@@ -140,7 +140,7 @@ func (s *MetaNodeServer) CreateDirDirect(ctx context.Context, in *mp.CreateDirDi
 }
 
 //GetInodeInfoDirect ...
-func (s *MetaNodeServer) GetInodeInfoDirect(ctx context.Context, in *mp.GetInodeInfoDirectReq) (*mp.GetInodeInfoDirectAck, error) {
+func (ms *MetaNodeServer) GetInodeInfoDirect(ctx context.Context, in *mp.GetInodeInfoDirectReq) (*mp.GetInodeInfoDirectAck, error) {
 	ack := mp.GetInodeInfoDirectAck{}
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
@@ -152,7 +152,7 @@ func (s *MetaNodeServer) GetInodeInfoDirect(ctx context.Context, in *mp.GetInode
 }
 
 //StatDirect ...
-func (s *MetaNodeServer) StatDirect(ctx context.Context, in *mp.StatDirectReq) (*mp.StatDirectAck, error) {
+func (ms *MetaNodeServer) StatDirect(ctx context.Context, in *mp.StatDirectReq) (*mp.StatDirectAck, error) {
 	ack := mp.StatDirectAck{}
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
@@ -164,7 +164,7 @@ func (s *MetaNodeServer) StatDirect(ctx context.Context, in *mp.StatDirectReq) (
 }
 
 //ListDirect ...
-func (s *MetaNodeServer) ListDirect(ctx context.Context, in *mp.ListDirectReq) (*mp.ListDirectAck, error) {
+func (ms *MetaNodeServer) ListDirect(ctx context.Context, in *mp.ListDirectReq) (*mp.ListDirectAck, error) {
 	ack := mp.ListDirectAck{}
 
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
@@ -177,7 +177,7 @@ func (s *MetaNodeServer) ListDirect(ctx context.Context, in *mp.ListDirectReq) (
 }
 
 // DeleteDirDirect ...
-func (s *MetaNodeServer) DeleteDirDirect(ctx context.Context, in *mp.DeleteDirDirectReq) (*mp.DeleteDirDirectAck, error) {
+func (ms *MetaNodeServer) DeleteDirDirect(ctx context.Context, in *mp.DeleteDirDirectReq) (*mp.DeleteDirDirectAck, error) {
 
 	ack := mp.DeleteDirDirectAck{}
 
@@ -192,7 +192,7 @@ func (s *MetaNodeServer) DeleteDirDirect(ctx context.Context, in *mp.DeleteDirDi
 }
 
 // RenameDirect ...
-func (s *MetaNodeServer) RenameDirect(ctx context.Context, in *mp.RenameDirectReq) (*mp.RenameDirectAck, error) {
+func (ms *MetaNodeServer) RenameDirect(ctx context.Context, in *mp.RenameDirectReq) (*mp.RenameDirectAck, error) {
 	ack := mp.RenameDirectAck{}
 
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
@@ -205,7 +205,7 @@ func (s *MetaNodeServer) RenameDirect(ctx context.Context, in *mp.RenameDirectRe
 }
 
 //CreateFileDirect ...
-func (s *MetaNodeServer) CreateFileDirect(ctx context.Context, in *mp.CreateFileDirectReq) (*mp.CreateFileDirectAck, error) {
+func (ms *MetaNodeServer) CreateFileDirect(ctx context.Context, in *mp.CreateFileDirectReq) (*mp.CreateFileDirectAck, error) {
 	ack := mp.CreateFileDirectAck{}
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
@@ -217,7 +217,7 @@ func (s *MetaNodeServer) CreateFileDirect(ctx context.Context, in *mp.CreateFile
 }
 
 // DeleteFileDirect ...
-func (s *MetaNodeServer) DeleteFileDirect(ctx context.Context, in *mp.DeleteFileDirectReq) (*mp.DeleteFileDirectAck, error) {
+func (ms *MetaNodeServer) DeleteFileDirect(ctx context.Context, in *mp.DeleteFileDirectReq) (*mp.DeleteFileDirectAck, error) {
 
 	ack := mp.DeleteFileDirectAck{}
 
@@ -232,7 +232,7 @@ func (s *MetaNodeServer) DeleteFileDirect(ctx context.Context, in *mp.DeleteFile
 }
 
 // DeleteFileDirect ...
-func (s *MetaNodeServer) DeleteSymLinkDirect(ctx context.Context, in *mp.DeleteSymLinkDirectReq) (*mp.DeleteSymLinkDirectAck, error) {
+func (ms *MetaNodeServer) DeleteSymLinkDirect(ctx context.Context, in *mp.DeleteSymLinkDirectReq) (*mp.DeleteSymLinkDirectAck, error) {
 
 	ack := mp.DeleteSymLinkDirectAck{}
 
@@ -247,7 +247,7 @@ func (s *MetaNodeServer) DeleteSymLinkDirect(ctx context.Context, in *mp.DeleteS
 }
 
 // GetFileChunksDirect ...
-func (s *MetaNodeServer) GetFileChunksDirect(ctx context.Context, in *mp.GetFileChunksDirectReq) (*mp.GetFileChunksDirectAck, error) {
+func (ms *MetaNodeServer) GetFileChunksDirect(ctx context.Context, in *mp.GetFileChunksDirectReq) (*mp.GetFileChunksDirectAck, error) {
 	ack := mp.GetFileChunksDirectAck{}
 
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
@@ -293,7 +293,7 @@ func (s *MetaNodeServer) GetFileChunksDirect(ctx context.Context, in *mp.GetFile
 }
 
 // AllocateChunk ...
-func (s *MetaNodeServer) AllocateChunk(ctx context.Context, in *mp.AllocateChunkReq) (*mp.AllocateChunkAck, error) {
+func (ms *MetaNodeServer) AllocateChunk(ctx context.Context, in *mp.AllocateChunkReq) (*mp.AllocateChunkAck, error) {
 	ack := mp.AllocateChunkAck{}
 
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
@@ -313,7 +313,7 @@ func (s *MetaNodeServer) AllocateChunk(ctx context.Context, in *mp.AllocateChunk
 }
 
 // SyncChunk ...
-func (s *MetaNodeServer) SyncChunk(ctx context.Context, in *mp.SyncChunkReq) (*mp.SyncChunkAck, error) {
+func (ms *MetaNodeServer) SyncChunk(ctx context.Context, in *mp.SyncChunkReq) (*mp.SyncChunkAck, error) {
 	ack := mp.SyncChunkAck{}
 	chunkinfo := in.ChunkInfo
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
@@ -326,7 +326,7 @@ func (s *MetaNodeServer) SyncChunk(ctx context.Context, in *mp.SyncChunkReq) (*m
 }
 
 // AsyncChunk ...
-func (s *MetaNodeServer) AsyncChunk(ctx context.Context, in *mp.AsyncChunkReq) (*mp.AsyncChunkAck, error) {
+func (ms *MetaNodeServer) AsyncChunk(ctx context.Context, in *mp.AsyncChunkReq) (*mp.AsyncChunkAck, error) {
 	ack := mp.AsyncChunkAck{}
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
@@ -338,7 +338,7 @@ func (s *MetaNodeServer) AsyncChunk(ctx context.Context, in *mp.AsyncChunkReq) (
 }
 
 // SymLink ...
-func (s *MetaNodeServer) SymLink(ctx context.Context, in *mp.SymLinkReq) (*mp.SymLinkAck, error) {
+func (ms *MetaNodeServer) SymLink(ctx context.Context, in *mp.SymLinkReq) (*mp.SymLinkAck, error) {
 	ack := mp.SymLinkAck{}
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
@@ -350,7 +350,7 @@ func (s *MetaNodeServer) SymLink(ctx context.Context, in *mp.SymLinkReq) (*mp.Sy
 }
 
 // ReadLink ...
-func (s *MetaNodeServer) ReadLink(ctx context.Context, in *mp.ReadLinkReq) (*mp.ReadLinkAck, error) {
+func (ms *MetaNodeServer) ReadLink(ctx context.Context, in *mp.ReadLinkReq) (*mp.ReadLinkAck, error) {
 	ack := mp.ReadLinkAck{}
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
@@ -362,7 +362,7 @@ func (s *MetaNodeServer) ReadLink(ctx context.Context, in *mp.ReadLinkReq) (*mp.
 }
 
 //GetSymLinkInfoDirect ...
-func (s *MetaNodeServer) GetSymLinkInfoDirect(ctx context.Context, in *mp.GetSymLinkInfoDirectReq) (*mp.GetSymLinkInfoDirectAck, error) {
+func (ms *MetaNodeServer) GetSymLinkInfoDirect(ctx context.Context, in *mp.GetSymLinkInfoDirectReq) (*mp.GetSymLinkInfoDirectAck, error) {
 	ack := mp.GetSymLinkInfoDirectAck{}
 	ret, nameSpace := ns.GetNameSpace(in.VolID)
 	if ret != 0 {
@@ -403,7 +403,7 @@ func (ms *MetaNodeServer) LoadMetaData() int32 {
 
 	for _, v := range pGetMetaNodeRGPeersAck.RaftGroups {
 		for _, vv := range v.MetaNodes {
-			addr := &com.Address{
+			addr := &common.Address{
 				Grpc:      vv.Host + ":9901",
 				Heartbeat: vv.Host + ":9902",
 				Replicate: vv.Host + ":9903",
