@@ -82,7 +82,7 @@ func (f *File) Attr(ctx context.Context, a *bfuse.Attr) error {
 		ret, inode, inodeInfo := f.parent.fs.cfs.GetInodeInfoDirect(f.parent.inode, f.name)
 		logger.Debug("to get attr from ms %v in type: %v, ret: %v", f.name, f.fileType, ret)
 		if ret == 0 {
-		} else if ret == utils.ENOTFOUND {
+		} else if ret == utils.ENO_NOTEXIST {
 			delete(f.parent.active, f.name)
 			return bfuse.Errno(syscall.ENOENT)
 		} else if ret != 0 || inodeInfo == nil {
@@ -109,7 +109,7 @@ func (f *File) Attr(ctx context.Context, a *bfuse.Attr) error {
 
 		ret, inode := f.parent.fs.cfs.GetSymLinkInfoDirect(f.parent.inode, f.name)
 		if ret == 0 {
-		} else if ret == utils.ENOTFOUND {
+		} else if ret == utils.ENO_NOTEXIST {
 			delete(f.parent.active, f.name)
 			return bfuse.Errno(syscall.ENOENT)
 		} else if ret != 0 {
@@ -153,7 +153,7 @@ func (f *File) Open(ctx context.Context, req *bfuse.OpenRequest, resp *bfuse.Ope
 		ret, f.cfile = f.parent.fs.cfs.OpenFileDirect(f.parent.inode, f.name, int(req.Flags))
 
 		if ret == 0 {
-		} else if ret == utils.ENOTFOUND {
+		} else if ret == utils.ENO_NOTEXIST {
 			//clean dirty cache in dir map
 			delete(f.parent.active, f.name)
 
