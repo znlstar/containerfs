@@ -17,7 +17,7 @@ import (
 
 var VolMgrHosts []string
 
-// DataNodeServer ...
+// DataNodeServer data structure
 type DataNodeServer struct {
 	ClientStreamID                 uint64
 	C2MReplServerStreamCacheLocker sync.RWMutex
@@ -27,7 +27,7 @@ type DataNodeServer struct {
 	M2SReplClientStreamCache       map[uint64]*M2SReplClientStream
 }
 
-// Start DataNode Server
+// StartDataService：Start DataNode Server
 func StartDataService() {
 
 	lis, err := net.Listen("tcp", DtAddr.Host)
@@ -42,7 +42,7 @@ func StartDataService() {
 	}
 }
 
-// DataNodeServerAddr ...
+// DataNodeServerAddr：DataNode Server address
 type DataNodeServerAddr struct {
 	Host string
 	Path string
@@ -56,7 +56,7 @@ var MetaNodeAddr string
 
 var DtAddr DataNodeServerAddr
 
-// Registry DataNode to VolMgr Server
+// RegistryToVolMgr: the DataNode registry to VolMgr Server
 func RegistryToVolMgr() {
 	_, conn, err := utils.DialVolMgr(VolMgrHosts)
 	if err != nil {
@@ -93,7 +93,7 @@ func RegistryToVolMgr() {
 	return
 }
 
-// DatanodeHealthCheck: check datanode if alive
+// DatanodeHealthCheck: check the DataNode if alive
 func (s *DataNodeServer) DataNodeHealthCheck(ctx context.Context, in *dp.DataNodeHealthCheckReq) (*dp.DataNodeHealthCheckAck, error) {
 	ack := dp.DataNodeHealthCheckAck{}
 	f, err := os.OpenFile(DtAddr.Path+"/health", os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0666)
