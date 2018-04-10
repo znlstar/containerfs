@@ -732,7 +732,7 @@ func (r *VolumeResolver) NodeAddress(nodeID uint64, stype raft.SocketType) (addr
 	}
 }
 
-// TakeKvSnapShoot ...
+// TakeVolumeKvSnapShot ...
 func TakeVolumeKvSnapShot(ms *VolumeKvStateMachine, rsg *wal.Storage, path string) error {
 
 	_, err := os.Stat(path)
@@ -849,7 +849,7 @@ func TakeVolumeKvSnapShot(ms *VolumeKvStateMachine, rsg *wal.Storage, path strin
 	return nil
 }
 
-// LoadKvSnapShoot ...
+// LoadVolumeKvSnapShot ...
 func LoadVolumeKvSnapShot(ms *VolumeKvStateMachine, path string) (uint64, error) {
 	fi, err := os.Open(path + "/applied")
 	if err != nil {

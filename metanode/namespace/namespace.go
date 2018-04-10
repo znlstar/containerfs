@@ -188,7 +188,7 @@ func CreateNameSpace(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir
 	return errno
 }
 
-// SnapShootNameSpace ...
+// SnapShotNameSpace ...
 func SnapShotNameSpace(rs *raft.RaftServer, UUID string, dir string) int32 {
 
 	defer catchPanic()
@@ -290,9 +290,8 @@ func (ns *nameSpace) CreateDirDirect(pinode uint64, name string) (int32, uint64)
 	if err, _ := ns.inodeDBGet(pinode); err != nil {
 		if err == raftopt.ErrKeyNotFound {
 			return utils.ENO_NOTEXIST, 0
-		} else {
-			return 2, 0
 		}
+		return 2, 0
 	}
 
 	/*update inode info*/
@@ -440,9 +439,8 @@ func (ns *nameSpace) CreateFileDirect(pinode uint64, name string) (int32, uint64
 	if err, _ := ns.inodeDBGet(pinode); err != nil {
 		if err == raftopt.ErrKeyNotFound {
 			return utils.ENO_NOTEXIST, 0
-		} else {
-			return 2, 0
 		}
+		return 2, 0
 	}
 
 	/*update inode info*/
@@ -486,9 +484,8 @@ func (ns *nameSpace) DeleteFileDirect(pinode uint64, name string) int32 {
 		value, err = ns.RaftGroup.InodeGet(ns.RaftGroupID, pDirent.Inode)
 		if err == raftopt.ErrKeyNotFound {
 			return 0
-		} else {
-			return 4
 		}
+		return 4
 	}
 	inodeInfo := mp.InodeInfo{}
 	err = pbproto.Unmarshal(value, &inodeInfo)
@@ -530,9 +527,8 @@ func (ns *nameSpace) GetFileChunksDirect(pinode uint64, name string) (int32, []*
 	if err, _ := ns.inodeDBGet(pinode); err != nil {
 		if err == raftopt.ErrKeyNotFound {
 			return utils.ENO_NOTEXIST, nil, 0
-		} else {
-			return 2, nil, 0
 		}
+		return 2, nil, 0
 	}
 
 	gRet, dirent := ns.dentryDBGet(pinode, name)
@@ -672,9 +668,8 @@ func (ns *nameSpace) AsyncChunk(pinode uint64, name string, chunkid uint64, comm
 	if err, _ := ns.inodeDBGet(pinode); err != nil {
 		if err == raftopt.ErrKeyNotFound {
 			return utils.ENO_NOTEXIST
-		} else {
-			return 2
 		}
+		return 2
 	}
 
 	inodeInfo.ModifiTime = time.Now().Unix()
@@ -998,9 +993,8 @@ func (ns *nameSpace) dentryDBGet(pinode uint64, name string) (int32, *mp.Dirent)
 		if err != nil {
 			if err == raftopt.ErrKeyNotFound {
 				return utils.ENO_NOTEXIST, nil
-			} else {
-				return 2, nil
 			}
+			return 2, nil
 		}
 	}
 
