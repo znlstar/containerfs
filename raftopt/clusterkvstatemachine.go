@@ -1120,8 +1120,12 @@ func (s *ClusterKvSnapShot) Next() ([]byte, error) {
 			s.curBtreeIdx = s.curBtreeIdx + 1
 			continue
 		}
-		data, err = pbproto.Marshal(kv)
-		return nil, err
+
+		if data, err = pbproto.Marshal(kv); err != nil {
+			return nil, err
+		}
+
+		return data, err
 	}
 
 	return nil, io.ErrUnexpectedEOF
