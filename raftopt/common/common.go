@@ -15,7 +15,7 @@ type Address struct {
 	Pprof     string // 9904
 }
 
-// Resovler interface
+// Resolver interface
 type Resolver interface {
 	AddNode(uint64, *Address)
 	RemoveNode(uint64, *Address)

@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// GenerateRandomNumber ...
 func GenerateRandomNumber(start int, end int, count int) []int {
 	if end < start || (end-start) < count {
 		return nil

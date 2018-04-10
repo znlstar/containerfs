@@ -5,5 +5,6 @@ import (
 )
 
 var (
+	// ErrNotLeader ...
 	ErrNotLeader = errors.New("not leader")
 )

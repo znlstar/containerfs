@@ -5,11 +5,12 @@ import (
 )
 
 var (
-	Release string = ""
-	Build   string = ""
-	Go      string = ""
+	Release string
+	Build   string
+	Go      string
 )
 
+// Version ...
 func Version() string {
 	if Release == "" {
 		Release = "0.0.0"

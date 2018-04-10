@@ -5,6 +5,7 @@ import (
 	"syscall"
 )
 
+// MemStatus ...
 type MemStatus struct {
 	All   uint64 `json:"all"`
 	Used  uint64 `json:"used"`
@@ -12,13 +13,13 @@ type MemStatus struct {
 	Usage float64
 }
 
+// MemStat ...
 func MemStat() MemStatus {
-	//自身占用
 	memStat := new(runtime.MemStats)
 	runtime.ReadMemStats(memStat)
 	mem := MemStatus{}
 
-	//系统占用,仅linux/mac下有效
+	//only for linux/mac
 	//system memory usage
 	sysInfo := new(syscall.Sysinfo_t)
 	err := syscall.Sysinfo(sysInfo)

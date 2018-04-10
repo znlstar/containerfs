@@ -11,7 +11,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// GetLeader ...
+// GetMetaNodeLeader ...
 func GetMetaNodeLeader(hosts []string, UUID string) (string, error) {
 
 	//logger.Debug("GetMetaNodeLeader hosts %v", hosts)
@@ -81,7 +81,7 @@ func TryDial(host string) error {
 	return nil
 }
 
-// GetLeader ...
+// GetVolMgrLeader ...
 func GetVolMgrLeader(hosts []string) (string, error) {
 
 	var leader string
@@ -115,7 +115,7 @@ func GetVolMgrLeader(hosts []string) (string, error) {
 
 }
 
-// DialMeta ...
+// DialVolMgr ...
 func DialVolMgr(hosts []string) (string, *grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
