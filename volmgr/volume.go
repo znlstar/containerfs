@@ -77,7 +77,7 @@ func (vs *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp
 		inuseNodes[k] = append(inuseNodes[k], vv)
 	}
 
-	for k, _ := range inuseNodes {
+	for k := range inuseNodes {
 		allip = append(allip, k)
 	}
 
@@ -214,7 +214,7 @@ func (vs *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp
 	//clean kv data on fail
 	if !flag {
 		//clean DataNodeBG kv
-		for host, _ := range dataNodesUsedMap {
+		for host := range dataNodesUsedMap {
 			vs.Cluster.RaftGroup.DataNodeBGDelBG(host, dataNodesUsedMap[host])
 		}
 	}
@@ -290,7 +290,7 @@ func (vs *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp
 		inuseNodes[k] = append(inuseNodes[k], vv)
 	}
 
-	for k, _ := range inuseNodes {
+	for k := range inuseNodes {
 		allip = append(allip, k)
 	}
 
@@ -352,7 +352,7 @@ func (vs *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp
 
 	if err = vs.Cluster.RaftGroup.VolumeSet(1, vol.UUID, vol); err != nil {
 		ack.Ret = -1
-		for host, _ := range dataNodesUsedMap {
+		for host := range dataNodesUsedMap {
 			vs.Cluster.RaftGroup.DataNodeBGDelBG(host, dataNodesUsedMap[host])
 		}
 	}
@@ -586,7 +586,7 @@ func (vs *VolMgrServer) BeginMigrate(bgID uint64, badHost string, tier string) i
 		}
 	}
 
-	for i, _ := range blockGroup.Hosts {
+	for i := range blockGroup.Hosts {
 		if blockGroup.Hosts[i] == badHost {
 			blockGroup.Hosts[i] = dHost
 		}
