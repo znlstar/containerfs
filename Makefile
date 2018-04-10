@@ -1,7 +1,7 @@
 default:  build
 
 clean:
-	rm build -rf
+	rm -rf build
  
 build:
 	sh ./make.sh	
