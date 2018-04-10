@@ -287,7 +287,7 @@ func (ns *nameSpace) CreateDirDirect(pinode uint64, name string) (int32, uint64)
 	defer catchPanic()
 
 	//to check parent dir's existence
-	if err, _ := ns.inodeDBGet(pinode); err != nil {
+	if _, err := ns.inodeDBGet(pinode); err != nil {
 		if err == raftopt.ErrKeyNotFound {
 			return utils.ENO_NOTEXIST, 0
 		}
@@ -347,7 +347,7 @@ func (ns *nameSpace) GetInodeInfoDirect(pinode uint64, name string) (int32, *mp.
 		return gRet, nil, 0
 	}
 	var err error
-	if err, pInodeInfo = ns.inodeDBGet(dirent.Inode); err != nil {
+	if pInodeInfo, err = ns.inodeDBGet(dirent.Inode); err != nil {
 		return 2, nil, 0
 	}
 	return 0, pInodeInfo, dirent.Inode
@@ -373,7 +373,7 @@ func (ns *nameSpace) ListDirect(pinode uint64) ([]*mp.DirentN, int32) {
 	ns.RLock()
 	defer ns.RUnlock()
 
-	if err, _ := ns.inodeDBGet(pinode); err != nil {
+	if _, err := ns.inodeDBGet(pinode); err != nil {
 		if err == raftopt.ErrKeyNotFound {
 			return nil, utils.ENO_NOTEXIST
 		}
@@ -436,7 +436,7 @@ func (ns *nameSpace) CreateFileDirect(pinode uint64, name string) (int32, uint64
 	defer catchPanic()
 
 	//to check parent dir's existence
-	if err, _ := ns.inodeDBGet(pinode); err != nil {
+	if _, err := ns.inodeDBGet(pinode); err != nil {
 		if err == raftopt.ErrKeyNotFound {
 			return utils.ENO_NOTEXIST, 0
 		}
@@ -524,7 +524,7 @@ func (ns *nameSpace) GetFileChunksDirect(pinode uint64, name string) (int32, []*
 	defer catchPanic()
 
 	//to check parent dir's existence
-	if err, _ := ns.inodeDBGet(pinode); err != nil {
+	if _, err := ns.inodeDBGet(pinode); err != nil {
 		if err == raftopt.ErrKeyNotFound {
 			return utils.ENO_NOTEXIST, nil, 0
 		}
@@ -535,7 +535,7 @@ func (ns *nameSpace) GetFileChunksDirect(pinode uint64, name string) (int32, []*
 	if gRet != 0 {
 		return gRet, nil, 0
 	}
-	err, pInodeInfo := ns.inodeDBGet(dirent.Inode)
+	pInodeInfo, err := ns.inodeDBGet(dirent.Inode)
 	if err != nil {
 		return 1, nil, 0
 	}
@@ -586,7 +586,7 @@ func (ns *nameSpace) SyncChunk(pinode uint64, name string, chunkinfo *mp.ChunkIn
 		return ret
 	}
 
-	err, inodeInfo := ns.inodeDBGet(dirent.Inode)
+	inodeInfo, err := ns.inodeDBGet(dirent.Inode)
 	if err != nil {
 		ret = 2 /*ENOENT*/
 		return ret
@@ -655,17 +655,16 @@ func (ns *nameSpace) AsyncChunk(pinode uint64, name string, chunkid uint64, comm
 		return gRet
 	}
 
-	err, inodeInfo := ns.inodeDBGet(dirent.Inode)
+	inodeInfo, err := ns.inodeDBGet(dirent.Inode)
 	if err != nil {
 		if err == raftopt.ErrKeyNotFound {
 			return utils.ENO_NOTEXIST
-		} else {
-			return 2
 		}
+		return 2
 	}
 
 	//to check parent dir's existence
-	if err, _ := ns.inodeDBGet(pinode); err != nil {
+	if _, err := ns.inodeDBGet(pinode); err != nil {
 		if err == raftopt.ErrKeyNotFound {
 			return utils.ENO_NOTEXIST
 		}
@@ -863,23 +862,23 @@ func (ns *nameSpace) AllocateChunkID() (uint64, error) {
 }
 
 // inodeDBGet ...
-func (ns *nameSpace) inodeDBGet(inode uint64) (error, *mp.InodeInfo) {
+func (ns *nameSpace) inodeDBGet(inode uint64) (*mp.InodeInfo, error) {
 
 	value, err := ns.RaftGroup.InodeGet(ns.RaftGroupID, inode)
 	if err != nil {
 		value, err = ns.RaftGroup.InodeGet(ns.RaftGroupID, inode)
 		if err != nil {
-			return err, nil
+			return nil, err
 		}
 	}
 
 	inodeInfo := mp.InodeInfo{}
 	err = pbproto.Unmarshal(value, &inodeInfo)
 	if err != nil {
-		return err, nil
+		return nil, err
 	}
 
-	return nil, &inodeInfo
+	return &inodeInfo, nil
 }
 
 // inodeDBSet ...
