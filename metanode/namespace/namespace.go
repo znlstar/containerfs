@@ -279,7 +279,7 @@ func (ns *nameSpace) CreateDirDirect(pinode uint64, name string) (int32, uint64)
 	//to check parent dir's existence
 	if err, _ := ns.inodeDBGet(pinode); err != nil {
 		if err == raftopt.ErrKeyNotFound {
-			return utils.ENOTFOUND, 0
+			return utils.ENO_NOTEXIST, 0
 		} else {
 			return 2, 0
 		}
@@ -366,7 +366,7 @@ func (ns *nameSpace) ListDirect(pinode uint64) ([]*mp.DirentN, int32) {
 
 	if err, _ := ns.inodeDBGet(pinode); err != nil {
 		if err == raftopt.ErrKeyNotFound {
-			return nil, utils.ENOTFOUND
+			return nil, utils.ENO_NOTEXIST
 		}
 		return nil, 2
 	}
@@ -375,7 +375,7 @@ func (ns *nameSpace) ListDirect(pinode uint64) ([]*mp.DirentN, int32) {
 		return v, 0
 	}
 
-	return nil, utils.ENOENT
+	return nil, utils.ENO_NOENT
 }
 
 //DeleteDirDirect ...
@@ -429,7 +429,7 @@ func (ns *nameSpace) CreateFileDirect(pinode uint64, name string) (int32, uint64
 	//to check parent dir's existence
 	if err, _ := ns.inodeDBGet(pinode); err != nil {
 		if err == raftopt.ErrKeyNotFound {
-			return utils.ENOTFOUND, 0
+			return utils.ENO_NOTEXIST, 0
 		} else {
 			return 2, 0
 		}
@@ -519,7 +519,7 @@ func (ns *nameSpace) GetFileChunksDirect(pinode uint64, name string) (int32, []*
 	//to check parent dir's existence
 	if err, _ := ns.inodeDBGet(pinode); err != nil {
 		if err == raftopt.ErrKeyNotFound {
-			return utils.ENOTFOUND, nil, 0
+			return utils.ENO_NOTEXIST, nil, 0
 		} else {
 			return 2, nil, 0
 		}
@@ -652,7 +652,7 @@ func (ns *nameSpace) AsyncChunk(pinode uint64, name string, chunkid uint64, comm
 	err, inodeInfo := ns.inodeDBGet(dirent.Inode)
 	if err != nil {
 		if err == raftopt.ErrKeyNotFound {
-			return utils.ENOTFOUND
+			return utils.ENO_NOTEXIST
 		} else {
 			return 2
 		}
@@ -661,7 +661,7 @@ func (ns *nameSpace) AsyncChunk(pinode uint64, name string, chunkid uint64, comm
 	//to check parent dir's existence
 	if err, _ := ns.inodeDBGet(pinode); err != nil {
 		if err == raftopt.ErrKeyNotFound {
-			return utils.ENOTFOUND
+			return utils.ENO_NOTEXIST
 		} else {
 			return 2
 		}
@@ -984,7 +984,7 @@ func (ns *nameSpace) dentryDBGet(pinode uint64, name string) (int32, *mp.Dirent)
 		value, err = ns.RaftGroup.DentryGet(ns.RaftGroupID, encodeKey(pinode, name))
 		if err != nil {
 			if err == raftopt.ErrKeyNotFound {
-				return utils.ENOTFOUND, nil
+				return utils.ENO_NOTEXIST, nil
 			} else {
 				return 2, nil
 			}
