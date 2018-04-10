@@ -27,6 +27,7 @@ type DataNodeServer struct {
 	M2SReplClientStreamCache       map[uint64]*M2SReplClientStream
 }
 
+// Start DataNode Server
 func StartDataService() {
 
 	lis, err := net.Listen("tcp", DtAddr.Host)
@@ -41,6 +42,7 @@ func StartDataService() {
 	}
 }
 
+// DataNodeServerAddr ...
 type DataNodeServerAddr struct {
 	Host string
 	Path string
@@ -52,9 +54,9 @@ type DataNodeServerAddr struct {
 var MetaNodePeers []string
 var MetaNodeAddr string
 
-// DataNodeServerAddr ...
 var DtAddr DataNodeServerAddr
 
+// Registry DataNode to VolMgr Server
 func RegistryToVolMgr() {
 	_, conn, err := utils.DialVolMgr(VolMgrHosts)
 	if err != nil {
