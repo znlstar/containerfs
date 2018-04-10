@@ -129,18 +129,14 @@ func (d *dir) reviveNode(inodeType uint32, inode uint64, name string) (node, err
 	if inodeType == utils.INODE_DIR {
 		child, _ := d.reviveDir(inode, name)
 		return child, nil
-	} else {
-		child := &File{
-			inode:    inode,
-			name:     name,
-			parent:   d,
-			fileType: inodeType,
-		}
-		return child, nil
-
 	}
-	return nil, nil
-
+	child := &File{
+		inode:    inode,
+		name:     name,
+		parent:   d,
+		fileType: inodeType,
+	}
+	return child, nil
 }
 
 // ReadDirAll ...

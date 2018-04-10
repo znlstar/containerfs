@@ -157,7 +157,7 @@ func (s *VolMgrServer) SetDataNodeMap(v *vp.DataNode) int {
 }
 
 //todo: not implemented yet
-func (vs VolMgrServer) delDataNode(host string) error {
+func (s *VolMgrServer) delDataNode(host string) error {
 	return nil
 }
 

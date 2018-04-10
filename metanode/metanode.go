@@ -448,7 +448,7 @@ func (ms *MetaNodeServer) GetBlockGroupInfo(ctx context.Context, in *mp.GetBlock
 	return &ack, nil
 }
 
-func RegistryToVolMgr(metaServer MetaNodeServer) int {
+func (ms *MetaNodeServer) RegistryToVolMgr() int {
 
 	_, conn, err := utils.DialVolMgr(MetaNodeServerAddr.VolmgrHosts)
 	if err != nil {

@@ -84,7 +84,7 @@ func main() {
 	}
 	logger.Debug("StartRaftServer success ...")
 
-	if ret := metanode.RegistryToVolMgr(metaServer); ret != 0 {
+	if ret := metaServer.RegistryToVolMgr(); ret != 0 {
 		os.Exit(1)
 	}
 
