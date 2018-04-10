@@ -17,7 +17,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// StreamReadChunk ...
+// StreamReadChunk: use stream mode for read chunk data
 func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.DataNode_StreamReadChunkServer) error {
 
 	bpath := path.Join(DtAddr.Path, "blockgroup-"+strconv.FormatUint(in.BlockGroupID, 10))
@@ -85,6 +85,7 @@ func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.Da
 	return nil
 }
 
+// RecvMigrateMsg: receive DataNode migrate message from VolMgr
 func (s *DataNodeServer) RecvMigrateMsg(ctx context.Context, in *dp.RecvMigrateReq) (*dp.RecvMigrateAck, error) {
 	ack := dp.RecvMigrateAck{}
 	sid := in.BlockGroupID
@@ -178,6 +179,7 @@ func (s *DataNodeServer) RecvMigrateMsg(ctx context.Context, in *dp.RecvMigrateR
 	return &ack, nil
 }
 
+// SendMigrateData: send chunk data to the new DataNode
 func (s *DataNodeServer) SendMigrateData(stream dp.DataNode_SendMigrateDataServer) error {
 	for {
 		finfo, err := stream.Recv()
@@ -213,7 +215,7 @@ func (s *DataNodeServer) SendMigrateData(stream dp.DataNode_SendMigrateDataServe
 	}
 }
 
-//DeleteChunk rpc DeleteChunks(eleteChunksReq) returns (eleteChunksAck){};
+//DeleteChunk: delete chunk file
 func (s *DataNodeServer) DeleteChunk(ctx context.Context, in *dp.DeleteChunkReq) (*dp.DeleteChunkAck, error) {
 	var err error
 
