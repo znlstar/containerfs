@@ -78,7 +78,7 @@ func (d *dir) Attr(ctx context.Context, a *bfuse.Attr) error {
 		logger.Debug("d p inode:%v", d.parent.inode)
 		ret, inode, inodeInfo := d.fs.cfs.GetInodeInfoDirect(d.parent.inode, d.name)
 		if ret == 0 {
-		} else if ret == utils.ENOTFOUND {
+		} else if ret == utils.ENO_NOTEXIST {
 			d.mu.Lock()
 			//clean dirty cache in dir map
 			delete(d.parent.active, d.name)
@@ -156,13 +156,13 @@ func (d *dir) ReadDirAll(ctx context.Context) ([]bfuse.Dirent, error) {
 
 	if ret == 0 {
 
-	} else if ret == utils.ENOTFOUND {
+	} else if ret == utils.ENO_NOTEXIST {
 		if d.parent != nil {
 			//clean dirty cache in dir map
 			delete(d.parent.active, d.name)
 		}
 		return nil, bfuse.Errno(syscall.EPERM)
-	} else if ret == 2 || ret == utils.ENOENT {
+	} else if ret == 2 || ret == utils.ENO_NOENT {
 		return nil, bfuse.Errno(syscall.ENOENT)
 	} else {
 		return nil, bfuse.Errno(syscall.EIO)
@@ -342,7 +342,7 @@ func (d *dir) Remove(ctx context.Context, req *bfuse.RemoveRequest) error {
 			logger.Debug("symlink DeleteSymLinkDirect ret  %v", ret)
 
 			if ret != 0 {
-				if ret == utils.ENOTFOUND {
+				if ret == utils.ENO_NOTEXIST {
 					return nil
 				} else if ret == 2 {
 					return bfuse.Errno(syscall.EPERM)
@@ -355,7 +355,7 @@ func (d *dir) Remove(ctx context.Context, req *bfuse.RemoveRequest) error {
 
 			ret := d.fs.cfs.DeleteFileDirect(d.inode, req.Name)
 			if ret != 0 {
-				if ret == utils.ENOTFOUND {
+				if ret == utils.ENO_NOTEXIST {
 					return nil
 				} else if ret == 2 {
 					return bfuse.Errno(syscall.EPERM)
@@ -431,7 +431,7 @@ func (d *dir) Rename(ctx context.Context, req *bfuse.RenameRequest, newDir fs.No
 
 		ret := d.fs.cfs.RenameDirect(d.inode, req.OldName, d.inode, req.NewName)
 		if ret != 0 {
-			if ret == utils.ENOTFOUND {
+			if ret == utils.ENO_NOTEXIST {
 				delete(d.active, req.OldName)
 				return bfuse.Errno(syscall.ENOENT)
 			} else if ret == 2 {
