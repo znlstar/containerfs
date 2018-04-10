@@ -12,6 +12,7 @@ import (
 	"github.com/tiglabs/containerfs/utils"
 )
 
+// DataNode Server init
 func init() {
 
 	var loglevel string
@@ -63,6 +64,7 @@ func init() {
 
 }
 
+// DataNode Server main
 func main() {
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
