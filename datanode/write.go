@@ -18,13 +18,15 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Master Struct
+// C2MReplServerStream: Master DataNode Struct
 type C2MReplServerStream struct {
 	stream dp.DataNode_C2MReplServer
 	sync.Mutex
 	NeedBreak     bool
 	ReplicaStream *M2SReplClientStream
 }
+
+// M2SReplClientStream: Client Struct for Slave DataNode
 type M2SReplClientStream struct {
 	s      *DataNodeServer
 	conn   *grpc.ClientConn
@@ -35,7 +37,7 @@ type M2SReplClientStream struct {
 	isErr        bool
 }
 
-// Slave Struct
+// M2SReplServerStream: Slave DataNode Struct
 type M2SReplServerStream struct {
 	stream              dp.DataNode_M2SReplServer
 	NeedBreak           bool
@@ -43,12 +45,15 @@ type M2SReplServerStream struct {
 	BackupHost          string
 	S2BReplClientStream *S2BReplClientStream
 }
+
+// S2BReplClientStream: Client Struct for BackUp DataNode
 type S2BReplClientStream struct {
 	conn         *grpc.ClientConn
 	stream       dp.DataNode_S2BReplClient
 	BlockGroupID uint64
 }
 
+// writeDisk: write chunk data to disk
 func (s *DataNodeServer) writeDisk(blockGroupID uint64, chunkID uint64, databuf []byte) error {
 
 	bpath := path.Join(DtAddr.Path, "blockgroup-"+strconv.FormatUint(blockGroupID, 10))
@@ -81,7 +86,7 @@ func (s *DataNodeServer) writeDisk(blockGroupID uint64, chunkID uint64, databuf 
 	return nil
 }
 
-// SeekWriteChunk ...
+// SeekWriteChunk: random write interface
 func (s *DataNodeServer) SeekWriteChunk(ctx context.Context, in *dp.SeekWriteChunkReq) (*dp.WriteChunkAck, error) {
 	var f *os.File
 	var err error
@@ -125,7 +130,7 @@ func (s *DataNodeServer) SeekWriteChunk(ctx context.Context, in *dp.SeekWriteChu
 	return &ack, nil
 }
 
-// WriteChunk ...
+// WriteChunk: sequential write interface
 func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (*dp.WriteChunkAck, error) {
 
 	ack := dp.WriteChunkAck{}
@@ -136,8 +141,7 @@ func (s *DataNodeServer) WriteChunk(ctx context.Context, in *dp.WriteChunkReq) (
 	return &ack, nil
 }
 
-// On Master
-
+// getReplicaStream ...
 func (s *DataNodeServer) getReplicaStream(blockGroupID uint64) *M2SReplClientStream {
 	s.M2SReplClientStreamCacheLocker.RLock()
 	defer s.M2SReplClientStreamCacheLocker.RUnlock()
@@ -156,6 +160,7 @@ func (s *DataNodeServer) getReplicaStream(blockGroupID uint64) *M2SReplClientStr
 	return ReplicaStream
 }
 
+// putReplicaStream ...
 func (s *DataNodeServer) putReplicaStream(ReplicaStream *M2SReplClientStream) {
 	s.M2SReplClientStreamCacheLocker.Lock()
 	defer s.M2SReplClientStreamCacheLocker.Unlock()
@@ -179,11 +184,13 @@ func (s *DataNodeServer) putReplicaStream(ReplicaStream *M2SReplClientStream) {
 	s.closeReplicaStream(ReplicaStream)
 }
 
+// closeReplicaStream ...
 func (s *DataNodeServer) closeReplicaStream(ReplicaStream *M2SReplClientStream) {
 	ReplicaStream.stream.CloseSend()
 	ReplicaStream.conn.Close()
 }
 
+// addReplicaStream ...
 func (s *DataNodeServer) addReplicaStream(ReplicaStream *M2SReplClientStream) {
 	s.M2SReplClientStreamCacheLocker.Lock()
 	defer s.M2SReplClientStreamCacheLocker.Unlock()
@@ -201,6 +208,7 @@ func (s *DataNodeServer) addReplicaStream(ReplicaStream *M2SReplClientStream) {
 	atomic.StoreInt32(&ReplicaStream.refCnt, 1)
 }
 
+// C2MReplExit ...
 func (s *DataNodeServer) C2MReplExit(clientStreamID uint64) {
 	logger.Debug("DataNode[%v]: ClientID-%d: C2MRepl exit", DtAddr.Host, clientStreamID)
 	s.C2MReplServerStreamCacheLocker.Lock()
@@ -213,7 +221,7 @@ func (s *DataNodeServer) C2MReplExit(clientStreamID uint64) {
 	}
 }
 
-// On Master: C2MRepl ...
+// C2MRepl: master datanode receive data stream from client
 func (s *DataNodeServer) C2MRepl(stream dp.DataNode_C2MReplServer) error {
 
 	clientStreamID := atomic.AddUint64(&s.ClientStreamID, 1)
@@ -298,6 +306,7 @@ func (s *DataNodeServer) C2MRepl(stream dp.DataNode_C2MReplServer) error {
 	}
 }
 
+// CreateM2SReplClientStream: create client stream channel for slave datanode on master datanode
 func (s *DataNodeServer) CreateM2SReplClientStream(slaveHost string, blockGroupID uint64) *M2SReplClientStream {
 
 	M2Sconn, err := grpc.Dial(slaveHost, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
@@ -322,6 +331,7 @@ func (s *DataNodeServer) CreateM2SReplClientStream(slaveHost string, blockGroupI
 	return M2SReplClientStream
 }
 
+// BackWardExit ...
 func (mss *M2SReplClientStream) BackWardExit() {
 	mss.s.C2MReplServerStreamCacheLocker.Lock()
 	for _, v := range mss.s.C2MReplServerStreamCache {
@@ -335,6 +345,7 @@ func (mss *M2SReplClientStream) BackWardExit() {
 	logger.Debug("DataNode[%v]: M2Sstream-%p: BGID-%v M2SRecv exit", DtAddr.Host, mss, mss.BlockGroupID)
 }
 
+// BackWard ...
 func (mss *M2SReplClientStream) BackWard() {
 
 	logger.Debug("DataNode[%v]: BackWard M2Sstream-%p: BGID-%v M2SRecv init", DtAddr.Host, mss, mss.BlockGroupID)
@@ -380,7 +391,7 @@ func (mss *M2SReplClientStream) BackWard() {
 
 }
 
-// On Slave: M2SRepl...
+// M2SRepl: slave datanode receive data stream from master datanode
 func (s *DataNodeServer) M2SRepl(stream dp.DataNode_M2SReplServer) error {
 
 	M2SReplServerStream := &M2SReplServerStream{stream: stream}
@@ -460,6 +471,7 @@ func (s *DataNodeServer) M2SRepl(stream dp.DataNode_M2SReplServer) error {
 
 }
 
+// CreateS2BStream: create client stream channel for backup datanode on slave datanode
 func (s *DataNodeServer) CreateS2BStream(backUpHost string, M2SReplServerStream *M2SReplServerStream) *S2BReplClientStream {
 
 	S2Bconn, err := grpc.Dial(backUpHost, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
@@ -480,6 +492,7 @@ func (s *DataNodeServer) CreateS2BStream(backUpHost string, M2SReplServerStream 
 	return sbs
 }
 
+// BackWard ...
 func (sbs *S2BReplClientStream) BackWard(M2SReplServerStream *M2SReplServerStream) {
 
 	for {
@@ -508,9 +521,7 @@ func (sbs *S2BReplClientStream) BackWard(M2SReplServerStream *M2SReplServerStrea
 
 }
 
-// On BackUP
-
-// S2BRepl ...
+// S2BRepl: backup datanode receive data stream from slave datanode
 func (s *DataNodeServer) S2BRepl(stream dp.DataNode_S2BReplServer) error {
 
 	BlockGroupID := uint64(0)
