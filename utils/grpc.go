@@ -71,7 +71,7 @@ func Dial(host string) (*grpc.ClientConn, error) {
 	return conn, err
 }
 
-// TryDial: Dial and Close connection for checking network
+// TryDial Dial and Close connection for checking network
 func TryDial(host string) error {
 	conn, err := grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
 	if err != nil {
