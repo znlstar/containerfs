@@ -17,7 +17,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-
 // StreamReadChunk ...
 func (s *DataNodeServer) StreamReadChunk(in *dp.StreamReadChunkReq, stream dp.DataNode_StreamReadChunkServer) error {
 

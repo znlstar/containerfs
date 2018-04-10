@@ -25,7 +25,6 @@ import (
 	"github.com/tiglabs/raft/storage/wal"
 )
 
-
 //VolumeKvStateMachine ...
 type VolumeKvStateMachine struct {
 	id      uint64
@@ -633,6 +632,7 @@ func (s *volumeKvSnapshot) Next() ([]byte, error) {
 
 		return data, err
 	}
+
 	if s.curBtree == "dentry" {
 		kv.Opt = OPT_SET_DENTRY
 

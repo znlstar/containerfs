@@ -3,8 +3,8 @@ package datanode
 import (
 	"bufio"
 	"errors"
-	"os"
 	"io"
+	"os"
 	"path"
 	"strconv"
 	"sync"
