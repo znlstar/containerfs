@@ -7,7 +7,7 @@ import (
 	"github.com/tiglabs/raft"
 )
 
-//Address ...
+// Address ...
 type Address struct {
 	Grpc      string // 9901
 	Heartbeat string // 9902
@@ -15,7 +15,7 @@ type Address struct {
 	Pprof     string // 9904
 }
 
-//Resovler interface
+// Resovler interface
 type Resolver interface {
 	AddNode(uint64, *Address)
 	RemoveNode(uint64, *Address)
@@ -23,7 +23,7 @@ type Resolver interface {
 	NodeAddress(uint64, raft.SocketType) (string, error)
 }
 
-//StartRaftServer ...
+// StartRaftServer ...
 func StartRaftServer(rs **raft.RaftServer, r Resolver, addr *Address, nodeid uint64) error {
 
 	var err error

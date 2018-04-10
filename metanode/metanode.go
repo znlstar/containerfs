@@ -3,6 +3,7 @@ package metanode
 import (
 	"fmt"
 	"net"
+	// pprof
 	_ "net/http/pprof"
 	"sync"
 	"time"
@@ -100,7 +101,7 @@ func (ms *MetaNodeServer) ExpandNameSpace(ctx context.Context, in *mp.ExpandName
 	return &ack, nil
 }
 
-// SnapShootNameSpace ...
+// SnapShotNameSpace ...
 func (ms *MetaNodeServer) SnapShotNameSpace(ctx context.Context, in *mp.SnapShotNameSpaceReq) (*mp.SnapShotNameSpaceAck, error) {
 	go ns.SnapShotNameSpace(ms.RaftServer, in.VolID, MetaNodeServerAddr.Waldir)
 	return &mp.SnapShotNameSpaceAck{Ret: 0}, nil
@@ -231,7 +232,7 @@ func (ms *MetaNodeServer) DeleteFileDirect(ctx context.Context, in *mp.DeleteFil
 
 }
 
-// DeleteFileDirect ...
+// DeleteSymLinkDirect ...
 func (ms *MetaNodeServer) DeleteSymLinkDirect(ctx context.Context, in *mp.DeleteSymLinkDirectReq) (*mp.DeleteSymLinkDirectAck, error) {
 
 	ack := mp.DeleteSymLinkDirectAck{}
@@ -277,10 +278,10 @@ func (ms *MetaNodeServer) GetFileChunksDirect(ctx context.Context, in *mp.GetFil
 		if err != nil || pGetBlockGroupByIDAck.Ret != 0 {
 			ack.Ret = -1
 			return &ack, nil
-		} else {
-			blockGroup.BlockGroupID = v.BlockGroupID
-			blockGroup.Hosts = pGetBlockGroupByIDAck.BlockGroup.Hosts
 		}
+
+		blockGroup.BlockGroupID = v.BlockGroupID
+		blockGroup.Hosts = pGetBlockGroupByIDAck.BlockGroup.Hosts
 
 		chunkInfoWithBG.BlockGroupWithHost = blockGroup
 		ack.ChunkInfos = append(ack.ChunkInfos, &chunkInfoWithBG)
