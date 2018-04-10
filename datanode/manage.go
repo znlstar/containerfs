@@ -91,7 +91,7 @@ func RegistryToVolMgr() {
 	return
 }
 
-// DatanodeHealthCheck rpc GetChunks(GetChunksReq) returns (GetChunksAck){};
+// DatanodeHealthCheck: check datanode if alive
 func (s *DataNodeServer) DataNodeHealthCheck(ctx context.Context, in *dp.DataNodeHealthCheckReq) (*dp.DataNodeHealthCheckAck, error) {
 	ack := dp.DataNodeHealthCheckAck{}
 	f, err := os.OpenFile(DtAddr.Path+"/health", os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0666)
