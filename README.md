@@ -21,15 +21,16 @@ L4: filesystems with hierachical namespaces, random read/write and complelete fi
 
 CFS consists of several subsystems: 
 
-* the cluster master
+* the cluster master. single raft replication
 
-* the metanode cluster
+* the metanode cluster. multi-raft replication, a namespace per raft
 
-* the blocknode cluster
+* the blocknode cluster. blockgroup as the replication unit
 
-* the objectnode cluster
+* the objectnode cluster. objectgroup as the replication unit
 
-volume = namespace a filesystem instance = an object bucket
+
+a volume = a filesystem instance = an object bucket
 
 
 ## APIs
@@ -44,11 +45,13 @@ Go SDK
 
 NFS
 
-## Use Cases and the Ecosystem
+## Use Cases and Ecosystem
 
 minio integration
 
 CBASE - HBase on CFS
+
+nginx integration for image service
 
 
 
