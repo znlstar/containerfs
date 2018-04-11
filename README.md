@@ -9,13 +9,13 @@ What is CFS?
 
 CFS is distributed filesystem and object storage service. And it provides four pragmatic abstractions: 
 
-L1: object store without namespaces - particularly for images or short video etc. Put an object and the system returns an unique key. Objects are immutable and can be delete however. 
+L1: object store without namespaces - particularly for images or short video etc. Put an object and the system returns a unique key. Objects are immutable and can be delete however. 
 
 L2: object store with plat namespaces - compatible with the S3 API. 
 
-L3: filesystems with hierachical namespaces, random read but append-only write. Big data systems like HBase could be run on it. 
+L3: filesystems with hierachical namespaces, random read and append-only write. Big data systems like HBase can be run on it. 
 
-L4: filesystems with hierachical namespaces, random read/write, and complelete filesystem semantics. 
+L4: filesystems with hierachical namespaces, random read/write and complelete filesystem semantics. 
 
 ## Architecture
 
@@ -29,11 +29,12 @@ CFS consists of several subsystems:
 
 * the objectnode cluster
 
+volume = namespace a filesystem instance = an object bucket
+
+
 ## APIs
 
-s3-compatible object storage API 
-
-NFS
+RESTful s3-compatible API 
 
 FUSE
 
@@ -41,6 +42,15 @@ Java SDK
 
 Go SDK
 
-## Use Cases
+NFS
+
+## Use Cases and the Ecosystem
+
+minio integration
+
+CBASE - HBase on CFS
+
+
+
 
 
