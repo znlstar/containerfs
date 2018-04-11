@@ -3,38 +3,44 @@
 # ContainerFS
 ![image](doc/logo.png) 
 
-A cluster filesystem for the containers. Please see http://containerfs.io/ for current info.
+## Overview
 
-# Roadmap
-* 2017Q4  
-1. WEB UI ✔
-2. ReplGroup Stream Write for DataNodes  ✔
- 
-* 2018Q1
-1. Choose RaftGroup in MetaNode Pool ✔
-2. MetaNode Auto Registry Add ✔
-3. Full Posix Interface ✔
+What is CFS? 
 
-* 2018Q2
-1. kubernetes CSI 
-2. Kernel Client
-3. SPDK-NVME driver for Datanode
+CFS is distributed filesystem and object storage service. And it provides four pragmatic abstractions: 
 
-# Concepts
+L1: object store without namespaces - particularly for images or short video etc. Put an object and the system returns an unique key. Objects are immutable and can be delete however. 
 
-a volume = a metadata table + multiple block groups
+L2: object store with plat namespaces - compatible with the S3 API. 
 
-# Design
+L3: filesystems with hierachical namespaces, random read but append-only write. Big data systems like HBase could be run on it. 
 
-[here](doc/design.md)
+L4: filesystems with hierachical namespaces, random read/write, and complelete filesystem semantics. 
 
-# Guide
+## Architecture
 
-[startup](doc/guide.md)
-[with k8s](doc/k8sCfsPlugin.md)
+CFS consists of several subsystems: 
 
-## Report a Bug
+* the cluster master
 
-For filing bugs, suggesting improvements, or requesting new features, please open an [issue](https://github.com/tiglabs/containerfs/issues).
+* the metanode cluster
 
-# User Case
+* the blocknode cluster
+
+* the objectnode cluster
+
+## APIs
+
+s3-compatible object storage API 
+
+NFS
+
+FUSE
+
+Java SDK
+
+Go SDK
+
+## Use Cases
+
+
