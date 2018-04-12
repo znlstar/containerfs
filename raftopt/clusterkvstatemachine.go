@@ -32,7 +32,8 @@ import (
 var (
 	errNotExists   = errors.New("Key not exists")
 	errNotLeader   = errors.New("Not leader")
-	ErrKeyNotFound = errors.New("Key not found") // ErrKeyNotFound is key not found
+	// ErrKeyNotFound is key not found
+	ErrKeyNotFound = errors.New("Key not found")
 )
 
 //ClusterKvStateMachine is a wrapper of btree based state machine for cluster management
@@ -81,7 +82,7 @@ func newClusterKvStatemachine(id uint64, raft *raft.RaftServer) *ClusterKvStateM
 	}
 }
 
-///CreateClusterKvStateMachine is exported out to initializing cluster kv service
+//CreateClusterKvStateMachine is exported out to initializing cluster kv service
 func CreateClusterKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir string, UUID string, raftGroupID uint64) (*ClusterKvStateMachine, *wal.Storage, error) {
 	wc := &wal.Config{}
 	raftStroage, err := wal.NewStorage(path.Join(dir, UUID, "wal"), wc)
@@ -1182,7 +1183,7 @@ func (s *ClusterKvSnapShot) Close() {
 	return
 }
 
-//interface for snapshot
+//KV interface for snapshot
 type KV interface {
 	Key() string
 	Value() []byte
