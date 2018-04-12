@@ -950,7 +950,7 @@ func (cfile *CFile) AllocateChunk(IsStream bool) *Chunk {
 	return curChunk
 }
 
-// Retry to retry write ops when error occured
+// Retry to retry write ops when error occurred
 func (chunk *Chunk) Retry() {
 
 	if chunk.CFile.Status == FILE_NOT_EXIST {
