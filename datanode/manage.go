@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
+// VolMgrHosts string
 var VolMgrHosts []string
 
 // DataNodeServer data structure
@@ -51,7 +52,10 @@ type DataNodeServerAddr struct {
 	Tier string
 }
 
+// MetaNodePeers string
 var MetaNodePeers []string
+
+// MetaNodeAddr string
 var MetaNodeAddr string
 
 var DtAddr DataNodeServerAddr
@@ -93,7 +97,7 @@ func RegistryToVolMgr() {
 	return
 }
 
-// DatanodeHealthCheck check the DataNode if alive
+// DataNodeHealthCheck check the DataNode if alive
 func (s *DataNodeServer) DataNodeHealthCheck(ctx context.Context, in *dp.DataNodeHealthCheckReq) (*dp.DataNodeHealthCheckAck, error) {
 	ack := dp.DataNodeHealthCheckAck{}
 	f, err := os.OpenFile(DtAddr.Path+"/health", os.O_RDWR|os.O_TRUNC|os.O_CREATE, 0666)
