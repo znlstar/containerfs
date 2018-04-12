@@ -11,7 +11,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-// rpc ClusterInfo(ClusterInfoReq) returns (ClusterInfoAck){};
+//ClusterInfo gets cluster info
 func (s *VolMgrServer) ClusterInfo(ctx context.Context, in *vp.ClusterInfoReq) (*vp.ClusterInfoAck, error) {
 	ack := vp.ClusterInfoAck{}
 	ack.MetaNum = 3
@@ -49,7 +49,7 @@ func (s *VolMgrServer) ClusterInfo(ctx context.Context, in *vp.ClusterInfoReq) (
 	return &ack, nil
 }
 
-//todo: not implemented yet
+//GetMetaNode implements GetMetaNode of volmgr service
 func (s *VolMgrServer) GetMetaNode(ctx context.Context, in *vp.GetAllMetaNodeReq) (*vp.GetAllMetaNodeAck, error) {
 	ack := vp.GetAllMetaNodeAck{}
 	if mns, err := s.Cluster.RaftGroup.MetaNodeGetAll(1); err != nil {
@@ -61,15 +61,14 @@ func (s *VolMgrServer) GetMetaNode(ctx context.Context, in *vp.GetAllMetaNodeReq
 	return &ack, nil
 }
 
-// todo: not implemented yet
-// rpc MetaNodeInfo(MetaNodeInfoReq) returns (MetaNodeInfoAck){};
+//MetaNodeInfo is dumped now
 func (s *VolMgrServer) MetaNodeInfo(ctx context.Context, in *vp.MetaNodeInfoReq) (*vp.MetaNodeInfoAck, error) {
 	ack := vp.MetaNodeInfoAck{}
 
 	return &ack, nil
 }
 
-// rpc VolMgrInfo(VolMgrInfoReq) returns (VolMgrInfoAck){};
+//VolMgrInfo implements VolMgrInfo of volmgr service
 func (s *VolMgrServer) VolMgrInfo(ctx context.Context, in *vp.VolMgrInfoReq) (*vp.VolMgrInfoAck, error) {
 	ack := vp.VolMgrInfoAck{}
 	ack.VolMgrID = s.NodeID
@@ -77,7 +76,7 @@ func (s *VolMgrServer) VolMgrInfo(ctx context.Context, in *vp.VolMgrInfoReq) (*v
 	return &ack, nil
 }
 
-// rpc VolumeInfo(VolumeInfoReq) returns (VolumeInfoAck){};
+//VolumeInfos gets all descriptions of all volumes
 func (s *VolMgrServer) VolumeInfos(ctx context.Context, in *vp.VolumeInfosReq) (*vp.VolumeInfosAck, error) {
 	ack := vp.VolumeInfosAck{}
 
@@ -105,6 +104,7 @@ func (s *VolMgrServer) VolumeInfos(ctx context.Context, in *vp.VolumeInfosReq) (
 	return &ack, nil
 }
 
+//GetVolInfo implements GetVolInfo of volmgr service
 func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*vp.GetVolInfoAck, error) {
 	ack := vp.GetVolInfoAck{}
 
@@ -118,6 +118,8 @@ func (s *VolMgrServer) GetVolInfo(ctx context.Context, in *vp.GetVolInfoReq) (*v
 
 	return &ack, nil
 }
+
+//GetBlockGroupInfo gives details of specific blockgroup
 func (s *VolMgrServer) GetBlockGroupInfo(ctx context.Context, in *vp.GetBlockGroupInfoReq) (*vp.GetBlockGroupInfoAck, error) {
 	ack := vp.GetBlockGroupInfoAck{}
 

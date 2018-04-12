@@ -17,8 +17,10 @@ import (
 	"github.com/tiglabs/raft/proto"
 )
 
+//volmgrAddr used for parsing parameters
 var volmgrAddr volmgr.VolMgrServerAddr
 
+//init does startup pars parsing
 func init() {
 
 	flag.StringVar(&volmgrAddr.Host, "host", "127.0.0.1", "ContainerFS VolMgr Host")
@@ -61,6 +63,7 @@ func init() {
 
 }
 
+//parsePeers is an utility of parsing volmgr cluster peers
 func parsePeers(peersstr []string) (peers []proto.Peer, err error) {
 	for _, s := range peersstr {
 		p, err := strconv.Atoi(s)
@@ -72,6 +75,7 @@ func parsePeers(peersstr []string) (peers []proto.Peer, err error) {
 	return
 }
 
+//main starts the world
 func main() {
 
 	runtime.GOMAXPROCS(runtime.NumCPU())
