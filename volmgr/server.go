@@ -18,6 +18,7 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
+//VolMgrServerAddr is a wrapper of volmgr service address and path
 type VolMgrServerAddr struct {
 	Host   string
 	NodeID uint64
@@ -27,6 +28,7 @@ type VolMgrServerAddr struct {
 	Log    string
 }
 
+//Cluster is a wrapper of raftgroup service
 type Cluster struct {
 	sync.Mutex
 	RaftGroup   *raftopt.ClusterKvStateMachine
@@ -34,6 +36,7 @@ type Cluster struct {
 	IsLoaded    bool
 }
 
+//VolMgrServer implemnts cluster and volumes management service interface
 type VolMgrServer struct {
 	NodeID          uint64
 	Addr            *common.Address
@@ -47,6 +50,7 @@ type VolMgrServer struct {
 	sync.Mutex
 }
 
+//NewVolMgrServer creates a new VolMgrServer and carry out part of service initialization
 func NewVolMgrServer(volmgrAddr *VolMgrServerAddr) (vs *VolMgrServer, err error) {
 
 	addr, ok := raftopt.ClusterAddrDatabase[volmgrAddr.NodeID]
@@ -78,6 +82,7 @@ func NewVolMgrServer(volmgrAddr *VolMgrServerAddr) (vs *VolMgrServer, err error)
 	return vs, nil
 }
 
+//Load loads cluster meta data and volumes from disk
 func (vs *VolMgrServer) Load() error {
 	sm, sg, err := raftopt.CreateClusterKvStateMachine(vs.RaftServer, vs.volmgrAddr.Peers, vs.volmgrAddr.NodeID, vs.volmgrAddr.Waldir, "Cluster", 1)
 	if err != nil {
@@ -88,6 +93,7 @@ func (vs *VolMgrServer) Load() error {
 	return nil
 }
 
+//StartService registers and starts volmgr service
 func (vs *VolMgrServer) StartService() {
 
 	lis, err := net.Listen("tcp", vs.Addr.Grpc)
@@ -102,6 +108,7 @@ func (vs *VolMgrServer) StartService() {
 	}
 }
 
+//showLeaders prints volmgr cluster status into log file
 func (vs *VolMgrServer) showLeaders() {
 	ticker := time.NewTicker(time.Second * 10)
 	go func() {
@@ -112,6 +119,7 @@ func (vs *VolMgrServer) showLeaders() {
 	}()
 }
 
+//startHealthCheck starts goroutines to check health state of metanodes and datanodes
 func (vs *VolMgrServer) startHealthCheck() {
 	td := time.NewTicker(time.Second * 1)
 	go func() {

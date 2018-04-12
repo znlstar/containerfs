@@ -16,6 +16,7 @@ import (
 	"golang.org/x/net/context"
 )
 
+//CreateVol creates a voluem as new filesystem instance as volume
 func (vs *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp.CreateVolAck, error) {
 
 	vs.Lock()
@@ -239,6 +240,7 @@ func (vs *VolMgrServer) CreateVol(ctx context.Context, in *vp.CreateVolReq) (*vp
 	return &ack, nil
 }
 
+//ExpandVol expands a volume's assigned size
 func (vs *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp.ExpandVolAck, error) {
 
 	vs.Lock()
@@ -402,7 +404,7 @@ func (vs *VolMgrServer) ExpandVol(ctx context.Context, in *vp.ExpandVolReq) (*vp
 	return &ack, nil
 }
 
-//todo: not implemented yet
+//ExpandVolRS is not implemented yet
 func (vs *VolMgrServer) ExpandVolRS(ctx context.Context, in *vp.ExpandVolRSReq) (*vp.ExpandVolRSAck, error) {
 
 	vs.Lock()
@@ -413,13 +415,14 @@ func (vs *VolMgrServer) ExpandVolRS(ctx context.Context, in *vp.ExpandVolRSReq) 
 	return &ack, nil
 }
 
-//todo: not implemented yet
+//DelVolRSForExpand is not implemented yet
 func (vs *VolMgrServer) DelVolRSForExpand(ctx context.Context, in *vp.DelVolRSForExpandReq) (*vp.DelVolRSForExpandAck, error) {
 	ack := vp.DelVolRSForExpandAck{}
 	ack.Ret = 0
 	return &ack, nil
 }
 
+//DeleteVol drops and deletes a volume
 func (vs *VolMgrServer) DeleteVol(ctx context.Context, in *vp.DeleteVolReq) (*vp.DeleteVolAck, error) {
 	ack := vp.DeleteVolAck{}
 
@@ -477,7 +480,7 @@ func (vs *VolMgrServer) DeleteVol(ctx context.Context, in *vp.DeleteVolReq) (*vp
 	return &ack, nil
 }
 
-//todo: not implemented yet
+//Migrate move data from one datanode to another
 func (vs *VolMgrServer) Migrate(ctx context.Context, in *vp.MigrateReq) (*vp.MigrateAck, error) {
 	ack := vp.MigrateAck{}
 
@@ -500,7 +503,7 @@ func (vs *VolMgrServer) Migrate(ctx context.Context, in *vp.MigrateReq) (*vp.Mig
 		var ret int
 		for _, bg := range dataNodeBGS.BGS {
 			logger.Debug("Begin Migrage BlockGroup %v ...", bg)
-			ret = vs.BeginMigrate(bg, in.DataNodeHost, tier)
+			ret = vs.beginMigrate(bg, in.DataNodeHost, tier)
 			logger.Debug("End Migrage BlockGroup %v ret %v ...", bg, ret)
 		}
 	}()
@@ -509,7 +512,8 @@ func (vs *VolMgrServer) Migrate(ctx context.Context, in *vp.MigrateReq) (*vp.Mig
 	return &ack, nil
 }
 
-func (vs *VolMgrServer) BeginMigrate(bgID uint64, badHost string, tier string) int {
+//beginMigrate is an utility method for migrating data from one datanode to another
+func (vs *VolMgrServer) beginMigrate(bgID uint64, badHost string, tier string) int {
 	var shost string
 
 	blockGroup, err := vs.Cluster.RaftGroup.BlockGroupGet(bgID)
@@ -598,6 +602,7 @@ func (vs *VolMgrServer) BeginMigrate(bgID uint64, badHost string, tier string) i
 	return 0
 }
 
+//migrateBlockGroup is an utility method for moving blockgroup
 func (vs *VolMgrServer) migrateBlockGroup(bgID uint64, shost string, dhost string) int32 {
 	//migrate
 	pRecvMigrateReq := &dp.RecvMigrateReq{BlockGroupID: bgID, DstHost: dhost}
@@ -621,6 +626,7 @@ func (vs *VolMgrServer) migrateBlockGroup(bgID uint64, shost string, dhost strin
 
 }
 
+//GetBlockGroupByID gets blockgroup info by blockgroup id
 func (vs *VolMgrServer) GetBlockGroupByID(ctx context.Context, in *vp.GetBlockGroupByIDReq) (*vp.GetBlockGroupByIDAck, error) {
 	ack := vp.GetBlockGroupByIDAck{}
 
@@ -632,6 +638,7 @@ func (vs *VolMgrServer) GetBlockGroupByID(ctx context.Context, in *vp.GetBlockGr
 	return &ack, nil
 }
 
+//updateBlockGroupStatus is an utility method for updating blockgroup status into state machine
 func (vs *VolMgrServer) updateBlockGroupStatus() {
 	var blockGroup *vp.BlockGroup
 	var err error
@@ -652,12 +659,13 @@ func (vs *VolMgrServer) updateBlockGroupStatus() {
 	}
 }
 
+//SnapShotCluster takes snapshot of cluster and volumes status into disk data
 func (vs *VolMgrServer) SnapShotCluster(ctx context.Context, in *vp.SnapShotClusterReq) (*vp.SnapShotClusterAck, error) {
 	go raftopt.TakeClusterKvSnapShot(vs.Cluster.RaftGroup, vs.Cluster.RaftStorage, path.Join(vs.volmgrAddr.Waldir, "Cluster", "wal", "snap"))
 	return &vp.SnapShotClusterAck{Ret: 0}, nil
 }
 
-// GetMetaLeader ...
+//GetMetaLeader gets metanode group of the specific volume
 func (vs *VolMgrServer) GetVolMgrRG(ctx context.Context, in *vp.GetVolMgrRGReq) (*vp.GetVolMgrRGAck, error) {
 	ack := vp.GetVolMgrRGAck{}
 	leaderID, _ := vs.RaftServer.LeaderTerm(1)

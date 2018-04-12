@@ -12,10 +12,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-//***********************************
-//		datanode management
-//***********************************
-
+//DataNodeRegistry deals with datanode's register request
 func (s *VolMgrServer) DataNodeRegistry(ctx context.Context, in *vp.DataNode) (*vp.DataNodeRegistryAck, error) {
 	ack := vp.DataNodeRegistryAck{}
 
@@ -41,6 +38,8 @@ func (s *VolMgrServer) DataNodeRegistry(ctx context.Context, in *vp.DataNode) (*
 	logger.Debug("DataNode(%v) Register to MetaNode success", in.Host)
 	return &ack, nil
 }
+
+//DetectDataNodes checks health state of all datanodes
 func (s *VolMgrServer) DetectDataNodes() {
 
 	vv, err := s.Cluster.RaftGroup.DataNodeGetAll(1)
@@ -53,20 +52,22 @@ func (s *VolMgrServer) DetectDataNodes() {
 		go func() {
 			s.wg.Add(1)
 			defer s.wg.Done()
-			s.DetectDataNode(v)
+			s.detectDataNode(v)
 		}()
 	}
 	s.wg.Wait()
 	s.updateBlockGroupStatus()
 }
-func (s *VolMgrServer) DetectDataNode(v *vp.DataNode) {
+
+//detectDataNode is an utility method to detect a single datanode
+func (s *VolMgrServer) detectDataNode(v *vp.DataNode) {
 	dnAddr := v.Host
 	conn, err := utils.Dial(dnAddr)
 	if err != nil {
 		if v.Status == 0 {
 			logger.Error("Detect DataNode:%v failed : Dial to DataNode failed !", dnAddr)
 			v.Status = 1
-			s.SetDataNodeMap(v)
+			s.setDataNodeMap(v)
 			//UpdateBlock(metaServer, v.Ip, v.Port, 1)
 		}
 		return
@@ -78,7 +79,7 @@ func (s *VolMgrServer) DetectDataNode(v *vp.DataNode) {
 	if err != nil {
 		if v.Status == 0 {
 			v.Status = 1
-			s.SetDataNodeMap(v)
+			s.setDataNodeMap(v)
 			logger.Debug("Detect DataNode(%v) status from good to bad, set DataNode map success", dnAddr)
 		}
 		return
@@ -97,11 +98,12 @@ func (s *VolMgrServer) DetectDataNode(v *vp.DataNode) {
 				s.BgStatusMapSync.Unlock()
 			}
 		}
-		s.SetDataNodeMap(v)
+		s.setDataNodeMap(v)
 	}
 	return
 }
 
+//GetDataNode lists all datanodes with detailed description
 func (s *VolMgrServer) GetDataNode(ctx context.Context, in *vp.GetDataNodeReq) (*vp.GetDataNodeAck, error) {
 	ack := vp.GetDataNodeAck{}
 	v, err := s.Cluster.RaftGroup.DataNodeGetAll(1)
@@ -115,6 +117,7 @@ func (s *VolMgrServer) GetDataNode(ctx context.Context, in *vp.GetDataNodeReq) (
 	return &ack, nil
 }
 
+//DelDataNode removes specific datanode from cluster
 func (s *VolMgrServer) DelDataNode(ctx context.Context, in *vp.DelDataNodeReq) (*vp.DelDataNodeAck, error) {
 	ack := vp.DelDataNodeAck{}
 	err := s.delDataNode(in.Host)
@@ -126,7 +129,8 @@ func (s *VolMgrServer) DelDataNode(ctx context.Context, in *vp.DelDataNodeReq) (
 	return &ack, nil
 }
 
-func (s *VolMgrServer) SetDataNodeMap(v *vp.DataNode) int {
+//setDataNodeMap is an utility to update map from datanode to blockgroup
+func (s *VolMgrServer) setDataNodeMap(v *vp.DataNode) int {
 	key := v.Host
 	err := s.Cluster.RaftGroup.DataNodeSet(1, key, v)
 	if err != nil {
@@ -138,33 +142,30 @@ func (s *VolMgrServer) SetDataNodeMap(v *vp.DataNode) int {
 		return 0
 	}
 	if err != nil {
-		logger.Error("SetDataNodeMap [%v %v] failed: %v", v.Host, v.Status, err)
+		logger.Error("setDataNodeMap [%v %v] failed: %v", v.Host, v.Status, err)
 		return -2
 	}
 	for _, bgId := range dataNodeBG.BGS {
 		blockGroup, err := s.Cluster.RaftGroup.BlockGroupGet(bgId)
 		if err != nil {
-			logger.Error("SetDataNodeMap failed: %v", err)
+			logger.Error("setDataNodeMap failed: %v", err)
 			return -3
 		}
 		blockGroup.Status = v.Status
 		if err = s.Cluster.RaftGroup.BlockGroupSet(bgId, blockGroup); err != nil {
-			logger.Error("SetDataNodeMap failed: %v", err)
+			logger.Error("setDataNodeMap failed: %v", err)
 			return -4
 		}
 	}
 	return 0
 }
 
-//todo: not implemented yet
+//delDataNode is not implemented yet
 func (s *VolMgrServer) delDataNode(host string) error {
 	return nil
 }
 
-//***********************************
-//		metanode management
-//***********************************
-
+//MetaNodeRegistry deals with metandoe's register request
 func (s *VolMgrServer) MetaNodeRegistry(ctx context.Context, in *vp.MetaNode) (*vp.MetaNodeRegistryAck, error) {
 	ack := vp.MetaNodeRegistryAck{}
 
@@ -178,6 +179,7 @@ func (s *VolMgrServer) MetaNodeRegistry(ctx context.Context, in *vp.MetaNode) (*
 	return &ack, nil
 }
 
+//DetectMetaNodes checks health state of all datanodes
 func (s *VolMgrServer) DetectMetaNodes() {
 
 	vv, err := s.Cluster.RaftGroup.MetaNodeGetAll(1)
@@ -187,11 +189,12 @@ func (s *VolMgrServer) DetectMetaNodes() {
 	}
 
 	for _, v := range vv {
-		go s.DetectMetaNode(v)
+		go s.detectMetaNode(v)
 	}
 }
 
-func (s *VolMgrServer) DetectMetaNode(v *vp.MetaNode) {
+//detectMetaNode is an utility method to detect a single datanode
+func (s *VolMgrServer) detectMetaNode(v *vp.MetaNode) {
 	conn, err := utils.Dial(v.Host + ":9901")
 	if err != nil {
 		if v.Status == 0 {
@@ -229,7 +232,7 @@ func (s *VolMgrServer) DetectMetaNode(v *vp.MetaNode) {
 	return
 }
 
-//todo: not implemented yet
+//delMetaNode is not implemented yet
 func (s *VolMgrServer) delMetaNode(host string) error {
 	//todo:update all involved metanode raftgroups
 	//todo:delte metanode from kvsm
@@ -264,7 +267,7 @@ func (s *VolMgrServer) chooseMetaNodes() ([]*vp.MetaNode, error) {
 	return mns, nil
 }
 
-// GetMetaLeader ...
+//GetMetaNodeRG gets metanode raftgroup  for volume
 func (s *VolMgrServer) GetMetaNodeRG(ctx context.Context, in *vp.GetMetaNodeRGReq) (*vp.GetMetaNodeRGAck, error) {
 	ack := vp.GetMetaNodeRGAck{}
 	vol, err := s.Cluster.RaftGroup.VolumeGet(1, in.UUID)
@@ -315,7 +318,7 @@ func (s *VolMgrServer) GetMetaNodeRG(ctx context.Context, in *vp.GetMetaNodeRGRe
 	return &ack, nil
 }
 
-// GetMetaNodeBGS ...
+//GetMetaNodeRGPeers gets all metanode raftgroups in cluster
 func (s *VolMgrServer) GetMetaNodeRGPeers(ctx context.Context, in *vp.GetMetaNodeRGPeersReq) (*vp.GetMetaNodeRGPeersAck, error) {
 	ack := vp.GetMetaNodeRGPeersAck{}
 	v, _ := s.Cluster.RaftGroup.MetaNodeRGGetAll()
@@ -338,6 +341,7 @@ func (s *VolMgrServer) GetMetaNodeRGPeers(ctx context.Context, in *vp.GetMetaNod
 	return &ack, nil
 }
 
+//getMetaNodesViaIds is an utility method to get metanode host by nodeid
 func (s *VolMgrServer) getMetaNodesViaIds(in []*vp.MetaNode) ([]*vp.MetaNode, error) {
 	var metaNodes []*vp.MetaNode
 	if len(in) < 1 {
