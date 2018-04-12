@@ -41,6 +41,7 @@ var _ = fs.NodeFsyncer(&File{})
 var _ = fs.NodeSetattrer(&File{})
 var _ = fs.NodeReadlinker(&File{})
 
+//Forget ...
 func (f *File) Forget() {
 	logger.Debug("Forget file %v inode %v", f.name, f.inode)
 	if f.parent == nil {
@@ -305,7 +306,7 @@ func (f *File) Setattr(ctx context.Context, req *bfuse.SetattrRequest, resp *bfu
 	return nil
 }
 
-// ReadLink ...
+// Readlink ...
 func (f *File) Readlink(ctx context.Context, req *bfuse.ReadlinkRequest) (string, error) {
 
 	logger.Debug("ReadLink ...")
