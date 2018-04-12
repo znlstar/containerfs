@@ -1,3 +1,6 @@
+// Copyright (c) 2017, tig.jd.com. All rights reserved.
+// Use of this source code is governed by a Apache License 2.0 that can be found in the LICENSE file.
+
 package raftopt
 
 import (
@@ -25,7 +28,7 @@ import (
 	"github.com/tiglabs/raft/storage/wal"
 )
 
-// VolumeKvStateMachine ...
+//VolumeKvStateMachine is a wrapper of btree based kv state maachine
 type VolumeKvStateMachine struct {
 	id      uint64
 	applied uint64
@@ -46,7 +49,7 @@ type VolumeKvStateMachine struct {
 	inodeID       uint64
 }
 
-// newVolumeKvStateMachine ...
+//newVolumeKvStateMachine creates a new VolumeKvStateMachine instance
 func newVolumeKvStateMachine(id uint64, raft *raft.RaftServer) *VolumeKvStateMachine {
 	return &VolumeKvStateMachine{
 		id:             id,
@@ -57,7 +60,7 @@ func newVolumeKvStateMachine(id uint64, raft *raft.RaftServer) *VolumeKvStateMac
 	}
 }
 
-// CreateVolumeKvStateMachine ...
+//CreateVolumeKvStateMachine is exported out for initilization of volume kv statemachine
 func CreateVolumeKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir string, UUID string, raftGroupID uint64) (*VolumeKvStateMachine, *wal.Storage, error) {
 	wc := &wal.Config{}
 	raftStroage, err := wal.NewStorage(path.Join(dir, UUID, "wal"), wc)
@@ -96,7 +99,7 @@ func CreateVolumeKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID 
 
 }
 
-// Apply ...
+//Apply implements raftgroup interafce
 func (ms *VolumeKvStateMachine) Apply(data []byte, index uint64) (interface{}, error) {
 
 	kv := &kvp.Kv{}
@@ -137,7 +140,7 @@ func (ms *VolumeKvStateMachine) Apply(data []byte, index uint64) (interface{}, e
 	return nil, nil
 }
 
-//DentryGet ...
+//DentryGet gets dentry item
 func (ms *VolumeKvStateMachine) DentryGet(raftGroupID uint64, key string) ([]byte, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
@@ -154,7 +157,7 @@ func (ms *VolumeKvStateMachine) DentryGet(raftGroupID uint64, key string) ([]byt
 
 }
 
-// DentryGetRange ...
+//DentryGetRange gets dentry items ranging from minKey to maxKey
 func (ms *VolumeKvStateMachine) DentryGetRange(raftGroupID uint64, minKey string, maxKey string) ([]btreeinstance.DentryKV, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
@@ -176,7 +179,7 @@ func (ms *VolumeKvStateMachine) DentryGetRange(raftGroupID uint64, minKey string
 	return v, nil
 }
 
-// DentrySet ...
+//DentrySet sets kv pair into sm
 func (ms *VolumeKvStateMachine) DentrySet(raftGroupID uint64, key string, value []byte) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
@@ -198,7 +201,7 @@ func (ms *VolumeKvStateMachine) DentrySet(raftGroupID uint64, key string, value 
 
 }
 
-// DentryDel ...
+//DentryDel removes kv pair by key
 func (ms *VolumeKvStateMachine) DentryDel(raftGroupID uint64, key string) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
@@ -220,7 +223,7 @@ func (ms *VolumeKvStateMachine) DentryDel(raftGroupID uint64, key string) error 
 
 }
 
-// InodeGet ...
+//InodeGet gets inode item by key
 func (ms *VolumeKvStateMachine) InodeGet(raftGroupID uint64, key uint64) ([]byte, error) {
 
 	if !ms.raft.IsLeader(raftGroupID) {
@@ -238,7 +241,7 @@ func (ms *VolumeKvStateMachine) InodeGet(raftGroupID uint64, key uint64) ([]byte
 
 }
 
-// InodeSet ...
+//InodeSet sets inode kv into sm
 func (ms *VolumeKvStateMachine) InodeSet(raftGroupID uint64, key uint64, value []byte) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
@@ -261,7 +264,7 @@ func (ms *VolumeKvStateMachine) InodeSet(raftGroupID uint64, key uint64, value [
 
 }
 
-// InodeDel ...
+//InodeDel removes kv pair by key
 func (ms *VolumeKvStateMachine) InodeDel(raftGroupID uint64, key uint64) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
@@ -284,7 +287,7 @@ func (ms *VolumeKvStateMachine) InodeDel(raftGroupID uint64, key uint64) error {
 
 }
 
-// BGGet ...
+//BGGet gets BG item by key
 func (ms *VolumeKvStateMachine) BGGet(raftGroupID uint64, key uint64) ([]byte, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
@@ -301,7 +304,7 @@ func (ms *VolumeKvStateMachine) BGGet(raftGroupID uint64, key uint64) ([]byte, e
 
 }
 
-// BGSet ...
+//BGSet sets BG kv into sm
 func (ms *VolumeKvStateMachine) BGSet(raftGroupID uint64, key uint64, value []byte) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
@@ -324,7 +327,7 @@ func (ms *VolumeKvStateMachine) BGSet(raftGroupID uint64, key uint64, value []by
 
 }
 
-// BGGetAll ...
+//BGGetAll gets all BG items in sm
 func (ms *VolumeKvStateMachine) BGGetAll(raftGroupID uint64) ([]btreeinstance.BGKV, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
@@ -340,7 +343,7 @@ func (ms *VolumeKvStateMachine) BGGetAll(raftGroupID uint64) ([]btreeinstance.BG
 	return v, nil
 }
 
-// ChunkIDGET ...
+//ChunkIDGET generates a new global unique chunk id
 func (ms *VolumeKvStateMachine) ChunkIDGET(raftGroupID uint64) (uint64, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return 0, errors.New("not leader")
@@ -368,7 +371,7 @@ func (ms *VolumeKvStateMachine) ChunkIDGET(raftGroupID uint64) (uint64, error) {
 	return chunkID, nil
 }
 
-// InodeIDGET ...
+//InodeIDGET generates a new global unique inode id
 func (ms *VolumeKvStateMachine) InodeIDGET(raftGroupID uint64) (uint64, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return 0, errors.New("not leader")
@@ -396,7 +399,7 @@ func (ms *VolumeKvStateMachine) InodeIDGET(raftGroupID uint64) (uint64, error) {
 	return inodeID, nil
 }
 
-// AddNode ...
+//AddNode adds new raft peer
 func (ms *VolumeKvStateMachine) AddNode(peer proto.Peer) error {
 	resp := ms.raft.ChangeMember(1, proto.ConfAddNode, peer, nil)
 	_, err := resp.Response()
@@ -406,7 +409,7 @@ func (ms *VolumeKvStateMachine) AddNode(peer proto.Peer) error {
 	return nil
 }
 
-// RemoveNode ...
+//RemoveNode removes raft peer
 func (ms *VolumeKvStateMachine) RemoveNode(peer proto.Peer) error {
 	resp := ms.raft.ChangeMember(1, proto.ConfRemoveNode, peer, nil)
 	_, err := resp.Response()
@@ -416,26 +419,26 @@ func (ms *VolumeKvStateMachine) RemoveNode(peer proto.Peer) error {
 	return nil
 }
 
-// ApplyMemberChange ...
+//ApplyMemberChange is not implemented yet
 func (ms *VolumeKvStateMachine) ApplyMemberChange(confChange *proto.ConfChange, index uint64) (interface{}, error) {
 	return nil, nil
 }
 
-// HandleLeaderChange ...
+//HandleLeaderChange is not implemented yet
 func (ms *VolumeKvStateMachine) HandleLeaderChange(leader uint64) {
 }
 
-// HandleFatalEvent ...
+//HandleFatalEvent is not implemented yet
 func (ms *VolumeKvStateMachine) HandleFatalEvent(err *raft.FatalError) {
 	panic(err.Err)
 }
 
-// setApplied ...
+//setApplied set current applied id
 func (ms *VolumeKvStateMachine) setApplied(index uint64) {
 	ms.applied = index
 }
 
-// Snapshot ...
+// Snapshot takes snapshot of state machine in mem
 func (ms *VolumeKvStateMachine) Snapshot() (proto.Snapshot, error) {
 
 	return &volumeKvSnapshot{
@@ -452,7 +455,7 @@ func (ms *VolumeKvStateMachine) Snapshot() (proto.Snapshot, error) {
 
 }
 
-// ApplySnapshot ...
+//ApplySnapshot applies apply by snapshot data
 func (ms *VolumeKvStateMachine) ApplySnapshot(peers []proto.Peer, iter proto.SnapIterator) error {
 
 	var (
@@ -508,7 +511,7 @@ func (ms *VolumeKvStateMachine) ApplySnapshot(peers []proto.Peer, iter proto.Sna
 	return nil
 }
 
-// volumeKvSnapshot ...
+//volumeKvSnapshot is utility tool for taking snapshot
 type volumeKvSnapshot struct {
 	applied     uint64
 	appliedFlag bool
@@ -530,7 +533,7 @@ type volumeKvSnapshot struct {
 	bgTree     *btree.BTree
 }
 
-// Next ...
+//Next implements Next interface
 func (s *volumeKvSnapshot) Next() ([]byte, error) {
 
 	if s.appliedFlag && s.chunkIDFlag && s.inodeIDFlag && s.curBtree == "done" {
@@ -666,31 +669,31 @@ func (s *volumeKvSnapshot) Next() ([]byte, error) {
 	return nil, io.ErrUnexpectedEOF
 }
 
-// ApplyIndex ...
+//ApplyIndex gets current apply id
 func (s *volumeKvSnapshot) ApplyIndex() uint64 {
 	return s.applied
 }
 
-// Close ...
+//Close is just used for implementing interface
 func (s *volumeKvSnapshot) Close() {
 	return
 }
 
-// VolumeAddrDatabase ...
+//VolumeAddrDatabase is map from volmgr nodeis to host
 var VolumeAddrDatabase = make(map[uint64]*common.Address)
 
-// VolumeResolver ...
+//VolumeResolver implements address resolver interface
 type VolumeResolver struct {
 	nodes map[uint64]struct{}
 	sync.Mutex
 }
 
-// NewVolumeResolver ...
+//NewVolumeResolver creates a new VolumeResolver
 func NewVolumeResolver() *VolumeResolver {
 	return &VolumeResolver{nodes: make(map[uint64]struct{})}
 }
 
-// AddNode ...
+//AddNode adds new raft peer by nodeid and address
 func (r *VolumeResolver) AddNode(nodeID uint64, addr *common.Address) {
 	r.Lock()
 	r.nodes[nodeID] = struct{}{}
@@ -698,7 +701,7 @@ func (r *VolumeResolver) AddNode(nodeID uint64, addr *common.Address) {
 	r.Unlock()
 }
 
-// RemoveNode ...
+//RemoveNode removes raft peer by nodeid and address
 func (r *VolumeResolver) RemoveNode(nodeID uint64, addr *common.Address) {
 	r.Lock()
 	delete(r.nodes, nodeID)
@@ -706,7 +709,7 @@ func (r *VolumeResolver) RemoveNode(nodeID uint64, addr *common.Address) {
 	r.Unlock()
 }
 
-// AllNodes ...
+//AllNodes gets all raft nodes
 func (r *VolumeResolver) AllNodes() (all []uint64) {
 	r.Lock()
 	for k := range r.nodes {
@@ -716,7 +719,7 @@ func (r *VolumeResolver) AllNodes() (all []uint64) {
 	return
 }
 
-// NodeAddress ...
+//NodeAddress  gets raft peer address by nodeid
 func (r *VolumeResolver) NodeAddress(nodeID uint64, stype raft.SocketType) (addr string, err error) {
 	raddr, ok := VolumeAddrDatabase[nodeID]
 	if !ok {
@@ -732,7 +735,7 @@ func (r *VolumeResolver) NodeAddress(nodeID uint64, stype raft.SocketType) (addr
 	}
 }
 
-// TakeVolumeKvSnapShot ...
+//TakeVolumeKvSnapShot takes snapshot of kv statemachine in mem
 func TakeVolumeKvSnapShot(ms *VolumeKvStateMachine, rsg *wal.Storage, path string) error {
 
 	_, err := os.Stat(path)
@@ -849,7 +852,7 @@ func TakeVolumeKvSnapShot(ms *VolumeKvStateMachine, rsg *wal.Storage, path strin
 	return nil
 }
 
-// LoadVolumeKvSnapShot ...
+//LoadVolumeKvSnapShot  loads kv state machine from disk data
 func LoadVolumeKvSnapShot(ms *VolumeKvStateMachine, path string) (uint64, error) {
 	fi, err := os.Open(path + "/applied")
 	if err != nil {
