@@ -1,3 +1,6 @@
+// Copyright (c) 2017, tig.jd.com. All rights reserved.
+// Use of this source code is governed by a Apache License 2.0 that can be found in the LICENSE file.
+
 package utils
 
 import (
@@ -5,7 +8,7 @@ import (
 	"syscall"
 )
 
-// MemStatus ...
+//MemStatus is wrapper of mem status
 type MemStatus struct {
 	All   uint64 `json:"all"`
 	Used  uint64 `json:"used"`
@@ -13,7 +16,7 @@ type MemStatus struct {
 	Usage float64
 }
 
-// MemStat ...
+//MemStat is tool for collecting mem status info
 func MemStat() MemStatus {
 	memStat := new(runtime.MemStats)
 	runtime.ReadMemStats(memStat)
