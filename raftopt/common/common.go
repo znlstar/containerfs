@@ -1,3 +1,6 @@
+// Copyright (c) 2017, tig.jd.com. All rights reserved.
+// Use of this source code is governed by a Apache License 2.0 that can be found in the LICENSE file.
+
 package common
 
 import (
@@ -7,7 +10,7 @@ import (
 	"github.com/tiglabs/raft"
 )
 
-// Address ...
+// Address is a wrapper of server address
 type Address struct {
 	Grpc      string // 9901
 	Heartbeat string // 9902
@@ -15,7 +18,7 @@ type Address struct {
 	Pprof     string // 9904
 }
 
-// Resolver interface
+//Resolver defines an interface for resolving node addresses
 type Resolver interface {
 	AddNode(uint64, *Address)
 	RemoveNode(uint64, *Address)
@@ -23,7 +26,7 @@ type Resolver interface {
 	NodeAddress(uint64, raft.SocketType) (string, error)
 }
 
-// StartRaftServer ...
+//StartRaftServer initializes and start up raft server
 func StartRaftServer(rs **raft.RaftServer, r Resolver, addr *Address, nodeid uint64) error {
 
 	var err error
