@@ -1,3 +1,6 @@
+// Copyright (c) 2017, tig.jd.com. All rights reserved.
+// Use of this source code is governed by a Apache License 2.0 that can be found in the LICENSE file.
+
 package cfs
 
 import (
@@ -19,15 +22,17 @@ import (
 )
 
 const (
-	FileNormal   = 0
-	FileError    = 2
-	FileNotExist = 3
+	FILE_NORMAL    = 0
+	FILE_ERROR     = 2
+	FILE_NOT_EXIST = 3
+
+	WRITE_RETRY_CNT = 5
 )
 
-// BufferSize ...
 var BufferSize int32
 var WriteBufferSize int
 
+// Data is a buffer to store bytes writing to Datanode
 type Data struct {
 	DataBuf *bytes.Buffer
 	Status  int32
@@ -35,13 +40,14 @@ type Data struct {
 	ID      uint64
 }
 
-// ReadCacheT ...
+// ReadCache is a buffer cache to store bytes readed from Datanode
 type ReadCache struct {
 	LastOffset int64
 	readBuf    []byte
 	Ch         chan *bytes.Buffer
 }
 
+// wBuffer is a buffer to merge multi buffers of write ops
 type wBuffer struct {
 	freeSize    int32               // chunk size
 	chunkInfo   *mp.ChunkInfoWithBG // chunk info
@@ -50,10 +56,12 @@ type wBuffer struct {
 	endOffset   int64
 }
 
+// chanData is a channel for asynchronous writing
 type chanData struct {
 	data []byte
 }
 
+// Chunk to store state of current writing chunk
 type Chunk struct {
 	CFile                    *CFile
 	ChunkFreeSize            int
@@ -62,7 +70,7 @@ type Chunk struct {
 	ChunkWriteRecvExitSignal chan struct{}
 }
 
-// CFile ...
+// CFile to store infos and states of an opening file
 type CFile struct {
 	cfs           *CFS
 	ParentInodeID uint64
@@ -72,7 +80,7 @@ type CFile struct {
 	OpenFlag        int
 	FileSize        int64
 	FileSizeInCache int64
-	Status          int32 // 0 ok
+	Status          int32
 
 	DataConnLocker sync.RWMutex
 	DataConn       map[string]*grpc.ClientConn
@@ -102,20 +110,20 @@ type CFile struct {
 	WriteLocker sync.Mutex
 
 	// for read
-	//lastoffset int64
-	RMutex sync.Mutex
-	chunks []*mp.ChunkInfoWithBG // chunkinfo
-	//readBuf    []byte
+	RMutex           sync.Mutex
+	chunks           []*mp.ChunkInfoWithBG // chunkinfo
 	readCache        ReadCache
 	errDataNodeCache map[string]bool
 }
 
+// extentInfo to describe the extents of an write op
 type extentInfo struct {
 	pos    int32 //pos in chunks of cfile
 	offset int32 //offset in chunk
 	length int32 //length in chunk
 }
 
+// newDataConn provides new connecting to Datanode by addr, and cache of the connection
 func (cfile *CFile) newDataConn(addr string) *grpc.ClientConn {
 
 	cfile.DataConnLocker.RLock()
@@ -142,7 +150,7 @@ func (cfile *CFile) newDataConn(addr string) *grpc.ClientConn {
 	return conn
 }
 
-//close and delete conn when err
+// delErrDataConn to close and delete the connection when an error occur
 func (cfile *CFile) delErrDataConn(addr string) {
 	cfile.DataConnLocker.Lock()
 	if v, ok := cfile.DataConn[addr]; ok {
@@ -152,7 +160,7 @@ func (cfile *CFile) delErrDataConn(addr string) {
 	cfile.DataConnLocker.Unlock()
 }
 
-//only delele all conn when closing file
+// delAllDataConn to delele all connection when closing the file
 func (cfile *CFile) delAllDataConn() {
 	cfile.DataConnLocker.Lock()
 	for k, v := range cfile.DataConn {
@@ -161,6 +169,8 @@ func (cfile *CFile) delAllDataConn() {
 	}
 	cfile.DataConnLocker.Unlock()
 }
+
+// streamRead to submit stream read request and read file data from the stream
 func (cfile *CFile) streamRead(chunkidx int, ch chan *bytes.Buffer, offset int64, size int64) {
 	var conn *grpc.ClientConn
 	var buffer *bytes.Buffer
@@ -204,7 +214,7 @@ func (cfile *CFile) streamRead(chunkidx int, ch chan *bytes.Buffer, offset int64
 			Offset:       offset,
 			Readsize:     size,
 		}
-		ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, _ := context.WithTimeout(context.Background(), DATANODE_TIMEOUT_SECONDS*time.Second)
 		stream, err := dc.StreamReadChunk(ctx, streamreadChunkReq)
 		if err != nil {
 			cfile.delErrDataConn(addr)
@@ -222,7 +232,7 @@ func (cfile *CFile) streamRead(chunkidx int, ch chan *bytes.Buffer, offset int64
 					Offset:       offset,
 					Readsize:     size,
 				}
-				ctx, _ = context.WithTimeout(context.Background(), 10*time.Second)
+				ctx, _ = context.WithTimeout(context.Background(), DATANODE_TIMEOUT_SECONDS*time.Second)
 				stream, err = dc.StreamReadChunk(ctx, streamreadChunkReq)
 				if err != nil {
 					cfile.delErrDataConn(addr)
@@ -285,6 +295,7 @@ func (cfile *CFile) streamRead(chunkidx int, ch chan *bytes.Buffer, offset int64
 	}
 }
 
+// readChunk to read chunk data by streamRead, the read offset of the chunk and length are desceibed by extentInfo
 func (cfile *CFile) readChunk(eInfo extentInfo, data *[]byte, offset int64) int32 {
 
 	//check if hit readBuf
@@ -327,6 +338,7 @@ func (cfile *CFile) readChunk(eInfo extentInfo, data *[]byte, offset int64) int3
 	return appendLen
 }
 
+// disableReadCache to disable all readed data caches for the file
 func (cfile *CFile) disableReadCache(wOffset int64, wLen int32) {
 	readBufOffset := cfile.readCache.LastOffset
 	readBufLen := len(cfile.readCache.readBuf)
@@ -343,7 +355,7 @@ func (cfile *CFile) disableReadCache(wOffset int64, wLen int32) {
 	logger.Debug("cfile %v disableReadCache: offset: %v len %v --> %v", cfile.Name, readBufOffset, readBufLen, len(cfile.readCache.readBuf))
 }
 
-//get extent info by [start, end)
+// getExtentInfo to get extent info by [start, end) for a write/read operation
 func (cfile *CFile) getExtentInfo(start int64, end int64, eInfo *[]extentInfo) {
 	var i int32
 	var chunkStart, chunkEnd int64
@@ -368,10 +380,10 @@ func (cfile *CFile) getExtentInfo(start int64, end int64, eInfo *[]extentInfo) {
 	}
 }
 
-// Read ...
+// Read provides the API to read datas from the file
 func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 
-	if cfile.Status != FileNormal {
+	if cfile.Status != FILE_ERROR {
 		logger.Error("cfile %v status error , read func return -2 ", cfile.Name)
 		return -2
 	}
@@ -392,7 +404,7 @@ func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 
 	logger.Debug("cfile %v Read start: offset: %v, len: %v", cfile.Name, offset, readsize)
 
-	for start < end && cfile.Status == FileNormal {
+	for start < end && cfile.Status == FILE_ERROR {
 
 		eInfo := make([]extentInfo, 0, 4)
 		cfile.getExtentInfo(start, end, &eInfo)
@@ -429,7 +441,7 @@ func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 		logger.Debug("cfile %v, end waiting with FileSize %v, FileSizeInCache %v, time %v ms", cfile.Name, cfile.FileSize, cfile.FileSizeInCache, i*100)
 	}
 
-	if cfile.Status != FileNormal {
+	if cfile.Status != FILE_ERROR {
 		logger.Error("cfile %v status error , read func return -2 ", cfile.Name)
 		return -2
 	}
@@ -438,7 +450,7 @@ func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 	return start - offset
 }
 
-// Write ...
+// Write provides the API to write datas to the file
 func (cfile *CFile) Write(buf []byte, offset int64, length int32) int32 {
 
 	if cfile.Status != 0 {
@@ -465,7 +477,7 @@ func (cfile *CFile) Write(buf []byte, offset int64, length int32) int32 {
 
 	logger.Debug("cfile %v write start: offset: %v, len: %v", cfile.Name, offset, length)
 
-	for start < end && cfile.Status == FileNormal {
+	for start < end && cfile.Status == FILE_ERROR {
 
 		eInfo := make([]extentInfo, 0, 4)
 		cfile.getExtentInfo(start, end, &eInfo)
@@ -514,6 +526,7 @@ func (cfile *CFile) Write(buf []byte, offset int64, length int32) int32 {
 	return int32(start - offset)
 }
 
+// overwriteBuffer to seek and overwrite the wBuffer of file
 func (cfile *CFile) overwriteBuffer(eInfo extentInfo, buf []byte) int32 {
 
 	//read wBuffer all bytes to tmpBuf
@@ -542,12 +555,13 @@ func (cfile *CFile) overwriteBuffer(eInfo extentInfo, buf []byte) int32 {
 	return 0
 }
 
+// seekWriteChunk to seek and write datas of chunk to Datanode
 func (cfile *CFile) seekWriteChunk(addr string, conn *grpc.ClientConn, req *dp.SeekWriteChunkReq, copies *uint64) {
 
 	if conn == nil {
 	} else {
 		dc := dp.NewDataNodeClient(conn)
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 		ret, err := dc.SeekWriteChunk(ctx, req)
 		if err != nil {
 			cfile.delErrDataConn(addr)
@@ -563,6 +577,7 @@ func (cfile *CFile) seekWriteChunk(addr string, conn *grpc.ClientConn, req *dp.S
 
 }
 
+// seekWrite provides seek and write the file
 func (cfile *CFile) seekWrite(eInfo extentInfo, buf []byte) int32 {
 
 	chunkInfo := cfile.chunks[eInfo.pos]
@@ -596,14 +611,14 @@ func (cfile *CFile) seekWrite(eInfo extentInfo, buf []byte) int32 {
 	cfile.wgWriteReps.Wait()
 
 	if copies < uint64(cfile.cfs.Copies) {
-		cfile.Status = FileError
+		cfile.Status = FILE_ERROR
 		logger.Error("cfile %v seekWriteChunk copies: %v, set error!", cfile.Name, copies)
 		return -1
 	}
 	return 0
 }
 
-//flush CFile convergeBuffer ...
+//startFlushConvergeBuffer is a routine to flush the converge buffer
 func (cfile *CFile) startFlushConvergeBuffer() {
 
 	if WriteBufferSize <= 0 {
@@ -635,10 +650,10 @@ func (cfile *CFile) startFlushConvergeBuffer() {
 	}
 }
 
-// Write ...
+// appendWrite to write the file append only
 func (cfile *CFile) appendWrite(buf []byte, length int32, needFlush bool) (ret int32) {
 
-	if cfile.Status == FileError {
+	if cfile.Status == FILE_ERROR {
 		return -2
 	}
 
@@ -662,6 +677,7 @@ func (cfile *CFile) appendWrite(buf []byte, length int32, needFlush bool) (ret i
 	return ret
 }
 
+// append2Converge to write datas to the converge buffer of file
 func (cfile *CFile) append2Converge(buf []byte, length int32, needFlush bool) (ret int32) {
 	ret = length
 	cfile.convergeLocker.Lock()
@@ -694,9 +710,10 @@ func (cfile *CFile) append2Converge(buf []byte, length int32, needFlush bool) (r
 	return ret
 }
 
+// WriteThread is a routine for asynchronous write ops
 func (cfile *CFile) WriteThread() {
 
-	logger.Debug("Write Thread: file %v start writethread!\n", cfile.Name)
+	logger.Debug("Write Thread: file %v start Writethread!\n", cfile.Name)
 
 	for true {
 		select {
@@ -704,7 +721,7 @@ func (cfile *CFile) WriteThread() {
 			if chanData == nil {
 				logger.Debug("WriteThread file %v recv channel close, wait DataCache...", cfile.Name)
 				var ti uint32
-				for cfile.Status == FileNormal {
+				for cfile.Status == FILE_ERROR {
 					if len(cfile.DataCache) == 0 {
 						break
 					}
@@ -722,7 +739,7 @@ func (cfile *CFile) WriteThread() {
 				return
 			} else {
 
-				if cfile.Status != FileNormal {
+				if cfile.Status != FILE_ERROR {
 					continue
 				}
 
@@ -732,9 +749,9 @@ func (cfile *CFile) WriteThread() {
 				newData.DataBuf.Write(chanData.data)
 				newData.Status = 1
 
-				if err := cfile.WriteHandler(newData); err != nil {
-					logger.Error("WriteThread file %v WriteHandler err %v !", cfile.Name, err)
-					cfile.Status = FileError
+				if err := cfile.writeHandler(newData); err != nil {
+					logger.Error("WriteThread file %v writeHandler err %v !", cfile.Name, err)
+					cfile.Status = FILE_ERROR
 					cfile.WriteErrSignal <- true
 				}
 			}
@@ -744,11 +761,12 @@ func (cfile *CFile) WriteThread() {
 
 }
 
-func (cfile *CFile) WriteHandler(newData *Data) error {
+// writeHandler to handle an asynchronous write operation
+func (cfile *CFile) writeHandler(newData *Data) error {
 
 	length := newData.DataBuf.Len()
 
-	logger.Debug("WriteHandler: file %v, num:%v,  length: %v, \n", cfile.Name, cfile.atomicNum, length)
+	logger.Debug("writeHandler: file %v, num:%v,  length: %v, \n", cfile.Name, cfile.atomicNum, length)
 
 ALLOCATECHUNK:
 
@@ -757,10 +775,10 @@ ALLOCATECHUNK:
 		if cfile.CurChunk.ChunkWriteStream != nil {
 			var ti uint32
 			needClose := bool(true)
-			logger.Debug("WriteHandler: file %v, begin waiting last chunk: %v\n", cfile.Name, len(cfile.DataCache))
+			logger.Debug("writeHandler: file %v, begin waiting last chunk: %v\n", cfile.Name, len(cfile.DataCache))
 			tmpDataCacheLen := len(cfile.DataCache)
 
-			for cfile.Status == FileNormal {
+			for cfile.Status == FILE_ERROR {
 				if tmpDataCacheLen == 0 {
 					break
 				}
@@ -774,16 +792,16 @@ ALLOCATECHUNK:
 
 				if ti == 500 {
 					if cfile.CurChunk.ChunkWriteStream != nil {
-						logger.Error("WriteHandler: file %v, dataCacheLen: %v  wait last chunk timeout, CloseSend\n", cfile.Name, len(cfile.DataCache))
+						logger.Error("writeHandler: file %v, dataCacheLen: %v  wait last chunk timeout, CloseSend\n", cfile.Name, len(cfile.DataCache))
 						cfile.CurChunk.ChunkWriteStream.CloseSend()
 						needClose = false
 					}
 				}
 			}
-			if cfile.Status != FileNormal {
+			if cfile.Status != FILE_ERROR {
 				return errors.New("file status err")
 			}
-			logger.Debug("WriteHandler: file %v, end wait after loop times %v\n", cfile.Name, ti)
+			logger.Debug("writeHandler: file %v, end wait after loop times %v\n", cfile.Name, ti)
 
 			if needClose && cfile.CurChunk.ChunkWriteStream != nil {
 				cfile.CurChunk.ChunkWriteStream.CloseSend()
@@ -794,17 +812,17 @@ ALLOCATECHUNK:
 	}
 
 	if cfile.CurChunk == nil {
-		for retryCnt := 0; retryCnt < 5; retryCnt++ {
+		for retryCnt := 0; retryCnt < WRITE_RETRY_CNT; retryCnt++ {
 			cfile.CurChunk = cfile.AllocateChunk(true)
 			if cfile.CurChunk == nil {
-				logger.Error("WriteHandler: file %v, alloc chunk failed for %v times\n", cfile.Name, retryCnt+1)
+				logger.Error("writeHandler: file %v, alloc chunk failed for %v times\n", cfile.Name, retryCnt+1)
 				time.Sleep(time.Millisecond * 500)
 				continue
 			}
 			break
 		}
 		if cfile.CurChunk == nil {
-			return errors.New("AllocateChunk failed for 5 times")
+			return errors.New("AllocateChunk failed after retry")
 		}
 	}
 
@@ -833,25 +851,25 @@ ALLOCATECHUNK:
 	if cfile.CurChunk != nil {
 		if cfile.CurChunk.ChunkWriteStream != nil {
 			if err := cfile.CurChunk.ChunkWriteStream.Send(req); err != nil {
-				logger.Debug("WriteHandler: send file %v, chunk %v len: %v failed\n", cfile.Name, cfile.CurChunk, length)
+				logger.Debug("writeHandler: send file %v, chunk %v len: %v failed\n", cfile.Name, cfile.CurChunk, length)
 				cfile.CurChunk.ChunkFreeSize = 0
 			} else {
-				logger.Debug("WriteHandler: send file %v, chunk %v len: %v success\n", cfile.Name, cfile.CurChunk, length)
+				logger.Debug("writeHandler: send file %v, chunk %v len: %v success\n", cfile.Name, cfile.CurChunk, length)
 				cfile.CurChunk.ChunkFreeSize -= length
 			}
 		} else {
-			logger.Error("WriteHandler: file %v, CurChunk %v has no write stream\n", cfile.Name, cfile.CurChunk.ChunkInfo.ChunkID)
+			logger.Error("writeHandler: file %v, CurChunk %v has no write stream\n", cfile.Name, cfile.CurChunk.ChunkInfo.ChunkID)
 			goto ALLOCATECHUNK
 		}
 	} else {
-		logger.Error("WriteHandler: file %v, CurChunk is nil\n", cfile.Name)
+		logger.Error("writeHandler: file %v, CurChunk is nil\n", cfile.Name)
 		goto ALLOCATECHUNK
 	}
 
 	return nil
 }
 
-// AllocateChunk ...
+// AllocateChunk to allocate a chunk for append write to the file
 func (cfile *CFile) AllocateChunk(IsStream bool) *Chunk {
 
 	logger.Debug("AllocateChunk file: %v begin\n", cfile.Name)
@@ -866,7 +884,7 @@ func (cfile *CFile) AllocateChunk(IsStream bool) *Chunk {
 	pAllocateChunkReq := &mp.AllocateChunkReq{
 		VolID: cfile.cfs.VolID,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 	pAllocateChunkAck, err := mc.AllocateChunk(ctx, pAllocateChunkReq)
 	if err != nil || pAllocateChunkAck.Ret != 0 {
 		time.Sleep(time.Second * 2)
@@ -878,7 +896,7 @@ func (cfile *CFile) AllocateChunk(IsStream bool) *Chunk {
 		}
 
 		mc = mp.NewMetaNodeClient(cfile.cfs.MetaNodeConn)
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 		pAllocateChunkAck, err = mc.AllocateChunk(ctx, pAllocateChunkReq)
 		if err != nil || pAllocateChunkAck.Ret != 0 {
 			logger.Error("AllocateChunk file: %v failed, err: %v ret: %v\n", cfile.Name, err, pAllocateChunkAck.Ret)
@@ -932,9 +950,10 @@ func (cfile *CFile) AllocateChunk(IsStream bool) *Chunk {
 	return curChunk
 }
 
+// Retry to retry write ops when error occured
 func (chunk *Chunk) Retry() {
 
-	if chunk.CFile.Status == FileNotExist {
+	if chunk.CFile.Status == FILE_NOT_EXIST {
 		return
 	}
 	chunk.CFile.DataCacheLocker.Lock()
@@ -949,10 +968,10 @@ func (chunk *Chunk) Retry() {
 
 	retrySuccess := false
 	var err error
-	for retryCnt := 0; retryCnt < 5; retryCnt++ {
-		err = chunk.WriteRetryHandle()
+	for retryCnt := 0; retryCnt < WRITE_RETRY_CNT; retryCnt++ {
+		err = chunk.writeRetryHandle()
 		if err != nil {
-			logger.Error("WriteRetryHandle file %v chunk %v err: %v, try again for %v times!", chunk.CFile.Name, chunk.ChunkInfo.ChunkID, err, retryCnt+1)
+			logger.Error("writeRetryHandle file %v chunk %v err: %v, try again for %v times!", chunk.CFile.Name, chunk.ChunkInfo.ChunkID, err, retryCnt+1)
 			time.Sleep(time.Millisecond * 500)
 			continue
 		} else {
@@ -962,9 +981,9 @@ func (chunk *Chunk) Retry() {
 	}
 
 	if !retrySuccess {
-		chunk.CFile.Status = FileError
+		chunk.CFile.Status = FILE_ERROR
 		chunk.CFile.WriteErrSignal <- true
-		logger.Error("C2MRecv thread Retry write file %v chunk %v failed, set FileError!", chunk.CFile.Name, chunk.ChunkInfo.ChunkID)
+		logger.Error("C2MRecv thread Retry write file %v chunk %v failed, set FILE_ERROR!", chunk.CFile.Name, chunk.ChunkInfo.ChunkID)
 	} else {
 		chunk.CFile.DataCache = make(map[uint64]*Data)
 		chunk.ChunkFreeSize = 0
@@ -973,6 +992,7 @@ func (chunk *Chunk) Retry() {
 	}
 }
 
+// C2MRecv is a routine to receive replay from the Datanode who is the master of this block goup
 func (chunk *Chunk) C2MRecv() {
 	logger.Debug("C2MRecv thread started success for file %v chunk %v", chunk.CFile.Name, chunk.ChunkInfo.ChunkID)
 
@@ -994,13 +1014,12 @@ func (chunk *Chunk) C2MRecv() {
 			break
 		}
 
-		chunk.CFile.curNum = atomic.AddUint64(&chunk.CFile.curNum, 1)
+		atomic.AddUint64(&chunk.CFile.curNum, 1)
 		if in.CommitID != chunk.CFile.curNum {
 			logger.Error("C2MRecv: write failed! file: %v, ID；%v != curNum: %v, chunk: %v, len: %v\n", chunk.CFile.Name, in.CommitID, chunk.CFile.curNum, in.ChunkID, in.DataLen)
 			break
 		}
 
-		// update to metanode
 		logger.Debug("C2MRecv: Write success! try to update metadata file: %v, ID；%v, chunk: %v, len: %v\n",
 			chunk.CFile.Name, in.CommitID, in.ChunkID, in.DataLen)
 
@@ -1013,7 +1032,7 @@ func (chunk *Chunk) C2MRecv() {
 			CommitSize:    in.DataLen,
 			BlockGroupID:  in.BlockGroupID,
 		}
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 		pAsyncChunkAck, err2 := mc.AsyncChunk(ctx, pAsyncChunkReq)
 		if err2 != nil {
 			break
@@ -1021,7 +1040,7 @@ func (chunk *Chunk) C2MRecv() {
 
 		if pAsyncChunkAck.Ret == utils.ENO_NOTEXIST {
 			logger.Error("Failed to write a not existing file: %v, inode: %v!", chunk.CFile.Name, chunk.CFile.Inode)
-			chunk.CFile.Status = FileNotExist
+			chunk.CFile.Status = FILE_NOT_EXIST
 			chunk.CFile.WriteErrSignal <- true
 			for _, dn := range chunk.ChunkInfo.BlockGroupWithHost.Hosts {
 				go func(host string) {
@@ -1038,7 +1057,6 @@ func (chunk *Chunk) C2MRecv() {
 				}(dn)
 			}
 		}
-		// comfirm data
 		chunk.CFile.DataCacheLocker.Lock()
 		//cfile.DataCache[in.CommitID].timer.Stop()
 		delete(chunk.CFile.DataCache, in.CommitID)
@@ -1048,7 +1066,8 @@ func (chunk *Chunk) C2MRecv() {
 	}
 }
 
-func (chunk *Chunk) WriteRetryHandle() error {
+// writeRetryHandle is to retry write ops
+func (chunk *Chunk) writeRetryHandle() error {
 
 	length := len(chunk.CFile.DataCache)
 	if length == 0 {
@@ -1066,7 +1085,7 @@ func (chunk *Chunk) WriteRetryHandle() error {
 		sortedKeys = append(sortedKeys, int(k))
 	}
 	sort.Ints(sortedKeys)
-	logger.Debug("WriteRetryHandle AllocateChunk success, begin to retry item num:%v, commitIDs: %v", length, sortedKeys)
+	logger.Debug("writeRetryHandle AllocateChunk success, begin to retry item num:%v, commitIDs: %v", length, sortedKeys)
 
 	var chunkSize int
 
@@ -1082,20 +1101,20 @@ func (chunk *Chunk) WriteRetryHandle() error {
 
 			conn := chunk.CFile.newDataConn(v)
 			if conn == nil {
-				logger.Error("WriteRetryHandle newDataConn Failed err")
-				return fmt.Errorf("WriteRetryHandle newDataConn Failed")
+				logger.Error("writeRetryHandle newDataConn Failed err")
+				return fmt.Errorf("writeRetryHandle newDataConn Failed")
 			}
 			dc := dp.NewDataNodeClient(conn)
-			ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 			_, err := dc.WriteChunk(ctx, &req)
 			if err != nil {
-				logger.Error("WriteRetryHandle WriteChunk to DataNode Host Failed err %v", err)
+				logger.Error("writeRetryHandle WriteChunk to DataNode Host Failed err %v", err)
 				chunk.CFile.delErrDataConn(v)
 				return err
 			}
 		}
 
-		logger.Debug("WriteRetryHandle write CommitID %v bufLen %v success", vv, bufLen)
+		logger.Debug("writeRetryHandle write CommitID %v bufLen %v success", vv, bufLen)
 		chunkSize += bufLen
 		chunk.CFile.curNum = uint64(vv)
 	}
@@ -1109,19 +1128,19 @@ func (chunk *Chunk) WriteRetryHandle() error {
 		CommitSize:    uint32(chunkSize),
 		BlockGroupID:  tmpchunk.ChunkInfo.BlockGroupWithHost.BlockGroupID,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 	_, err2 := mc.AsyncChunk(ctx, pAsyncChunkReq)
 	if err2 != nil {
-		logger.Error("WriteRetryHandle AsyncChunk to MetaNode Failed err %v", err2)
+		logger.Error("writeRetryHandle AsyncChunk to MetaNode Failed err %v", err2)
 		return err2
 	}
-	logger.Debug("WriteRetryHandle success with ChunkID %v ChunkSize %v", tmpchunk.ChunkInfo.ChunkID, chunkSize)
+	logger.Debug("writeRetryHandle success with ChunkID %v ChunkSize %v", tmpchunk.ChunkInfo.ChunkID, chunkSize)
 
 	chunk.CFile.updateChunkSize(tmpchunk.ChunkInfo, int32(chunkSize))
 	return nil
 }
 
-// update ChunkSize and FileSize only if chunk's data has be writted to datanode and syn to metanode
+// updateChunkSize to update ChunkSize and FileSize if chunk's data has be writted to datanode and syn to metanode
 func (cfile *CFile) updateChunkSize(chunkinfo *mp.ChunkInfoWithBG, length int32) {
 
 	chunkNum := len(cfile.chunks)
@@ -1134,9 +1153,9 @@ func (cfile *CFile) updateChunkSize(chunkinfo *mp.ChunkInfoWithBG, length int32)
 	cfile.FileSize += int64(length)
 }
 
-// Sync ...
+// Sync provides the API to sync file
 func (cfile *CFile) Sync() int32 {
-	if cfile.Status != FileNormal {
+	if cfile.Status != FILE_ERROR {
 		return -1
 	}
 
@@ -1145,13 +1164,13 @@ func (cfile *CFile) Sync() int32 {
 	return 0
 }
 
-// Sync ...
+// Flush provides the API to flush file
 func (cfile *CFile) Flush() int32 {
 	if cfile.isWrite == false {
 		return 0
 	}
 
-	if cfile.Status != FileNormal {
+	if cfile.Status != FILE_ERROR {
 		return -1
 	}
 
@@ -1160,11 +1179,8 @@ func (cfile *CFile) Flush() int32 {
 	return 0
 }
 
-// Close ...
+// CloseWrite provides the API to close an opened file with 'WR'
 func (cfile *CFile) CloseWrite() int32 {
-	/*if cfile.Status == FileError {
-		return -1
-	} */
 
 	cfile.appendWrite(nil, 0, true)
 
@@ -1177,7 +1193,7 @@ func (cfile *CFile) CloseWrite() int32 {
 	return 0
 }
 
-// Close ...
+// Close provides the API to close an opened file
 func (cfile *CFile) Close() int32 {
 	cfile.delAllDataConn()
 	return 0

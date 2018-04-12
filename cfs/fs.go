@@ -1,3 +1,6 @@
+// Copyright (c) 2017, tig.jd.com. All rights reserved.
+// Use of this source code is governed by a Apache License 2.0 that can be found in the LICENSE file.
+
 package cfs
 
 import (
@@ -16,10 +19,23 @@ import (
 	"google.golang.org/grpc/connectivity"
 )
 
+const (
+	VOLMGR_TIMEOUT_SECONDS   = 10
+	DATANODE_TIMEOUT_SECONDS = 10
+	METANODE_TIMEOUT_SECONDS = 5
+	DIR_TIMEOUT_SECONDS      = 60
+	VOLUME_TIMEOUT_SECONDS   = 10
+	SNAPSHOT_TIMEOUT_SECONDS = 100
+
+	VOLMGR_GRPC_PORT_STRING = "9901"
+
+	LEADER_PERIOD_CHECK_MILLISECOND = 500
+)
+
 var VolMgrHosts []string
 var MetaNodeHosts []string
 
-// CFS ...
+// CFS to store global items of the filesystem
 type CFS struct {
 	VolID  string
 	Copies int
@@ -31,37 +47,39 @@ type CFS struct {
 	MetaNodeLeader string
 }
 
-// OpenFileSystem ...
+// OpenFileSystem is the cfs API to mount a volume to client by filesystem's UUID
 func OpenFileSystem(uuid string) *CFS {
 	cfs := CFS{VolID: uuid}
 
-	cfs.GetVolumeMetaPeers(uuid)
+	cfs.getVolumeMetaPeers(uuid)
 
-	err := cfs.GetLeaderInfo(uuid)
+	err := cfs.getLeaderInfo(uuid)
 	if err != nil {
 		logger.Error("OpenFileSystem GetLeaderConn Failed err:%v", err)
 		return nil
 	}
-	cfs.CheckLeaderConns()
+	cfs.checkLeaderConns()
 	return &cfs
 }
 
-func (cfs *CFS) GetLeaderHost() (volMgrLeader string, metaNodeLeader string, err error) {
+// getLeaderHost to get leaders of VolMgr cluster, and MetaNode cluster
+func (cfs *CFS) getLeaderHost() (volMgrLeader string, metaNodeLeader string, err error) {
 
 	volMgrLeader, err = utils.GetVolMgrLeader(VolMgrHosts)
 	if err != nil {
-		logger.Error("GetLeaderHost failed: %v", err)
+		logger.Error("getLeaderHost failed: %v", err)
 		return "", "", err
 	}
 	metaNodeLeader, err = utils.GetMetaNodeLeader(MetaNodeHosts, cfs.VolID)
 	if err != nil {
-		logger.Error("GretLeaderHost failed: %v", err)
+		logger.Error("GetMetaNodeLeader failed: %v", err)
 		return "", "", err
 	}
 	return volMgrLeader, metaNodeLeader, nil
 }
 
-func (cfs *CFS) GetLeaderInfo(uuid string) error {
+// getLeaderInfo to get detail infos of MetaNode raft group cluster
+func (cfs *CFS) getLeaderInfo(uuid string) error {
 
 	var err error
 	cfs.VolMgrLeader, cfs.VolMgrConn, err = utils.DialVolMgr(VolMgrHosts)
@@ -73,7 +91,7 @@ func (cfs *CFS) GetLeaderInfo(uuid string) error {
 	pGetMetaNodeRGReq := &vp.GetMetaNodeRGReq{
 		UUID: uuid,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), VOLMGR_TIMEOUT_SECONDS*time.Second)
 	pGetMetaNodeRGAck, err := vc.GetMetaNodeRG(ctx, pGetMetaNodeRGReq)
 	if err != nil {
 		return err
@@ -93,7 +111,8 @@ func (cfs *CFS) GetLeaderInfo(uuid string) error {
 	return nil
 }
 
-func (cfs *CFS) GetVolumeMetaPeers(uuid string) error {
+// getVolumeMetaPeers to get host peers of VolMgr raft group cluster
+func (cfs *CFS) getVolumeMetaPeers(uuid string) error {
 
 	_, conn, err := utils.DialVolMgr(VolMgrHosts)
 	if err != nil {
@@ -105,7 +124,7 @@ func (cfs *CFS) GetVolumeMetaPeers(uuid string) error {
 	pGetMetaNodeRGReq := &vp.GetMetaNodeRGReq{
 		UUID: uuid,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), VOLMGR_TIMEOUT_SECONDS*time.Second)
 	pGetMetaNodeRGAck, err := vc.GetMetaNodeRG(ctx, pGetMetaNodeRGReq)
 	if err != nil {
 		return err
@@ -117,19 +136,20 @@ func (cfs *CFS) GetVolumeMetaPeers(uuid string) error {
 	}
 
 	for _, v := range pGetMetaNodeRGAck.MetaNodes {
-		MetaNodeHosts = append(MetaNodeHosts, v.Host+":9901")
+		MetaNodeHosts = append(MetaNodeHosts, v.Host+":"+VOLMGR_GRPC_PORT_STRING)
 	}
 	return nil
 }
 
-func (cfs *CFS) CheckLeaderConns() {
+// checkLeaderConns is a routine to check connection to VolMgr/MetaNode leaders periodically
+func (cfs *CFS) checkLeaderConns() {
 
-	ticker := time.NewTicker(time.Millisecond * 500)
+	ticker := time.NewTicker(time.Millisecond * LEADER_PERIOD_CHECK_MILLISECOND)
 	go func() {
 		for range ticker.C {
-			vLeader, mLeader, err := cfs.GetLeaderHost()
+			vLeader, mLeader, err := cfs.getLeaderHost()
 			if err != nil {
-				logger.Error("CheckLeaderConns GetLeaderHost err %v", err)
+				logger.Error("checkLeaderConns getLeaderHost err %v", err)
 				continue
 			}
 			if vLeader != cfs.VolMgrLeader {
@@ -168,7 +188,7 @@ func (cfs *CFS) CheckLeaderConns() {
 
 }
 
-// GetFSInfo ...
+// GetFSInfo is the API to get detail infos of the current filesystem
 func (cfs *CFS) GetFSInfo() (int32, *mp.GetFSInfoAck) {
 
 	mc := mp.NewMetaNodeClient(cfs.MetaNodeConn)
@@ -188,6 +208,7 @@ func (cfs *CFS) GetFSInfo() (int32, *mp.GetFSInfoAck) {
 	return 0, pGetFSInfoAck
 }
 
+// checkMetaConn to check connection of MetaNode leader
 func (cfs *CFS) checkMetaConn() int32 {
 	for i := 0; cfs.MetaNodeConn == nil && i < 10; i++ {
 		time.Sleep(300 * time.Millisecond)
@@ -199,7 +220,7 @@ func (cfs *CFS) checkMetaConn() int32 {
 	return 0
 }
 
-// CreateDirDirect ...
+// CreateDirDirect is the API to create a directory
 func (cfs *CFS) CreateDirDirect(pinode uint64, name string) (int32, uint64) {
 
 	ret := cfs.checkMetaConn()
@@ -213,7 +234,7 @@ func (cfs *CFS) CreateDirDirect(pinode uint64, name string) (int32, uint64) {
 		Name:   name,
 		VolID:  cfs.VolID,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 	pCreateDirDirectAck, err := mc.CreateDirDirect(ctx, pCreateDirDirectReq)
 	if err != nil {
 
@@ -225,7 +246,7 @@ func (cfs *CFS) CreateDirDirect(pinode uint64, name string) (int32, uint64) {
 		}
 
 		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
-		ctx, _ = context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, _ = context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 		pCreateDirDirectAck, err = mc.CreateDirDirect(ctx, pCreateDirDirectReq)
 		if err != nil {
 			return -1, 0
@@ -235,7 +256,7 @@ func (cfs *CFS) CreateDirDirect(pinode uint64, name string) (int32, uint64) {
 	return pCreateDirDirectAck.Ret, pCreateDirDirectAck.Inode
 }
 
-// GetInodeInfoDirect ...
+// GetInodeInfoDirect is the API to get detail infos of a file
 func (cfs *CFS) GetInodeInfoDirect(pinode uint64, name string) (int32, uint64, *mp.InodeInfo) {
 
 	ret := cfs.checkMetaConn()
@@ -249,7 +270,7 @@ func (cfs *CFS) GetInodeInfoDirect(pinode uint64, name string) (int32, uint64, *
 		Name:   name,
 		VolID:  cfs.VolID,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 	pGetInodeInfoDirectAck, err := mc.GetInodeInfoDirect(ctx, pGetInodeInfoDirectReq)
 	if err != nil {
 
@@ -261,7 +282,7 @@ func (cfs *CFS) GetInodeInfoDirect(pinode uint64, name string) (int32, uint64, *
 		}
 
 		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 		pGetInodeInfoDirectAck, err = mc.GetInodeInfoDirect(ctx, pGetInodeInfoDirectReq)
 		if err != nil {
 			return -1, 0, nil
@@ -271,7 +292,7 @@ func (cfs *CFS) GetInodeInfoDirect(pinode uint64, name string) (int32, uint64, *
 	return pGetInodeInfoDirectAck.Ret, pGetInodeInfoDirectAck.Inode, pGetInodeInfoDirectAck.InodeInfo
 }
 
-// GetSymLinkInfoDirect ...
+// GetSymLinkInfoDirect is the API to get detail infos of a Symlink file
 func (cfs *CFS) GetSymLinkInfoDirect(pinode uint64, name string) (int32, uint64) {
 
 	ret := cfs.checkMetaConn()
@@ -285,7 +306,7 @@ func (cfs *CFS) GetSymLinkInfoDirect(pinode uint64, name string) (int32, uint64)
 		Name:   name,
 		VolID:  cfs.VolID,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 	pGetSymLinkInfoDirectAck, err := mc.GetSymLinkInfoDirect(ctx, pGetSymLinkInfoDirectReq)
 	if err != nil {
 
@@ -297,7 +318,7 @@ func (cfs *CFS) GetSymLinkInfoDirect(pinode uint64, name string) (int32, uint64)
 		}
 
 		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 		pGetSymLinkInfoDirectAck, err = mc.GetSymLinkInfoDirect(ctx, pGetSymLinkInfoDirectReq)
 		if err != nil {
 			return -3, 0
@@ -307,7 +328,7 @@ func (cfs *CFS) GetSymLinkInfoDirect(pinode uint64, name string) (int32, uint64)
 	return pGetSymLinkInfoDirectAck.Ret, pGetSymLinkInfoDirectAck.Inode
 }
 
-// StatDirect ...
+// StatDirect is the API to get file stat
 func (cfs *CFS) StatDirect(pinode uint64, name string) (int32, uint32, uint64) {
 
 	ret := cfs.checkMetaConn()
@@ -321,7 +342,7 @@ func (cfs *CFS) StatDirect(pinode uint64, name string) (int32, uint32, uint64) {
 		Name:   name,
 		VolID:  cfs.VolID,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 	pStatDirectAck, err := mc.StatDirect(ctx, pStatDirectReq)
 	if err != nil {
 
@@ -333,7 +354,7 @@ func (cfs *CFS) StatDirect(pinode uint64, name string) (int32, uint32, uint64) {
 		}
 
 		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 		pStatDirectAck, err = mc.StatDirect(ctx, pStatDirectReq)
 		if err != nil {
 			return -1, 0, 0
@@ -342,7 +363,7 @@ func (cfs *CFS) StatDirect(pinode uint64, name string) (int32, uint32, uint64) {
 	return pStatDirectAck.Ret, pStatDirectAck.InodeType, pStatDirectAck.Inode
 }
 
-// ListDirect ...
+// ListDirect is the API to list directory
 func (cfs *CFS) ListDirect(pinode uint64, name string) (int32, []*mp.DirentN) {
 
 	ret := cfs.checkMetaConn()
@@ -356,7 +377,7 @@ func (cfs *CFS) ListDirect(pinode uint64, name string) (int32, []*mp.DirentN) {
 		VolID:  cfs.VolID,
 		Name:   name,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), DIR_TIMEOUT_SECONDS*time.Second)
 	pListDirectAck, err := mc.ListDirect(ctx, pListDirectReq)
 	if err != nil {
 		return -1, nil
@@ -365,7 +386,7 @@ func (cfs *CFS) ListDirect(pinode uint64, name string) (int32, []*mp.DirentN) {
 	return pListDirectAck.Ret, pListDirectAck.Dirents
 }
 
-// DeleteDirDirect ...
+// DeleteDirDirect is the API to delete a directory
 func (cfs *CFS) DeleteDirDirect(pinode uint64, name string) int32 {
 
 	ret, _, inode := cfs.StatDirect(pinode, name)
@@ -385,7 +406,7 @@ func (cfs *CFS) DeleteDirDirect(pinode uint64, name string) int32 {
 		PInode: inode,
 		VolID:  cfs.VolID,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 	pListDirectAck, err := mc.ListDirect(ctx, pListDirectReq)
 	if err != nil {
 		logger.Error("DeleteDirDirect ListDirect :%v\n", err)
@@ -418,7 +439,7 @@ func (cfs *CFS) DeleteDirDirect(pinode uint64, name string) int32 {
 		Name:   name,
 		VolID:  cfs.VolID,
 	}
-	ctx, _ = context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, _ = context.WithTimeout(context.Background(), DIR_TIMEOUT_SECONDS*time.Second)
 	pDeleteDirDirectAck, err := mc.DeleteDirDirect(ctx, pDeleteDirDirectReq)
 	if err != nil {
 		return -1
@@ -426,7 +447,7 @@ func (cfs *CFS) DeleteDirDirect(pinode uint64, name string) int32 {
 	return pDeleteDirDirectAck.Ret
 }
 
-// RenameDirect ...
+// RenameDirect is the API to rename a directory
 func (cfs *CFS) RenameDirect(oldpinode uint64, oldname string, newpinode uint64, newname string) int32 {
 
 	ret := cfs.checkMetaConn()
@@ -442,7 +463,7 @@ func (cfs *CFS) RenameDirect(oldpinode uint64, oldname string, newpinode uint64,
 		NewName:   newname,
 		VolID:     cfs.VolID,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 	pRenameDirectAck, err := mc.RenameDirect(ctx, pRenameDirectReq)
 	if err != nil {
 		return -1
@@ -451,7 +472,7 @@ func (cfs *CFS) RenameDirect(oldpinode uint64, oldname string, newpinode uint64,
 	return pRenameDirectAck.Ret
 }
 
-// CreateFileDirect ...
+// CreateFileDirect is the API to create a new file and return the CFile structure
 func (cfs *CFS) CreateFileDirect(pinode uint64, name string, flags int) (int32, *CFile) {
 	var writer int32
 
@@ -495,7 +516,7 @@ func (cfs *CFS) CreateFileDirect(pinode uint64, name string, flags int) (int32, 
 	return 0, &cfile
 }
 
-// OpenFileDirect ...
+// OpenFileDirect is the API to open a file and return the CFile structure
 func (cfs *CFS) OpenFileDirect(pinode uint64, name string, flags int) (int32, *CFile) {
 
 	logger.Debug("OpenFileDirect: name: %v, flags: %v\n", name, flags)
@@ -541,7 +562,7 @@ func (cfs *CFS) OpenFileDirect(pinode uint64, name string, flags int) (int32, *C
 	return 0, &cfile
 }
 
-// UpdateOpenFileDirect ...
+// UpdateOpenFileDirect is the API to update file openning flags
 func (cfs *CFS) UpdateOpenFileDirect(pinode uint64, name string, cfile *CFile, flags int) int32 {
 
 	cfile.isWrite = int(flags)&os.O_WRONLY != 0 || int(flags)&os.O_RDWR != 0
@@ -553,7 +574,7 @@ func (cfs *CFS) UpdateOpenFileDirect(pinode uint64, name string, cfile *CFile, f
 	return 0
 }
 
-// createFileDirect ...
+// createFileDirect to create a file by parent inode number and name of new file
 func (cfs *CFS) createFileDirect(pinode uint64, name string) (int32, uint64) {
 
 	ret := cfs.checkMetaConn()
@@ -568,7 +589,7 @@ func (cfs *CFS) createFileDirect(pinode uint64, name string) (int32, uint64) {
 		Name:   name,
 		VolID:  cfs.VolID,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 	pCreateFileDirectAck, err := mc.CreateFileDirect(ctx, pCreateFileDirectReq)
 	if err != nil || pCreateFileDirectAck.Ret != 0 {
 
@@ -580,7 +601,7 @@ func (cfs *CFS) createFileDirect(pinode uint64, name string) (int32, uint64) {
 		}
 
 		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 		pCreateFileDirectAck, err = mc.CreateFileDirect(ctx, pCreateFileDirectReq)
 		if err != nil {
 			logger.Error("CreateFileDirect failed,grpc func failed :%v\n", err)
@@ -602,6 +623,7 @@ func (cfs *CFS) createFileDirect(pinode uint64, name string) (int32, uint64) {
 	return 0, pCreateFileDirectAck.Inode
 }
 
+// DeleteSymLinkDirect is the API to delete a Symlink
 func (cfs *CFS) DeleteSymLinkDirect(pinode uint64, name string) int32 {
 	ret := cfs.checkMetaConn()
 	if ret != 0 {
@@ -614,7 +636,7 @@ func (cfs *CFS) DeleteSymLinkDirect(pinode uint64, name string) int32 {
 		Name:   name,
 		VolID:  cfs.VolID,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 	mpDDeleteSymLinkDirectAck, err := mc.DeleteSymLinkDirect(ctx, mpDeleteSymLinkDirectReq)
 	if err != nil || mpDDeleteSymLinkDirectAck.Ret != 0 {
 		time.Sleep(time.Second)
@@ -624,7 +646,7 @@ func (cfs *CFS) DeleteSymLinkDirect(pinode uint64, name string) int32 {
 			return -1
 		}
 		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 		mpDDeleteSymLinkDirectAck, err = mc.DeleteSymLinkDirect(ctx, mpDeleteSymLinkDirectReq)
 		if err != nil {
 			logger.Error("DeleteFile failed,grpc func err :%v\n", err)
@@ -636,7 +658,7 @@ func (cfs *CFS) DeleteSymLinkDirect(pinode uint64, name string) int32 {
 
 }
 
-// DeleteFileDirect ...
+// DeleteFileDirect is the API to delete a file
 func (cfs *CFS) DeleteFileDirect(pinode uint64, name string) int32 {
 
 	ret, chunkInfos, _ := cfs.GetFileChunksDirect(pinode, name)
@@ -659,7 +681,7 @@ func (cfs *CFS) DeleteFileDirect(pinode uint64, name string) int32 {
 					ChunkID:      v1.ChunkID,
 					BlockGroupID: v1.BlockGroupWithHost.BlockGroupID,
 				}
-				ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+				ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 				_, err = dc.DeleteChunk(ctx, dpDeleteChunkReq)
 				if err != nil {
 					logger.Error("DeleteFile failed,rpc to datanode fail :%v\n", err)
@@ -680,7 +702,7 @@ func (cfs *CFS) DeleteFileDirect(pinode uint64, name string) int32 {
 		Name:   name,
 		VolID:  cfs.VolID,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 	mpDeleteFileDirectAck, err := mc.DeleteFileDirect(ctx, mpDeleteFileDirectReq)
 	if err != nil || mpDeleteFileDirectAck.Ret != 0 {
 		time.Sleep(time.Second)
@@ -690,7 +712,7 @@ func (cfs *CFS) DeleteFileDirect(pinode uint64, name string) int32 {
 			return -1
 		}
 		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 		mpDeleteFileDirectAck, err = mc.DeleteFileDirect(ctx, mpDeleteFileDirectReq)
 		if err != nil {
 			logger.Error("DeleteFile failed,grpc func err :%v\n", err)
@@ -701,7 +723,7 @@ func (cfs *CFS) DeleteFileDirect(pinode uint64, name string) int32 {
 	return mpDeleteFileDirectAck.Ret
 }
 
-// GetFileChunksDirect ...
+// GetFileChunksDirect to get chunks' info of the file
 func (cfs *CFS) GetFileChunksDirect(pinode uint64, name string) (int32, []*mp.ChunkInfoWithBG, uint64) {
 
 	ret := cfs.checkMetaConn()
@@ -716,7 +738,7 @@ func (cfs *CFS) GetFileChunksDirect(pinode uint64, name string) (int32, []*mp.Ch
 		Name:   name,
 		VolID:  cfs.VolID,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 	pGetFileChunksDirectAck, err := mc.GetFileChunksDirect(ctx, pGetFileChunksDirectReq)
 	if err != nil || pGetFileChunksDirectAck.Ret != 0 {
 
@@ -729,7 +751,7 @@ func (cfs *CFS) GetFileChunksDirect(pinode uint64, name string) (int32, []*mp.Ch
 		}
 
 		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 		pGetFileChunksDirectAck, err = mc.GetFileChunksDirect(ctx, pGetFileChunksDirectReq)
 		if err != nil {
 			logger.Error("GetFileChunks failed,grpc func failed :%v\n", err)
@@ -739,6 +761,7 @@ func (cfs *CFS) GetFileChunksDirect(pinode uint64, name string) (int32, []*mp.Ch
 	return pGetFileChunksDirectAck.Ret, pGetFileChunksDirectAck.ChunkInfos, pGetFileChunksDirectAck.Inode
 }
 
+// SymLink is the API to create a new Symlink
 func (cfs *CFS) SymLink(pInode uint64, newName string, target string) (int32, uint64) {
 
 	ret := cfs.checkMetaConn()
@@ -754,7 +777,7 @@ func (cfs *CFS) SymLink(pInode uint64, newName string, target string) (int32, ui
 		Target: target,
 		VolID:  cfs.VolID,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 	pSymLinkAck, err := mc.SymLink(ctx, pSymLinkReq)
 	if err != nil || pSymLinkAck.Ret != 0 {
 
@@ -767,7 +790,7 @@ func (cfs *CFS) SymLink(pInode uint64, newName string, target string) (int32, ui
 		}
 
 		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 		pSymLinkAck, err = mc.SymLink(ctx, pSymLinkReq)
 		if err != nil {
 			logger.Error("SymLink failed,grpc func failed :%v\n", err)
@@ -778,6 +801,7 @@ func (cfs *CFS) SymLink(pInode uint64, newName string, target string) (int32, ui
 
 }
 
+// ReadLink is the API to read a Symlink
 func (cfs *CFS) ReadLink(inode uint64) (int32, string) {
 
 	ret := cfs.checkMetaConn()
@@ -791,7 +815,7 @@ func (cfs *CFS) ReadLink(inode uint64) (int32, string) {
 		Inode: inode,
 		VolID: cfs.VolID,
 	}
-	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 	pReadLinkAck, err := mc.ReadLink(ctx, pReadLinkReq)
 	if err != nil || pReadLinkAck.Ret != 0 {
 
@@ -804,7 +828,7 @@ func (cfs *CFS) ReadLink(inode uint64) (int32, string) {
 		}
 
 		mc = mp.NewMetaNodeClient(cfs.MetaNodeConn)
-		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, _ := context.WithTimeout(context.Background(), METANODE_TIMEOUT_SECONDS*time.Second)
 		pReadLinkAck, err = mc.ReadLink(ctx, pReadLinkReq)
 		if err != nil {
 			logger.Error("ReadLink failed,grpc func failed :%v\n", err)
@@ -815,6 +839,7 @@ func (cfs *CFS) ReadLink(inode uint64) (int32, string) {
 
 }
 
+// CloseFileSystem is the API to umount current filesystem
 func (cfs *CFS) CloseFileSystem() {
 
 	if cfs.MetaNodeConn != nil {
