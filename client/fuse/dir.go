@@ -150,9 +150,7 @@ func (d *dir) ReadDirAll(ctx context.Context) ([]bfuse.Dirent, error) {
 
 	ret, dirents := d.fs.cfs.ListDirect(d.inode, d.name)
 
-	if ret == 0 {
-
-	} else if ret == utils.ENO_NOTEXIST {
+	if ret == utils.ENO_NOTEXIST {
 		if d.parent != nil {
 			//clean dirty cache in dir map
 			delete(d.parent.active, d.name)
@@ -160,7 +158,7 @@ func (d *dir) ReadDirAll(ctx context.Context) ([]bfuse.Dirent, error) {
 		return nil, bfuse.Errno(syscall.EPERM)
 	} else if ret == 2 || ret == utils.ENO_NOENT {
 		return nil, bfuse.Errno(syscall.ENOENT)
-	} else {
+	} else if ret != 0 {
 		return nil, bfuse.Errno(syscall.EIO)
 	}
 
@@ -338,26 +336,24 @@ func (d *dir) Remove(ctx context.Context, req *bfuse.RemoveRequest) error {
 			logger.Debug("symlink DeleteSymLinkDirect ret  %v", ret)
 
 			if ret != 0 {
-				if ret == utils.ENO_NOTEXIST {
-					return nil
-				} else if ret == 2 {
+				if ret == 2 {
 					return bfuse.Errno(syscall.EPERM)
-				} else {
+				} else if ret != utils.ENO_NOTEXIST {
 					return bfuse.Errno(syscall.EIO)
 				}
+				return nil
 			}
 
 		} else {
 
 			ret := d.fs.cfs.DeleteFileDirect(d.inode, req.Name)
 			if ret != 0 {
-				if ret == utils.ENO_NOTEXIST {
-					return nil
-				} else if ret == 2 {
+				if ret == 2 {
 					return bfuse.Errno(syscall.EPERM)
-				} else {
+				} else if ret != utils.ENO_NOTEXIST {
 					return bfuse.Errno(syscall.EIO)
 				}
+				return nil
 			}
 
 		}
