@@ -668,7 +668,7 @@ func (vs *VolMgrServer) SnapShotCluster(ctx context.Context, in *vp.SnapShotClus
 	return &vp.SnapShotClusterAck{Ret: 0}, nil
 }
 
-//GetMetaLeader gets metanode group of the specific volume
+//GetVolMgrRG gets metanode group of the specific volume
 func (vs *VolMgrServer) GetVolMgrRG(ctx context.Context, in *vp.GetVolMgrRGReq) (*vp.GetVolMgrRGAck, error) {
 	ack := vp.GetVolMgrRGAck{}
 	leaderID, _ := vs.RaftServer.LeaderTerm(1)
