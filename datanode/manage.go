@@ -58,6 +58,7 @@ var MetaNodePeers []string
 // MetaNodeAddr string
 var MetaNodeAddr string
 
+// DtAddr ...
 var DtAddr DataNodeServerAddr
 
 // RegistryToVolMgr the DataNode registry to VolMgr Server
