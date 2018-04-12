@@ -32,10 +32,10 @@ import (
 var (
 	errNotExists   = errors.New("Key not exists")
 	errNotLeader   = errors.New("Not leader")
-	ErrKeyNotFound = errors.New("Key not found")
+	ErrKeyNotFound = errors.New("Key not found")  // ErrKeyNotFound is key not found
 )
 
-//KvStateMachine is a wrapper of btree based state machine for cluster management
+//ClusterKvStateMachine is a wrapper of btree based state machine for cluster management
 type ClusterKvStateMachine struct {
 	id      uint64
 	applied uint64
@@ -81,7 +81,7 @@ func newClusterKvStatemachine(id uint64, raft *raft.RaftServer) *ClusterKvStateM
 	}
 }
 
-///CreateKvStateMachine is exported out to initializing cluster kv service
+///CreateClusterKvStateMachine is exported out to initializing cluster kv service
 func CreateClusterKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir string, UUID string, raftGroupID uint64) (*ClusterKvStateMachine, *wal.Storage, error) {
 	wc := &wal.Config{}
 	raftStroage, err := wal.NewStorage(path.Join(dir, UUID, "wal"), wc)
@@ -193,7 +193,7 @@ func (ms *ClusterKvStateMachine) Apply(data []byte, index uint64) (interface{}, 
 	return nil, nil
 }
 
-//BGGet gets Block Group by key
+//BlockGroupGet gets Block Group by key
 func (ms *ClusterKvStateMachine) BlockGroupGet(key uint64) (*vp.BlockGroup, error) {
 	// if !ms.raft.IsLeader(1) {
 	// 	return nil, errors.New("not leader")
@@ -214,7 +214,7 @@ func (ms *ClusterKvStateMachine) BlockGroupGet(key uint64) (*vp.BlockGroup, erro
 	return blockGroup, nil
 }
 
-//BGSet sets Block Group into sm
+//BlockGroupSet sets Block Group into sm
 func (ms *ClusterKvStateMachine) BlockGroupSet(key uint64, blockGroup *vp.BlockGroup) error {
 	if !ms.raft.IsLeader(1) {
 		return errors.New("not leader")
@@ -264,7 +264,7 @@ func (ms *ClusterKvStateMachine) BlockGroupDel(raftGroupID uint64, key string) e
 
 }
 
-//BGGetAll gets all Block Groups
+//BlockGroupGetAll gets all Block Groups
 func (ms *ClusterKvStateMachine) BlockGroupGetAll() ([]*vp.BlockGroup, error) {
 	if !ms.raft.IsLeader(1) {
 		return nil, errors.New("not leader")
@@ -540,7 +540,7 @@ func (ms *ClusterKvStateMachine) DataNodeBGDelBG(key string, bgs []uint64) error
 	return err
 }
 
-//DataNodeBGDelBG adds Block Groups into bgs from datanode Block Group map
+//DataNodeBGAddBG adds Block Groups into bgs from datanode Block Group map
 func (ms *ClusterKvStateMachine) DataNodeBGAddBG(key string, bg uint64) error {
 	var item btreeinstance.DataNodeBGKV
 	item.K = key
@@ -1188,7 +1188,7 @@ type KV interface {
 	Value() []byte
 }
 
-//TakeKvSnapShot ...
+//TakeClusterKvSnapShot ...
 func TakeClusterKvSnapShot(ms *ClusterKvStateMachine, rsg *wal.Storage, dir string) error {
 
 	_, err := os.Stat(dir)
@@ -1340,7 +1340,7 @@ func TakeClusterKvSnapShot(ms *ClusterKvStateMachine, rsg *wal.Storage, dir stri
 	return nil
 }
 
-//LoadKvSnapShot ...
+//LoadClusterKvSnapShot ...
 func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error) {
 
 	var fpath string
@@ -1555,13 +1555,13 @@ func AddInit(ips []string) {
 	}
 }
 
-//Resolver implements address resolving interface
+//ClusterResolver implements address resolving interface
 type ClusterResolver struct {
 	nodes map[uint64]struct{}
 	sync.Mutex
 }
 
-//NewResolver creates a new ClusterResolver
+//NewClusterResolver creates a new ClusterResolver
 func NewClusterResolver() *ClusterResolver {
 	return &ClusterResolver{nodes: make(map[uint64]struct{})}
 }
