@@ -319,12 +319,12 @@ func (d *dir) Remove(ctx context.Context, req *bfuse.RemoveRequest) error {
 			}
 		} else {
 			ret, inodeType, _ := d.fs.cfs.StatDirect(d.inode, req.Name)
-			if ret != 0 {
-				return bfuse.Errno(syscall.EIO)
-			} else {
+			if ret == 0 {
 				if inodeType == utils.INODE_SYMLINK {
 					symlimkFlag = true
 				}
+			} else {
+				return bfuse.Errno(syscall.EIO)
 			}
 
 		}
@@ -401,13 +401,12 @@ func (d *dir) Rename(ctx context.Context, req *bfuse.RenameRequest, newDir fs.No
 
 		ret := d.fs.cfs.RenameDirect(d.inode, req.OldName, newDir.(*dir).inode, req.NewName)
 		if ret != 0 {
-			if ret == 2 {
-				return bfuse.Errno(syscall.ENOENT)
-			} else if ret == 1 || ret == 17 {
+			if ret == 1 || ret == 17 {
 				return bfuse.Errno(syscall.EPERM)
-			} else {
+			} else if ret !=2 {
 				return bfuse.Errno(syscall.EIO)
 			}
+			return bfuse.Errno(syscall.ENOENT)
 		}
 
 		if aOld, ok := d.active[req.OldName]; ok {
@@ -423,16 +422,15 @@ func (d *dir) Rename(ctx context.Context, req *bfuse.RenameRequest, newDir fs.No
 
 		ret := d.fs.cfs.RenameDirect(d.inode, req.OldName, d.inode, req.NewName)
 		if ret != 0 {
-			if ret == utils.ENO_NOTEXIST {
-				delete(d.active, req.OldName)
-				return bfuse.Errno(syscall.ENOENT)
-			} else if ret == 2 {
+			if ret == 2 {
 				return bfuse.Errno(syscall.ENOENT)
 			} else if ret == 1 || ret == 17 {
 				return bfuse.Errno(syscall.EPERM)
-			} else {
+			} else if ret != utils.ENO_NOTEXIST {
 				return bfuse.Errno(syscall.EIO)
 			}
+			delete(d.active, req.OldName)
+			return bfuse.Errno(syscall.ENOENT)
 		}
 
 		if a, ok := d.active[req.NewName]; ok {
