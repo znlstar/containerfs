@@ -7,6 +7,7 @@ import (
 	"runtime"
 )
 
+// Version info
 var (
 	Release string
 	Build   string
