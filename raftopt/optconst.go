@@ -3,7 +3,7 @@
 
 package raftopt
 
-// OPT_CONST
+//OPT defines opt index for kv state machine
 const (
 	OPT_ALLOCATE_RGID  = 1
 	OPT_ALLOCATE_BGID  = 2

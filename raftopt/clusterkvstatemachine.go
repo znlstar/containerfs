@@ -35,7 +35,7 @@ var (
 	ErrKeyNotFound = errors.New("Key not found")
 )
 
-//KvStateMachine ...
+//KvStateMachine is a wrapper of btree based state machine for cluster management
 type ClusterKvStateMachine struct {
 	id      uint64
 	applied uint64
@@ -66,6 +66,7 @@ type ClusterKvStateMachine struct {
 	mnrgData *btree.BTree
 }
 
+//newClusterKvStatemachine creates a new ClusterKvStateMachine
 func newClusterKvStatemachine(id uint64, raft *raft.RaftServer) *ClusterKvStateMachine {
 	return &ClusterKvStateMachine{
 		id:             id,
@@ -80,7 +81,7 @@ func newClusterKvStatemachine(id uint64, raft *raft.RaftServer) *ClusterKvStateM
 	}
 }
 
-///CreateKvStateMachine ...
+///CreateKvStateMachine is exported out to initializing cluster kv service
 func CreateClusterKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir string, UUID string, raftGroupID uint64) (*ClusterKvStateMachine, *wal.Storage, error) {
 	wc := &wal.Config{}
 	raftStroage, err := wal.NewStorage(path.Join(dir, UUID, "wal"), wc)
@@ -119,7 +120,7 @@ func CreateClusterKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID
 
 }
 
-//Apply ...
+//Apply dispatches raft operations
 func (ms *ClusterKvStateMachine) Apply(data []byte, index uint64) (interface{}, error) {
 
 	kv := &kvp.Kv{}
@@ -192,7 +193,7 @@ func (ms *ClusterKvStateMachine) Apply(data []byte, index uint64) (interface{}, 
 	return nil, nil
 }
 
-//BGGet ...
+//BGGet gets Block Group by key
 func (ms *ClusterKvStateMachine) BlockGroupGet(key uint64) (*vp.BlockGroup, error) {
 	// if !ms.raft.IsLeader(1) {
 	// 	return nil, errors.New("not leader")
@@ -213,7 +214,7 @@ func (ms *ClusterKvStateMachine) BlockGroupGet(key uint64) (*vp.BlockGroup, erro
 	return blockGroup, nil
 }
 
-//BGSet ...
+//BGSet sets Block Group into sm
 func (ms *ClusterKvStateMachine) BlockGroupSet(key uint64, blockGroup *vp.BlockGroup) error {
 	if !ms.raft.IsLeader(1) {
 		return errors.New("not leader")
@@ -241,6 +242,7 @@ func (ms *ClusterKvStateMachine) BlockGroupSet(key uint64, blockGroup *vp.BlockG
 
 }
 
+//BlockGroupDel removes Block Group from cluster by key
 func (ms *ClusterKvStateMachine) BlockGroupDel(raftGroupID uint64, key string) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
@@ -262,7 +264,7 @@ func (ms *ClusterKvStateMachine) BlockGroupDel(raftGroupID uint64, key string) e
 
 }
 
-//BGGetAll ...
+//BGGetAll gets all Block Groups
 func (ms *ClusterKvStateMachine) BlockGroupGetAll() ([]*vp.BlockGroup, error) {
 	if !ms.raft.IsLeader(1) {
 		return nil, errors.New("not leader")
@@ -287,6 +289,7 @@ func (ms *ClusterKvStateMachine) BlockGroupGetAll() ([]*vp.BlockGroup, error) {
 	return blockGroups, nil
 }
 
+//DataNodeGetAll gets all datanodes in cluster
 func (ms *ClusterKvStateMachine) DataNodeGetAll(raftGroupID uint64) ([]*vp.DataNode, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
@@ -310,6 +313,7 @@ func (ms *ClusterKvStateMachine) DataNodeGetAll(raftGroupID uint64) ([]*vp.DataN
 	return dataNodes, nil
 }
 
+//DataNodeGetRange gets all daatanodes in cluster with key not less than minKey
 func (ms *ClusterKvStateMachine) DataNodeGetRange(raftGroupID uint64, minKey string) ([]*vp.DataNode, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return nil, errors.New("not leader")
@@ -337,6 +341,7 @@ func (ms *ClusterKvStateMachine) DataNodeGetRange(raftGroupID uint64, minKey str
 	return dataNodes, nil
 }
 
+//DataNodeGet gets datanode by key
 func (ms *ClusterKvStateMachine) DataNodeGet(raftGroupID uint64, key string) (*vp.DataNode, error) {
 	var item btreeinstance.DataNodeKV
 	item.K = key
@@ -353,6 +358,7 @@ func (ms *ClusterKvStateMachine) DataNodeGet(raftGroupID uint64, key string) (*v
 	return nil, ErrKeyNotFound
 }
 
+//DataNodeSet sets datanode kv
 func (ms *ClusterKvStateMachine) DataNodeSet(raftGroupID uint64, key string, dataNode *vp.DataNode) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
@@ -378,6 +384,7 @@ func (ms *ClusterKvStateMachine) DataNodeSet(raftGroupID uint64, key string, dat
 
 }
 
+//DelDataNode removes datanode kv by key
 func (ms *ClusterKvStateMachine) DelDataNode(raftGroupID uint64, key string) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
@@ -399,6 +406,7 @@ func (ms *ClusterKvStateMachine) DelDataNode(raftGroupID uint64, key string) err
 
 }
 
+//DataNodeBGGetAll gets all items in map from datanode to Block Group
 func (ms *ClusterKvStateMachine) DataNodeBGGetAll() ([]*vp.DataNodeBGS, error) {
 	if !ms.raft.IsLeader(1) {
 		return nil, errors.New("not leader")
@@ -421,6 +429,7 @@ func (ms *ClusterKvStateMachine) DataNodeBGGetAll() ([]*vp.DataNodeBGS, error) {
 	return dataNodeBGS, nil
 }
 
+//DataNodeBGGet gets map from datanode by key to Block Group
 func (ms *ClusterKvStateMachine) DataNodeBGGet(key string) (*vp.DataNodeBGS, error) {
 	if !ms.raft.IsLeader(1) {
 		return nil, errors.New("not leader")
@@ -439,6 +448,7 @@ func (ms *ClusterKvStateMachine) DataNodeBGGet(key string) (*vp.DataNodeBGS, err
 	return dataNodeBGS, nil
 }
 
+//DataNodeBGSet sets map from datanode by key to Block Group
 func (ms *ClusterKvStateMachine) DataNodeBGSet(key string, dataNodeBGS *vp.DataNodeBGS) error {
 	if !ms.raft.IsLeader(1) {
 		return errors.New("not leader")
@@ -464,6 +474,7 @@ func (ms *ClusterKvStateMachine) DataNodeBGSet(key string, dataNodeBGS *vp.DataN
 
 }
 
+//DelDataNodeBG removes map from datanode by key to all Block Group
 func (ms *ClusterKvStateMachine) DelDataNodeBG(key string) error {
 	if !ms.raft.IsLeader(1) {
 		return errors.New("not leader")
@@ -485,6 +496,7 @@ func (ms *ClusterKvStateMachine) DelDataNodeBG(key string) error {
 
 }
 
+//DataNodeBGDelBG removes Block Groups in bgs from datanode Block Group map
 func (ms *ClusterKvStateMachine) DataNodeBGDelBG(key string, bgs []uint64) error {
 	if !ms.raft.IsLeader(1) {
 		return errNotLeader
@@ -527,6 +539,8 @@ func (ms *ClusterKvStateMachine) DataNodeBGDelBG(key string, bgs []uint64) error
 	_, err = resp.Response()
 	return err
 }
+
+//DataNodeBGDelBG adds Block Groups into bgs from datanode Block Group map
 func (ms *ClusterKvStateMachine) DataNodeBGAddBG(key string, bg uint64) error {
 	var item btreeinstance.DataNodeBGKV
 	item.K = key
@@ -559,6 +573,8 @@ func (ms *ClusterKvStateMachine) DataNodeBGAddBG(key string, bg uint64) error {
 	return nil
 
 }
+
+//RGIDGET generates a new global unique raft group id
 func (ms *ClusterKvStateMachine) RGIDGET(raftGroupID uint64) (uint64, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return 0, errors.New("not leader")
@@ -586,7 +602,7 @@ func (ms *ClusterKvStateMachine) RGIDGET(raftGroupID uint64) (uint64, error) {
 	return rgID, nil
 }
 
-//blockgroupIDGET ...
+//BGIDGET generates a new global unique Block Group id
 func (ms *ClusterKvStateMachine) BGIDGET(raftGroupID uint64) (uint64, error) {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return 0, errors.New("not leader")
@@ -614,6 +630,7 @@ func (ms *ClusterKvStateMachine) BGIDGET(raftGroupID uint64) (uint64, error) {
 	return bgID, nil
 }
 
+//VolumeGet gets volume info from volume kv by key
 func (ms *ClusterKvStateMachine) VolumeGet(raftGroupID uint64, key string) (*vp.Volume, error) {
 	var item btreeinstance.VOLKV
 	item.K = key
@@ -630,6 +647,7 @@ func (ms *ClusterKvStateMachine) VolumeGet(raftGroupID uint64, key string) (*vp.
 	return volume, nil
 }
 
+//VolumeGetAll gets info of all volumes in volume kv
 func (ms *ClusterKvStateMachine) VolumeGetAll(raftGroupID uint64) ([]*vp.Volume, error) {
 	var v []btreeinstance.VOLKV
 
@@ -650,6 +668,7 @@ func (ms *ClusterKvStateMachine) VolumeGetAll(raftGroupID uint64) ([]*vp.Volume,
 	return volumes, nil
 }
 
+//VolumeSet sets volume kv
 func (ms *ClusterKvStateMachine) VolumeSet(raftGroupID uint64, key string, volume *vp.Volume) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
@@ -675,6 +694,7 @@ func (ms *ClusterKvStateMachine) VolumeSet(raftGroupID uint64, key string, volum
 
 }
 
+//VolumeDel removes volume from volume kv by key
 func (ms *ClusterKvStateMachine) VolumeDel(raftGroupID uint64, key string) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
@@ -695,6 +715,8 @@ func (ms *ClusterKvStateMachine) VolumeDel(raftGroupID uint64, key string) error
 	return nil
 
 }
+
+//MetaNodeGetAll gets all metandoes registered to cluster
 func (ms *ClusterKvStateMachine) MetaNodeGetAll(raftGroupID uint64) ([]*vp.MetaNode, error) {
 	var v []btreeinstance.MetaNodeKV
 
@@ -715,7 +737,7 @@ func (ms *ClusterKvStateMachine) MetaNodeGetAll(raftGroupID uint64) ([]*vp.MetaN
 	return metaNodes, nil
 }
 
-// cluster ...
+//MetaNodeGetRange gets all metanodes with key not less than minKey
 func (ms *ClusterKvStateMachine) MetaNodeGetRange(raftGroupID uint64, minKey uint64) ([]*vp.MetaNode, error) {
 	var v []btreeinstance.MetaNodeKV
 
@@ -739,6 +761,7 @@ func (ms *ClusterKvStateMachine) MetaNodeGetRange(raftGroupID uint64, minKey uin
 	return metaNodes, nil
 }
 
+//MetaNodeGet gets metanode info by key
 func (ms *ClusterKvStateMachine) MetaNodeGet(raftGroupID uint64, key uint64) (*vp.MetaNode, error) {
 	var item btreeinstance.MetaNodeKV
 	item.K = key
@@ -755,6 +778,7 @@ func (ms *ClusterKvStateMachine) MetaNodeGet(raftGroupID uint64, key uint64) (*v
 	return metaNode, nil
 }
 
+//MetaNodeSet sets metanode kv
 func (ms *ClusterKvStateMachine) MetaNodeSet(raftGroupID uint64, key uint64, metaNode *vp.MetaNode) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
@@ -782,6 +806,7 @@ func (ms *ClusterKvStateMachine) MetaNodeSet(raftGroupID uint64, key uint64, met
 
 }
 
+//DelMetaNode removes metanode from metanode kv by key
 func (ms *ClusterKvStateMachine) DelMetaNode(raftGroupID uint64, key uint64) error {
 	if !ms.raft.IsLeader(raftGroupID) {
 		return errors.New("not leader")
@@ -803,6 +828,8 @@ func (ms *ClusterKvStateMachine) DelMetaNode(raftGroupID uint64, key uint64) err
 	return nil
 
 }
+
+//MetaNodeRGGet gets metanode raftgroup by key
 func (ms *ClusterKvStateMachine) MetaNodeRGGet(key uint64) (*vp.MetaNodeRG, error) {
 	var item btreeinstance.MNRGKV
 	item.K = key
@@ -819,6 +846,7 @@ func (ms *ClusterKvStateMachine) MetaNodeRGGet(key uint64) (*vp.MetaNodeRG, erro
 	return metaNodeRG, nil
 }
 
+//MetaNodeRGSet sets metanode kv
 func (ms *ClusterKvStateMachine) MetaNodeRGSet(key uint64, metaNodeRG *vp.MetaNodeRG) error {
 	if !ms.raft.IsLeader(1) {
 		return errNotLeader
@@ -843,6 +871,8 @@ func (ms *ClusterKvStateMachine) MetaNodeRGSet(key uint64, metaNodeRG *vp.MetaNo
 	}
 	return nil
 }
+
+//MetaNodeRGGetRange gets all metanodes from kv with key not less than minKey
 func (ms *ClusterKvStateMachine) MetaNodeRGGetRange(minKey uint64) ([]*vp.MetaNodeRG, error) {
 	var v []btreeinstance.MNRGKV
 
@@ -865,6 +895,8 @@ func (ms *ClusterKvStateMachine) MetaNodeRGGetRange(minKey uint64) ([]*vp.MetaNo
 	}
 	return metaNodeRGS, nil
 }
+
+//MetaNodeRGGetAll gets all metanode raftgroup
 func (ms *ClusterKvStateMachine) MetaNodeRGGetAll() ([]*vp.MetaNodeRG, error) {
 	logger.Debug("MetaNodeRGGetAll")
 	var v []btreeinstance.MNRGKV
@@ -885,6 +917,8 @@ func (ms *ClusterKvStateMachine) MetaNodeRGGetAll() ([]*vp.MetaNodeRG, error) {
 	}
 	return metaNodeRGS, nil
 }
+
+//DelMetaNodeRG removes metanode raftgroup from kv by key
 func (ms *ClusterKvStateMachine) DelMetaNodeRG(key uint64) error {
 	if !ms.raft.IsLeader(1) {
 		return errNotLeader
@@ -906,7 +940,7 @@ func (ms *ClusterKvStateMachine) DelMetaNodeRG(key uint64) error {
 	return nil
 }
 
-//AddNode ...
+//AddNode adds an volmgr raft node
 func (ms *ClusterKvStateMachine) AddNode(peer proto.Peer) error {
 	resp := ms.raft.ChangeMember(1, proto.ConfAddNode, peer, nil)
 	_, err := resp.Response()
@@ -916,7 +950,7 @@ func (ms *ClusterKvStateMachine) AddNode(peer proto.Peer) error {
 	return nil
 }
 
-//RemoveNode ...
+//RemoveNode removes volmgr raft node by peer
 func (ms *ClusterKvStateMachine) RemoveNode(peer proto.Peer) error {
 	resp := ms.raft.ChangeMember(1, proto.ConfRemoveNode, peer, nil)
 	_, err := resp.Response()
@@ -926,25 +960,26 @@ func (ms *ClusterKvStateMachine) RemoveNode(peer proto.Peer) error {
 	return nil
 }
 
-//ApplyMemberChange ...
+//ApplyMemberChange applies member changed raft request
 func (ms *ClusterKvStateMachine) ApplyMemberChange(confChange *proto.ConfChange, index uint64) (interface{}, error) {
 	return nil, nil
 }
 
-//HandleLeaderChange ...
+//HandleLeaderChange handles leader changed request
 func (ms *ClusterKvStateMachine) HandleLeaderChange(leader uint64) {
 }
 
-//HandleFatalEvent ...
+//HandleFatalEvent handle fatal event request
 func (ms *ClusterKvStateMachine) HandleFatalEvent(err *raft.FatalError) {
 	panic(err.Err)
 }
 
+//setApplied sets applied id
 func (ms *ClusterKvStateMachine) setApplied(index uint64) {
 	ms.applied = index
 }
 
-//Snapshot ...
+//Snapshot takes snapshot of kv in mem
 func (ms *ClusterKvStateMachine) Snapshot() (proto.Snapshot, error) {
 
 	ss := &ClusterKvSnapShot{
@@ -965,7 +1000,7 @@ func (ms *ClusterKvStateMachine) Snapshot() (proto.Snapshot, error) {
 
 }
 
-//ApplySnapshot ...
+//ApplySnapshot applies snapshot request
 func (ms *ClusterKvStateMachine) ApplySnapshot(peers []proto.Peer, iter proto.SnapIterator) error {
 
 	var (
@@ -1030,6 +1065,7 @@ func (ms *ClusterKvStateMachine) ApplySnapshot(peers []proto.Peer, iter proto.Sn
 	return nil
 }
 
+//ClusterKvSnapShot is an uitility tool for taking kv snapshot
 type ClusterKvSnapShot struct {
 	applied     uint64
 	appliedFlag bool
@@ -1045,17 +1081,19 @@ type ClusterKvSnapShot struct {
 	snap []*snapItem
 }
 
+//snapItem is an uitility tool from snapshot
 type snapItem struct {
 	tree    *btree.BTree
 	curItem btree.Item
 	opt     uint32
 }
 
+//tmplog is an utility function for logging sanpshot
 func tmplog(v string) {
 	logger.Debug("Next:", v)
 }
 
-//Next ...
+//Next implements interface of snapshot
 func (s *ClusterKvSnapShot) Next() ([]byte, error) {
 
 	if s.appliedFlag && s.rgIDFlag && s.bgIDFlag && s.curBtreeIdx >= len(s.snap) {
@@ -1500,10 +1538,10 @@ func LoadClusterKvSnapShot(ms *ClusterKvStateMachine, dir string) (uint64, error
 
 ////////////////////////////////////////////////////////////////////////////
 
-//AddrDatabase ...
+//ClusterAddrDatabase is a map from nodeid to address
 var ClusterAddrDatabase = make(map[uint64]*common.Address)
 
-//AddInit ...
+//AddInit initializes ClusterAddrDatabase
 func AddInit(ips []string) {
 	fmt.Println("IPS:")
 	for i := range ips {
@@ -1517,32 +1555,32 @@ func AddInit(ips []string) {
 	}
 }
 
-//Resolver ...
+//Resolver implements address resolving interface
 type ClusterResolver struct {
 	nodes map[uint64]struct{}
 	sync.Mutex
 }
 
-//NewResolver ...
+//NewResolver creates a new ClusterResolver
 func NewClusterResolver() *ClusterResolver {
 	return &ClusterResolver{nodes: make(map[uint64]struct{})}
 }
 
-//AddNode ...
+//AddNode adds new node
 func (r *ClusterResolver) AddNode(nodeID uint64, addr *common.Address) {
 	r.Lock()
 	r.nodes[nodeID] = struct{}{}
 	r.Unlock()
 }
 
-//RemoveNode ...
+//RemoveNode removes node by node id
 func (r *ClusterResolver) RemoveNode(nodeID uint64, addr *common.Address) {
 	r.Lock()
 	delete(r.nodes, nodeID)
 	r.Unlock()
 }
 
-//AllNodes ...
+//AllNodes gets all nodes
 func (r *ClusterResolver) AllNodes() (all []uint64) {
 	r.Lock()
 	for k := range r.nodes {
@@ -1552,7 +1590,7 @@ func (r *ClusterResolver) AllNodes() (all []uint64) {
 	return
 }
 
-//NodeAddress ...
+//NodeAddress gets node address by node id
 func (r *ClusterResolver) NodeAddress(nodeID uint64, stype raft.SocketType) (addr string, err error) {
 	raddr, ok := ClusterAddrDatabase[nodeID]
 	if !ok {

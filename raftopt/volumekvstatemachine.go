@@ -60,7 +60,7 @@ func newVolumeKvStateMachine(id uint64, raft *raft.RaftServer) *VolumeKvStateMac
 	}
 }
 
-//CreateVolumeKvStateMachine is exported out for initilization of volume kv statemachine
+//CreateVolumeKvStateMachine is exported out for initialization of volume kv statemachine
 func CreateVolumeKvStateMachine(rs *raft.RaftServer, peers []proto.Peer, nodeID uint64, dir string, UUID string, raftGroupID uint64) (*VolumeKvStateMachine, *wal.Storage, error) {
 	wc := &wal.Config{}
 	raftStroage, err := wal.NewStorage(path.Join(dir, UUID, "wal"), wc)
