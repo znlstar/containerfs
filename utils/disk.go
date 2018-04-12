@@ -1,3 +1,6 @@
+// Copyright (c) 2017, tig.jd.com. All rights reserved.
+// Use of this source code is governed by a Apache License 2.0 that can be found in the LICENSE file.
+
 package utils
 
 import (
@@ -5,14 +8,14 @@ import (
 	"syscall"
 )
 
-// DiskStatus disk status
+//DiskStatus is used for collecting disk status info
 type DiskStatus struct {
 	All  uint64 `json:"all"`
 	Used uint64 `json:"used"`
 	Free uint64 `json:"free"`
 }
 
-// DiskUsage ...
+//DiskUsage is an utility tool for collecting disk status info
 func DiskUsage(path string) (disk DiskStatus) {
 	fs := syscall.Statfs_t{}
 	err := syscall.Statfs(path, &fs)
@@ -25,7 +28,7 @@ func DiskUsage(path string) (disk DiskStatus) {
 	return
 }
 
-// const var
+//const for bytes size
 const (
 	B  = 1
 	KB = 1024 * B
@@ -33,6 +36,7 @@ const (
 	GB = 1024 * MB
 )
 
+//testDisk is a tool for testing disk usage
 func testDisk() {
 	disk := DiskUsage("/home/raynor")
 	fmt.Printf("All: %.2f GB\n", float64(disk.All)/float64(GB))

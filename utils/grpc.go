@@ -1,3 +1,6 @@
+// Copyright (c) 2017, tig.jd.com. All rights reserved.
+// Use of this source code is governed by a Apache License 2.0 that can be found in the LICENSE file.
+
 package utils
 
 import (
@@ -11,7 +14,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// GetMetaNodeLeader ...
+//GetMetaNodeLeader is utility tool for getting metanode raft group leader
 func GetMetaNodeLeader(hosts []string, UUID string) (string, error) {
 
 	//logger.Debug("GetMetaNodeLeader hosts %v", hosts)
@@ -55,7 +58,7 @@ func GetMetaNodeLeader(hosts []string, UUID string) (string, error) {
 
 }
 
-// Dial ...
+//Dial is tool for creating a new grpc connection
 func Dial(host string) (*grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
@@ -71,7 +74,7 @@ func Dial(host string) (*grpc.ClientConn, error) {
 	return conn, err
 }
 
-// TryDial Dial and Close connection for checking network
+//TryDial dials and closes connection for checking network
 func TryDial(host string) error {
 	conn, err := grpc.Dial(host, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(time.Millisecond*300), grpc.FailOnNonTempDialError(true))
 	if err != nil {
@@ -81,7 +84,7 @@ func TryDial(host string) error {
 	return nil
 }
 
-// GetVolMgrLeader ...
+//GetVolMgrLeader is tool for getting volmgr cluster leader
 func GetVolMgrLeader(hosts []string) (string, error) {
 
 	var leader string
@@ -115,7 +118,7 @@ func GetVolMgrLeader(hosts []string) (string, error) {
 
 }
 
-// DialVolMgr ...
+//DialVolMgr is a tool for creating a new grpc connection to volmgr
 func DialVolMgr(hosts []string) (string, *grpc.ClientConn, error) {
 	var conn *grpc.ClientConn
 	var err error
