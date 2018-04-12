@@ -403,7 +403,7 @@ func (d *dir) Rename(ctx context.Context, req *bfuse.RenameRequest, newDir fs.No
 		if ret != 0 {
 			if ret == 1 || ret == 17 {
 				return bfuse.Errno(syscall.EPERM)
-			} else if ret !=2 {
+			} else if ret != 2 {
 				return bfuse.Errno(syscall.EIO)
 			}
 			return bfuse.Errno(syscall.ENOENT)

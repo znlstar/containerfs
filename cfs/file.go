@@ -32,6 +32,7 @@ const (
 
 // BufferSize ...
 var BufferSize int32
+
 // WriteBufferSize ...
 var WriteBufferSize int
 
@@ -755,7 +756,7 @@ func (cfile *CFile) WriteThread() {
 					}
 				}
 				cfile.CloseSignal <- struct{}{}
-				return	
+				return
 			}
 
 		}

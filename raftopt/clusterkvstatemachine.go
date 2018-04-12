@@ -30,8 +30,8 @@ import (
 )
 
 var (
-	errNotExists   = errors.New("Key not exists")
-	errNotLeader   = errors.New("Not leader")
+	errNotExists = errors.New("Key not exists")
+	errNotLeader = errors.New("Not leader")
 	// ErrKeyNotFound is key not found
 	ErrKeyNotFound = errors.New("Key not found")
 )

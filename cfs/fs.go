@@ -35,6 +35,7 @@ const (
 
 // VolMgrHosts ...
 var VolMgrHosts []string
+
 // MetaNodeHosts ...
 var MetaNodeHosts []string
 
