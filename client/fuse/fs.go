@@ -36,6 +36,7 @@ func (fs *FS) Statfs(ctx context.Context, req *bfuse.StatfsRequest, resp *bfuse.
 	return nil
 }
 
+// Mount for cfs volume
 func Mount(uuid, mountPoint string, isReadOnly int) error {
 
 	cfs := cfs.OpenFileSystem(uuid)
@@ -68,11 +69,7 @@ func Mount(uuid, mountPoint string, isReadOnly int) error {
 		}
 		// check if the mount process has an error to report
 		<-c.Ready
-		if err := c.MountError; err != nil {
-			return err
-		}
-
-		return nil
+		return c.MountError
 	}
 
 	c, err := bfuse.Mount(
@@ -98,9 +95,5 @@ func Mount(uuid, mountPoint string, isReadOnly int) error {
 	}
 	// check if the mount process has an error to report
 	<-c.Ready
-	if err := c.MountError; err != nil {
-		return err
-	}
-
-	return nil
+	return c.MountError
 }
