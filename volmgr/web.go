@@ -54,11 +54,11 @@ func (s *VolMgrServer) ClusterInfo(ctx context.Context, in *vp.ClusterInfoReq) (
 //GetMetaNode implements GetMetaNode of volmgr service
 func (s *VolMgrServer) GetMetaNode(ctx context.Context, in *vp.GetAllMetaNodeReq) (*vp.GetAllMetaNodeAck, error) {
 	ack := vp.GetAllMetaNodeAck{}
-	if mns, err := s.Cluster.RaftGroup.MetaNodeGetAll(1); err != nil {
+	if mns, err := s.Cluster.RaftGroup.MetaNodeGetAll(1); err == nil {
+		ack.MetaNodes = mns
+	} else {
 		ack.Ret = -1
 		return &ack, err
-	} else {
-		ack.MetaNodes = mns
 	}
 	return &ack, nil
 }
