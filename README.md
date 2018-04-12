@@ -25,12 +25,10 @@ CFS consists of several subsystems:
 
 * the metanode cluster. multi-raft replication, a namespace per raft
 
-* the blocknode cluster. blockgroup as the replication unit
-
-* the objectnode cluster. objectgroup as the replication unit
+* the datanode cluster. de-clustering, replicated store of file extents, objects or object segments. 
 
 
-a volume = a filesystem instance = an object bucket
+a namespace = a filesystem instance = an object bucket
 
 
 ## APIs
