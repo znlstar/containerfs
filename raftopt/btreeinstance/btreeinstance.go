@@ -30,7 +30,7 @@ type DentryKV struct {
 	V []byte
 }
 
-//Less
+//Less ...
 func (a DentryKV) Less(b btree.Item) bool {
 	return a.K < b.(DentryKV).K
 }
@@ -59,7 +59,7 @@ func (a BGKV) Less(b btree.Item) bool {
 
 // -------- Cluster btrees ---------------
 
-// DataNodeKV ...
+//DataNodeKV ...
 type DataNodeKV struct {
 	K string
 	V []byte
