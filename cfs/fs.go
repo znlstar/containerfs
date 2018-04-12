@@ -19,6 +19,7 @@ import (
 	"google.golang.org/grpc/connectivity"
 )
 
+// server and action timeout
 const (
 	VOLMGR_TIMEOUT_SECONDS   = 10
 	DATANODE_TIMEOUT_SECONDS = 10
@@ -32,7 +33,9 @@ const (
 	LEADER_PERIOD_CHECK_MILLISECOND = 500
 )
 
+// VolMgrHosts ...
 var VolMgrHosts []string
+// MetaNodeHosts ...
 var MetaNodeHosts []string
 
 // CFS to store global items of the filesystem
