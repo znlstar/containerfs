@@ -32,7 +32,7 @@ import (
 var (
 	errNotExists   = errors.New("Key not exists")
 	errNotLeader   = errors.New("Not leader")
-	ErrKeyNotFound = errors.New("Key not found")  // ErrKeyNotFound is key not found
+	ErrKeyNotFound = errors.New("Key not found") // ErrKeyNotFound is key not found
 )
 
 //ClusterKvStateMachine is a wrapper of btree based state machine for cluster management
