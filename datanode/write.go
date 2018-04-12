@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc"
 )
 
-// C2MReplServerStream: Master DataNode Struct
+// C2MReplServerStream Master DataNode Struct
 type C2MReplServerStream struct {
 	stream dp.DataNode_C2MReplServer
 	sync.Mutex
