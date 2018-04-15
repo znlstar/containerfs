@@ -1,4 +1,4 @@
-// Copyright (c) 2017, TIG All rights reserved.
+// Copyright (c) 2017, tig.jd.com. All rights reserved.
 // Use of this source code is governed by a Apache License 2.0 that can be found in the LICENSE file.
 
 package cfs
@@ -21,7 +21,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-// file status
 const (
 	FILE_NORMAL    = 0
 	FILE_ERROR     = 2
@@ -30,10 +29,7 @@ const (
 	WRITE_RETRY_CNT = 5
 )
 
-// BufferSize ...
 var BufferSize int32
-
-// WriteBufferSize ...
 var WriteBufferSize int
 
 // Data is a buffer to store bytes writing to Datanode
@@ -384,10 +380,28 @@ func (cfile *CFile) getExtentInfo(start int64, end int64, eInfo *[]extentInfo) {
 	}
 }
 
+func (cfile *CFile) waitWriteCache(end int64) {
+	var i int
+	logger.Debug("cfile %v, start to wait append write..FileSize %v, FileSizeInCache %v", cfile.Name, cfile.FileSize, cfile.FileSizeInCache)
+	for i = 0; i < 10; i++ {
+		if cfile.FileSize >= end || cfile.FileSize == cfile.FileSizeInCache {
+			break
+		}
+		if cfile.isWrite && cfile.convergeBuffer.Len() > 0 {
+			cfile.convergeFlushCh <- &struct{}{}
+		}
+		if len(cfile.DataCache) == 0 {
+			logger.Debug("cfile %v, FileSize %v, FileSizeInCache %v, but no DataCache", cfile.Name, cfile.FileSize, cfile.FileSizeInCache)
+		}
+		time.Sleep(40 * time.Millisecond)
+	}
+	logger.Debug("cfile %v, end waiting with FileSize %v, FileSizeInCache %v, time %v ms", cfile.Name, cfile.FileSize, cfile.FileSizeInCache, i*100)
+}
+
 // Read provides the API to read datas from the file
 func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 
-	if cfile.Status != FILE_ERROR {
+	if cfile.Status != FILE_NORMAL {
 		logger.Error("cfile %v status error , read func return -2 ", cfile.Name)
 		return -2
 	}
@@ -400,7 +414,6 @@ func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 		return 0
 	}
 
-	var i int
 	var ret int32
 	var doneFlag bool
 	start := offset
@@ -408,7 +421,7 @@ func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 
 	logger.Debug("cfile %v Read start: offset: %v, len: %v", cfile.Name, offset, readsize)
 
-	for start < end && cfile.Status == FILE_ERROR {
+	for start < end && cfile.Status == FILE_NORMAL {
 
 		eInfo := make([]extentInfo, 0, 4)
 		cfile.getExtentInfo(start, end, &eInfo)
@@ -429,23 +442,10 @@ func (cfile *CFile) Read(data *[]byte, offset int64, readsize int64) int64 {
 		}
 
 		//wait append write request in caches
-		logger.Debug("cfile %v, start to wait append write..FileSize %v, FileSizeInCache %v", cfile.Name, cfile.FileSize, cfile.FileSizeInCache)
-		for i = 0; i < 10; i++ {
-			if cfile.FileSize >= end || cfile.FileSize == cfile.FileSizeInCache {
-				break
-			}
-			if cfile.isWrite && cfile.convergeBuffer.Len() > 0 {
-				cfile.convergeFlushCh <- &struct{}{}
-			}
-			if len(cfile.DataCache) == 0 {
-				logger.Debug("cfile %v, FileSize %v, FileSizeInCache %v, but no DataCache", cfile.Name, cfile.FileSize, cfile.FileSizeInCache)
-			}
-			time.Sleep(40 * time.Millisecond)
-		}
-		logger.Debug("cfile %v, end waiting with FileSize %v, FileSizeInCache %v, time %v ms", cfile.Name, cfile.FileSize, cfile.FileSizeInCache, i*100)
+		cfile.waitWriteCache(end)
 	}
 
-	if cfile.Status != FILE_ERROR {
+	if cfile.Status != FILE_NORMAL {
 		logger.Error("cfile %v status error , read func return -2 ", cfile.Name)
 		return -2
 	}
@@ -481,7 +481,7 @@ func (cfile *CFile) Write(buf []byte, offset int64, length int32) int32 {
 
 	logger.Debug("cfile %v write start: offset: %v, len: %v", cfile.Name, offset, length)
 
-	for start < end && cfile.Status == FILE_ERROR {
+	for start < end && cfile.Status == FILE_NORMAL {
 
 		eInfo := make([]extentInfo, 0, 4)
 		cfile.getExtentInfo(start, end, &eInfo)
@@ -722,26 +722,10 @@ func (cfile *CFile) WriteThread() {
 	for true {
 		select {
 		case chanData := <-cfile.DataQueue:
-			if chanData != nil {
-				if cfile.Status != FILE_ERROR {
-					continue
-				}
-
-				newData := &Data{}
-				newData.ID = atomic.AddUint64(&cfile.atomicNum, 1)
-				newData.DataBuf = new(bytes.Buffer)
-				newData.DataBuf.Write(chanData.data)
-				newData.Status = 1
-
-				if err := cfile.writeHandler(newData); err != nil {
-					logger.Error("WriteThread file %v writeHandler err %v !", cfile.Name, err)
-					cfile.Status = FILE_ERROR
-					cfile.WriteErrSignal <- true
-				}
-			} else {
+			if chanData == nil {
 				logger.Debug("WriteThread file %v recv channel close, wait DataCache...", cfile.Name)
 				var ti uint32
-				for cfile.Status == FILE_ERROR {
+				for cfile.Status == FILE_NORMAL {
 					if len(cfile.DataCache) == 0 {
 						break
 					}
@@ -757,6 +741,23 @@ func (cfile *CFile) WriteThread() {
 				}
 				cfile.CloseSignal <- struct{}{}
 				return
+			} else {
+
+				if cfile.Status != FILE_NORMAL {
+					continue
+				}
+
+				newData := &Data{}
+				newData.ID = atomic.AddUint64(&cfile.atomicNum, 1)
+				newData.DataBuf = new(bytes.Buffer)
+				newData.DataBuf.Write(chanData.data)
+				newData.Status = 1
+
+				if err := cfile.writeHandler(newData); err != nil {
+					logger.Error("WriteThread file %v writeHandler err %v !", cfile.Name, err)
+					cfile.Status = FILE_ERROR
+					cfile.WriteErrSignal <- true
+				}
 			}
 
 		}
@@ -781,7 +782,7 @@ ALLOCATECHUNK:
 			logger.Debug("writeHandler: file %v, begin waiting last chunk: %v\n", cfile.Name, len(cfile.DataCache))
 			tmpDataCacheLen := len(cfile.DataCache)
 
-			for cfile.Status == FILE_ERROR {
+			for cfile.Status == FILE_NORMAL {
 				if tmpDataCacheLen == 0 {
 					break
 				}
@@ -801,7 +802,7 @@ ALLOCATECHUNK:
 					}
 				}
 			}
-			if cfile.Status != FILE_ERROR {
+			if cfile.Status != FILE_NORMAL {
 				return errors.New("file status err")
 			}
 			logger.Debug("writeHandler: file %v, end wait after loop times %v\n", cfile.Name, ti)
@@ -953,7 +954,7 @@ func (cfile *CFile) AllocateChunk(IsStream bool) *Chunk {
 	return curChunk
 }
 
-// Retry to retry write ops when error occurred
+// Retry to retry write ops when error occured
 func (chunk *Chunk) Retry() {
 
 	if chunk.CFile.Status == FILE_NOT_EXIST {
@@ -1158,7 +1159,7 @@ func (cfile *CFile) updateChunkSize(chunkinfo *mp.ChunkInfoWithBG, length int32)
 
 // Sync provides the API to sync file
 func (cfile *CFile) Sync() int32 {
-	if cfile.Status != FILE_ERROR {
+	if cfile.Status != FILE_NORMAL {
 		return -1
 	}
 
@@ -1173,7 +1174,7 @@ func (cfile *CFile) Flush() int32 {
 		return 0
 	}
 
-	if cfile.Status != FILE_ERROR {
+	if cfile.Status != FILE_NORMAL {
 		return -1
 	}
 
