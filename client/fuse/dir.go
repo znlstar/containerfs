@@ -16,6 +16,7 @@ import (
 	"golang.org/x/net/context"
 )
 
+// dir to store directory infos
 type dir struct {
 	inode  uint64
 	parent *dir
@@ -25,12 +26,14 @@ type dir struct {
 	active map[string]*refcount
 }
 
+// refcount to manage structure reference
 type refcount struct {
 	node   node
 	kernel bool
 	refs   uint32
 }
 
+// newDir to create a new directory
 func newDir(filesys *FS, inode uint64, parent *dir, name string) *dir {
 	d := &dir{
 		inode:  inode,
@@ -54,6 +57,7 @@ var _ fs.NodeSymlinker = (*dir)(nil)
 var _ fs.NodeRequestLookuper = (*dir)(nil)
 var _ fs.HandleReadDirAller = (*dir)(nil)
 
+// setName to set name of the directory
 func (d *dir) setName(name string) {
 
 	d.mu.Lock()
@@ -62,6 +66,7 @@ func (d *dir) setName(name string) {
 
 }
 
+// setParentInode to set parent inode of the directory
 func (d *dir) setParentInode(pdir *dir) {
 
 	d.mu.Lock()
@@ -69,7 +74,7 @@ func (d *dir) setParentInode(pdir *dir) {
 	d.parent = pdir
 }
 
-// Attr ...
+// Attr to get directory attributes infos
 func (d *dir) Attr(ctx context.Context, a *bfuse.Attr) error {
 
 	logger.Debug("Dir Attr")
@@ -98,6 +103,7 @@ func (d *dir) Attr(ctx context.Context, a *bfuse.Attr) error {
 	return nil
 }
 
+// Lookup to lookup file indoe by path
 func (d *dir) Lookup(ctx context.Context, req *bfuse.LookupRequest, resp *bfuse.LookupResponse) (fs.Node, error) {
 
 	d.mu.Lock()
@@ -123,11 +129,13 @@ func (d *dir) Lookup(ctx context.Context, req *bfuse.LookupRequest, resp *bfuse.
 	return a.node, nil
 }
 
+// reviveDir to revive the directory
 func (d *dir) reviveDir(inode uint64, name string) (*dir, error) {
 	child := newDir(d.fs, inode, d, name)
 	return child, nil
 }
 
+// reviveNode to revive the inode
 func (d *dir) reviveNode(inodeType uint32, inode uint64, name string) (node, error) {
 	if inodeType == utils.INODE_DIR {
 		child, _ := d.reviveDir(inode, name)
@@ -142,7 +150,7 @@ func (d *dir) reviveNode(inodeType uint32, inode uint64, name string) (node, err
 	return child, nil
 }
 
-// ReadDirAll ...
+// ReadDirAll to read all items of the directory
 func (d *dir) ReadDirAll(ctx context.Context) ([]bfuse.Dirent, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -182,7 +190,7 @@ func (d *dir) ReadDirAll(ctx context.Context) ([]bfuse.Dirent, error) {
 	return res, nil
 }
 
-// Create ...
+// Create to create a new file under the directory
 func (d *dir) Create(ctx context.Context, req *bfuse.CreateRequest, resp *bfuse.CreateResponse) (fs.Node, fs.Handle, error) {
 	logger.Debug("Create file start ,  name %v parentino %v parentname %v", req.Name, d.inode, d.name)
 
@@ -225,6 +233,7 @@ func (d *dir) Create(ctx context.Context, req *bfuse.CreateRequest, resp *bfuse.
 	return child, child, nil
 }
 
+// forgetChild to forget the child of the directory
 func (d *dir) forgetChild(name string, child node) {
 	if name == "" {
 		return
@@ -244,6 +253,7 @@ func (d *dir) forgetChild(name string, child node) {
 	}
 }
 
+// Forget to forget the directory
 func (d *dir) Forget() {
 	logger.Debug("Forget dir %v inode %v", d.name, d.inode)
 	if d.parent == nil {
@@ -257,7 +267,7 @@ func (d *dir) Forget() {
 	d.parent.forgetChild(name, d)
 }
 
-// Mkdir ...
+// Mkdir to make a new directory
 func (d *dir) Mkdir(ctx context.Context, req *bfuse.MkdirRequest) (fs.Node, error) {
 
 	logger.Debug("Mkdir start ,  name %v parentino %v parentname %v", req.Name, d.inode, d.name)
@@ -290,7 +300,7 @@ func (d *dir) Mkdir(ctx context.Context, req *bfuse.MkdirRequest) (fs.Node, erro
 	return child, nil
 }
 
-// Remove ...
+// Remove to remove the directory
 func (d *dir) Remove(ctx context.Context, req *bfuse.RemoveRequest) error {
 
 	logger.Debug("Remove start , name %v parentino %v parentname %v", req.Name, d.inode, d.name)
@@ -368,7 +378,7 @@ func (d *dir) Remove(ctx context.Context, req *bfuse.RemoveRequest) error {
 	return nil
 }
 
-// Rename ...
+// Rename to rename the directory
 func (d *dir) Rename(ctx context.Context, req *bfuse.RenameRequest, newDir fs.Node) error {
 
 	logger.Debug("Rename start d.inode %v, req.OldName %v, newDir.(*dir).inode %v , req.NewName %v", d.inode, req.OldName, newDir.(*dir).inode, req.NewName)
@@ -452,7 +462,7 @@ func (d *dir) Rename(ctx context.Context, req *bfuse.RenameRequest, newDir fs.No
 	return nil
 }
 
-// Symlink ...
+// Symlink to create a new symlink under the diretory
 func (d *dir) Symlink(ctx context.Context, req *bfuse.SymlinkRequest) (fs.Node, error) {
 
 	logger.Debug("Symlink req %v", req)
@@ -477,7 +487,7 @@ func (d *dir) Symlink(ctx context.Context, req *bfuse.SymlinkRequest) (fs.Node, 
 	return child, nil
 }
 
-// Fsync ...
+// Fsync .to sync the directory
 func (d *dir) Fsync(ctx context.Context, req *bfuse.FsyncRequest) error {
 
 	return nil
