@@ -104,7 +104,7 @@ func (f *File) Attr(ctx context.Context, a *bfuse.Attr) error {
 		}
 		a.Inode = uint64(inode)
 
-		a.BlockSize = 4 * 1024
+		a.BlockSize = BLOCK_SIZE
 		a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
 		a.Mode = 0666
 		a.Valid = time.Second

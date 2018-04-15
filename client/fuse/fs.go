@@ -12,26 +12,31 @@ import (
 	"golang.org/x/net/context"
 )
 
-// FS struct
+const (
+	BLOCK_SIZE     = 4096
+	MAX_READ_AHEAD = 128 * 1024
+)
+
+// FS to store CFS handler
 type FS struct {
 	cfs *cfs.CFS
 }
 
 var _ = fs.FS(&FS{})
 
-// Root ...
+// Root to create root directory
 func (fs *FS) Root() (fs.Node, error) {
 	n := newDir(fs, 0, nil, "")
 	return n, nil
 }
 
-// Statfs ...
+// Statfs to get stat of the filesystem
 func (fs *FS) Statfs(ctx context.Context, req *bfuse.StatfsRequest, resp *bfuse.StatfsResponse) error {
 	err, ret := fs.cfs.GetFSInfo()
 	if err != 0 {
 		return bfuse.Errno(syscall.EIO)
 	}
-	resp.Bsize = 4 * 1024
+	resp.Bsize = BLOCK_SIZE
 	resp.Frsize = resp.Bsize
 	resp.Blocks = ret.TotalSpace / uint64(resp.Bsize)
 	resp.Bfree = ret.FreeSpace / uint64(resp.Bsize)
@@ -39,7 +44,7 @@ func (fs *FS) Statfs(ctx context.Context, req *bfuse.StatfsRequest, resp *bfuse.
 	return nil
 }
 
-// Mount for cfs volume
+// Mount to mount the filesystem by UUID
 func Mount(uuid, mountPoint string, isReadOnly int) error {
 
 	cfs := cfs.OpenFileSystem(uuid)
@@ -53,7 +58,7 @@ func Mount(uuid, mountPoint string, isReadOnly int) error {
 		c, err := bfuse.Mount(
 			mountPoint,
 			bfuse.AllowOther(),
-			bfuse.MaxReadahead(128*1024),
+			bfuse.MaxReadahead(MAX_READ_AHEAD),
 			bfuse.AsyncRead(),
 			bfuse.WritebackCache(),
 			bfuse.FSName("ContainerFS-"+uuid),
@@ -79,7 +84,7 @@ func Mount(uuid, mountPoint string, isReadOnly int) error {
 		mountPoint,
 		bfuse.ReadOnly(),
 		bfuse.AllowOther(),
-		bfuse.MaxReadahead(128*1024),
+		bfuse.MaxReadahead(MAX_READ_AHEAD),
 		bfuse.AsyncRead(),
 		bfuse.WritebackCache(),
 		bfuse.FSName("ContainerFS-"+uuid),
