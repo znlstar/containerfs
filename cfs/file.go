@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc"
 )
 
+// FILE status
 const (
 	FILE_NORMAL    = 0
 	FILE_ERROR     = 2
@@ -29,7 +30,10 @@ const (
 	WRITE_RETRY_CNT = 5
 )
 
+// BufferSize ...
 var BufferSize int32
+
+// WriteBufferSize ...
 var WriteBufferSize int
 
 // Data is a buffer to store bytes writing to Datanode
@@ -722,7 +726,26 @@ func (cfile *CFile) WriteThread() {
 	for true {
 		select {
 		case chanData := <-cfile.DataQueue:
-			if chanData == nil {
+			if chanData != nil {
+
+				if cfile.Status != FILE_NORMAL {
+					continue
+				}
+
+				newData := &Data{}
+				newData.ID = atomic.AddUint64(&cfile.atomicNum, 1)
+				newData.DataBuf = new(bytes.Buffer)
+				newData.DataBuf.Write(chanData.data)
+				newData.Status = 1
+
+				if err := cfile.writeHandler(newData); err != nil {
+					logger.Error("WriteThread file %v writeHandler err %v !", cfile.Name, err)
+					cfile.Status = FILE_ERROR
+					cfile.WriteErrSignal <- true
+				}
+
+			} else {
+
 				logger.Debug("WriteThread file %v recv channel close, wait DataCache...", cfile.Name)
 				var ti uint32
 				for cfile.Status == FILE_NORMAL {
@@ -741,23 +764,6 @@ func (cfile *CFile) WriteThread() {
 				}
 				cfile.CloseSignal <- struct{}{}
 				return
-			} else {
-
-				if cfile.Status != FILE_NORMAL {
-					continue
-				}
-
-				newData := &Data{}
-				newData.ID = atomic.AddUint64(&cfile.atomicNum, 1)
-				newData.DataBuf = new(bytes.Buffer)
-				newData.DataBuf.Write(chanData.data)
-				newData.Status = 1
-
-				if err := cfile.writeHandler(newData); err != nil {
-					logger.Error("WriteThread file %v writeHandler err %v !", cfile.Name, err)
-					cfile.Status = FILE_ERROR
-					cfile.WriteErrSignal <- true
-				}
 			}
 
 		}

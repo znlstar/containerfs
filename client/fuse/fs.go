@@ -12,6 +12,7 @@ import (
 	"golang.org/x/net/context"
 )
 
+// SIZE ...
 const (
 	BLOCK_SIZE     = 4096
 	MAX_READ_AHEAD = 128 * 1024
