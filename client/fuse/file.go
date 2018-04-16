@@ -18,7 +18,7 @@ import (
 	"golang.org/x/net/context"
 )
 
-// File struct
+// File to store file infos
 type File struct {
 	mu    sync.Mutex
 	inode uint64
@@ -44,7 +44,7 @@ var _ = fs.NodeFsyncer(&File{})
 var _ = fs.NodeSetattrer(&File{})
 var _ = fs.NodeReadlinker(&File{})
 
-//Forget ...
+// Forget to forget the file
 func (f *File) Forget() {
 	logger.Debug("Forget file %v inode %v", f.name, f.inode)
 	if f.parent == nil {
@@ -58,6 +58,7 @@ func (f *File) Forget() {
 	f.parent.forgetChild(name, f)
 }
 
+// setName to set name of the file
 func (f *File) setName(name string) {
 
 	f.mu.Lock()
@@ -66,6 +67,7 @@ func (f *File) setName(name string) {
 
 }
 
+// setParentInode to set parent inode of the file
 func (f *File) setParentInode(pdir *dir) {
 
 	f.mu.Lock()
@@ -73,7 +75,7 @@ func (f *File) setParentInode(pdir *dir) {
 	f.mu.Unlock()
 }
 
-// Attr ...
+// Attr to get attributes of the file
 func (f *File) Attr(ctx context.Context, a *bfuse.Attr) error {
 
 	logger.Debug("File Attr")
@@ -102,7 +104,7 @@ func (f *File) Attr(ctx context.Context, a *bfuse.Attr) error {
 		}
 		a.Inode = uint64(inode)
 
-		a.BlockSize = 4 * 1024
+		a.BlockSize = BLOCK_SIZE
 		a.Blocks = uint64(math.Ceil(float64(a.Size) / float64(a.BlockSize)))
 		a.Mode = 0666
 		a.Valid = time.Second
@@ -130,7 +132,7 @@ func (f *File) Attr(ctx context.Context, a *bfuse.Attr) error {
 	return nil
 }
 
-// Open ...
+// Open to open the file by name
 func (f *File) Open(ctx context.Context, req *bfuse.OpenRequest, resp *bfuse.OpenResponse) (fs.Handle, error) {
 
 	logger.Debug("Open start : name %v inode %v Flags %v pinode %v pname %v", f.name, f.inode, req.Flags, f.parent.inode, f.parent.name)
@@ -200,7 +202,7 @@ func (f *File) Open(ctx context.Context, req *bfuse.OpenRequest, resp *bfuse.Ope
 	return f, nil
 }
 
-// Release ...
+// Release to release the file
 func (f *File) Release(ctx context.Context, req *bfuse.ReleaseRequest) error {
 
 	logger.Debug("Release start : name %v pinode %v pname %v", f.name, f.parent.inode, f.parent.name)
@@ -226,7 +228,7 @@ func (f *File) Release(ctx context.Context, req *bfuse.ReleaseRequest) error {
 	return err
 }
 
-// Read ...
+// Read to read the data of file by offset and length
 func (f *File) Read(ctx context.Context, req *bfuse.ReadRequest, resp *bfuse.ReadResponse) error {
 
 	f.mu.Lock()
@@ -249,7 +251,7 @@ func (f *File) Read(ctx context.Context, req *bfuse.ReadRequest, resp *bfuse.Rea
 	return nil
 }
 
-// Write ...
+// Write to write data to the file
 func (f *File) Write(ctx context.Context, req *bfuse.WriteRequest, resp *bfuse.WriteResponse) error {
 
 	f.mu.Lock()
@@ -270,7 +272,7 @@ func (f *File) Write(ctx context.Context, req *bfuse.WriteRequest, resp *bfuse.W
 	return nil
 }
 
-// Flush ...
+// Flush to sync the file
 func (f *File) Flush(ctx context.Context, req *bfuse.FlushRequest) error {
 
 	//logger.Debug("Flush start : name %v ,inode %v, pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
@@ -286,7 +288,7 @@ func (f *File) Flush(ctx context.Context, req *bfuse.FlushRequest) error {
 	return nil
 }
 
-// Fsync ...
+// Fsync to sync the file
 func (f *File) Fsync(ctx context.Context, req *bfuse.FsyncRequest) error {
 
 	logger.Debug("Fsync start : name %v ,inode %v, pinode %v pname %v", f.name, f.inode, f.parent.inode, f.parent.name)
@@ -304,12 +306,12 @@ func (f *File) Fsync(ctx context.Context, req *bfuse.FsyncRequest) error {
 	return nil
 }
 
-// Setattr ...
+// Setattr to set attributes of the file
 func (f *File) Setattr(ctx context.Context, req *bfuse.SetattrRequest, resp *bfuse.SetattrResponse) error {
 	return nil
 }
 
-// Readlink ...
+// Readlink to read symlink
 func (f *File) Readlink(ctx context.Context, req *bfuse.ReadlinkRequest) (string, error) {
 
 	logger.Debug("ReadLink ...")
