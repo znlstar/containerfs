@@ -18,8 +18,9 @@ const (
 )
 
 type VolWraper struct {
-	MasterAddrs []string
-	Vols []*Vol
+	MasterAddrs  []string
+	ReadOnlyVols []*Vol
+	ReadWriteVols []*Vol
 	sync.RWMutex
 }
 
@@ -42,5 +43,14 @@ func (wraper *VolWraper)update(){
 
 
 func (wraper *VolWraper)getVols()(err error){
+	return
+}
+
+
+func (wraper *VolWraper)GetWriteVol()(v *Vol,err error){
+	return
+}
+
+func (wraper *VolWraper)GetVol(volId uint64)(err error){
 	return
 }
