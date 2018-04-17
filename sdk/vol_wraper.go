@@ -3,6 +3,8 @@ package sdk
 import (
 	"time"
 	"sync"
+	"github.com/tiglabs/containerfs/util/pool"
+	"net"
 )
 
 type Vol struct {
@@ -21,6 +23,7 @@ type VolWraper struct {
 	MasterAddrs  []string
 	ReadOnlyVols []*Vol
 	ReadWriteVols []*Vol
+	ConnPool      *pool.ConnPool
 	sync.RWMutex
 }
 
@@ -53,4 +56,12 @@ func (wraper *VolWraper)GetWriteVol()(v *Vol,err error){
 
 func (wraper *VolWraper)GetVol(volId uint64)(err error){
 	return
+}
+
+func (wraper *VolWraper)GetConnect(addr string)(conn net.Conn,err error){
+	return
+}
+
+func (wraper *VolWraper)PutConnect(conn net.Conn){
+
 }
