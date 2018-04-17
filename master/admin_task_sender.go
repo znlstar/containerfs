@@ -2,8 +2,8 @@ package master
 
 import (
 	"encoding/json"
-	"github.com/tiglabs/action_dev/prot"
-	"github.com/tiglabs/action_dev/uti"
+	"github.com/tiglabs/containerfs/prot"
+	"github.com/tiglabs/containerfs/uti"
 	"sync"
 	"time"
 )

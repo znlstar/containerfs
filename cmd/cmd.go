@@ -1,12 +1,11 @@
 package cmd
 
 import (
-	datanode "github.com/tiglabs/action_dev/datanod"
-	master "github.com/tiglabs/action_dev/maste"
-	metanode "github.com/tiglabs/action_dev/metanod"
+	datanode "github.com/tiglabs/containerfs/datanode"
+	master "github.com/tiglabs/containerfs/master"
+	metanode "github.com/tiglabs/containerfs/metanode"
 
 	"flag"
-	"github.com/tiglabs/action_dev/utilconfig"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -14,6 +13,7 @@ import (
 	"os/signal"
 	"runtime"
 	"syscall"
+	"github.com/tiglabs/containerfs/util/config"
 )
 
 const (

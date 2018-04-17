@@ -2,7 +2,7 @@ package raftopt
 
 import (
 	"errors"
-	"github.com/tiglabs/action_dev/utilconfig"
+	"github.com/tiglabs/containerfs/utilconfig"
 	"github.com/tiglabs/raft/proto"
 	"strconv"
 	"strings"

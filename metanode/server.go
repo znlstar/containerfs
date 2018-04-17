@@ -2,11 +2,11 @@ package metanode
 
 import (
 	"encoding/json"
-	"github.com/tiglabs/action_dev/prot"
-	"github.com/tiglabs/action_dev/uti"
-	"github.com/tiglabs/action_dev/utilconfig"
-	"github.com/tiglabs/action_dev/utillog"
+	"github.com/tiglabs/containerfs/proto"
+	"github.com/tiglabs/containerfs/util"
+	"github.com/tiglabs/containerfs/util/log"
 	"net/http"
+	"github.com/tiglabs/containerfs/util/config"
 )
 
 const (
@@ -23,7 +23,6 @@ type MetaNode struct {
 	ip         string
 	HttpAddr   string
 	logDir     string
-	space      *SpaceManager
 	toAdminCh  chan *proto.AdminTask
 	masterAddr string
 }
@@ -43,7 +42,6 @@ func (m *MetaNode) HandleSdk(w http.ResponseWriter, r *http.Request) {
 func (m *MetaNode) Start(config *config.Config) (err error) {
 	m.toAdminCh = make(chan *proto.AdminTask, 1024)
 	log.NewLog(m.logDir, "metanode", log.DebugLevel)
-	m.space = NewSpaceManager()
 	go m.replyCmdToAdmin()
 	http.HandleFunc(HandleMasterUrl, m.HandleMaster)
 	http.HandleFunc(HandleSdkUrl, m.HandleSdk)
