@@ -1,6 +1,9 @@
 package sdk
 
-import "time"
+import (
+	"time"
+	"sync"
+)
 
 type Vol struct {
 	VolId uint64
@@ -17,10 +20,12 @@ const (
 type VolWraper struct {
 	MasterAddrs []string
 	Vols []*Vol
+	sync.RWMutex
 }
 
 
 func (wraper *VolWraper)Init(master []string) (err error){
+	go wraper.update()
 	return
 }
 
