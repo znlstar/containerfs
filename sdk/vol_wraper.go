@@ -39,13 +39,13 @@ func (wraper *VolWraper)update(){
 	for {
 		select {
 			case <-ticker.C:
-				wraper.getVols()
+				wraper.getVolsFromMaster()
 		}
 	}
 }
 
 
-func (wraper *VolWraper)getVols()(err error){
+func (wraper *VolWraper) getVolsFromMaster()(err error){
 	return
 }
 
