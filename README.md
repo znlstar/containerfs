@@ -1,7 +1,6 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/tiglabs/containerfs)](https://goreportcard.com/report/github.com/tiglabs/containerfs)
 [![Build Status](https://travis-ci.org/tiglabs/containerfs.svg?branch=master)](https://travis-ci.org/tiglabs/containerfs)
 # ContainerFS
-![image](doc/logo.png) 
 
 ## Overview
 
@@ -13,7 +12,7 @@ L1: object store without namespaces - particularly for images or short video etc
 
 L2: object store with plat namespaces - compatible with the S3 API. 
 
-L3: filesystems with hierachical namespaces, random read and append-only write. Big data systems like HBase can be run on it. 
+L3: filesystems with hierachical namespaces, random read and append-only write.  
 
 L4: filesystems with hierachical namespaces, random read/write and complelete filesystem semantics. 
 
