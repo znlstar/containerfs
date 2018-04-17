@@ -1,8 +1,8 @@
 package fsm
 
 import (
-	"github.com/tiglabs/action_dev/prot"
-	"github.com/tiglabs/action_dev/raftop"
+	"github.com/tiglabs/containerfs/proto"
+	"github.com/tiglabs/containerfs/raftopt"
 )
 
 /*
