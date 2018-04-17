@@ -245,7 +245,11 @@ func (p *Packet) ReadFromConn(c net.Conn, deadlineTime time.Duration, dataSize i
 	if p.Size < 0 {
 		return
 	}
-	return ReadFull(c, &p.Data, int(p.Size))
+	size:=p.Size
+	if p.Opcode==OpRead || p.Opcode==OpStreamRead{
+		size=0
+	}
+	return ReadFull(c, &p.Data, int(size))
 }
 
 
