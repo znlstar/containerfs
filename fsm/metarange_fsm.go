@@ -3,9 +3,12 @@ package fsm
 import (
 	"github.com/tiglabs/containerfs/proto"
 	"github.com/tiglabs/containerfs/raftopt"
+	"github.com/google/btree"
 )
 
 type MetaRangeFsm struct {
+	Inodes *btree.BTree
+	Dentry *btree.BTree
 	raftopt.RaftStoreFsm
 }
 
