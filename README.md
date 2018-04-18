@@ -1,39 +1,52 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/tiglabs/containerfs)](https://goreportcard.com/report/github.com/tiglabs/containerfs)
 [![Build Status](https://travis-ci.org/tiglabs/containerfs.svg?branch=master)](https://travis-ci.org/tiglabs/containerfs)
 # ContainerFS
-![image](doc/logo.png) 
 
-A cluster filesystem for the containers. Please see http://containerfs.io/ for current info.
+## Overview
 
-# Roadmap
-* 2017Q4  
-1. WEB UI ✔
-2. ReplGroup Stream Write for DataNodes  ✔
- 
-* 2018Q1
-1. Choose RaftGroup in MetaNode Pool ✔
-2. MetaNode Auto Registry Add ✔
-3. Full Posix Interface ✔
+What is CFS? 
 
-* 2018Q2
-1. Kernel Client
-2. SPDK-NVME driver for Datanode
+CFS is distributed filesystem and object storage service. And it provides four pragmatic abstractions: 
 
-# Concepts
+L1: object store without namespaces - particularly for images or short video etc. Put an object and the system returns a unique key. Objects are immutable and can be delete however. 
 
-a volume = a metadata table + multiple block groups
+L2: object store with plat namespaces - compatible with the S3 API. 
 
-# Design
+L3: filesystems with hierachical namespaces, random read and append-only write.  
 
-[here](doc/design.md)
+L4: filesystems with hierachical namespaces, random read/write and complelete filesystem semantics. 
 
-# Guide
+## Architecture
 
-[startup](doc/guide.md)
-[with k8s](doc/k8sCfsPlugin.md)
+CFS consists of several subsystems: 
 
-## Report a Bug
+* the cluster master. single raft replication
 
-For filing bugs, suggesting improvements, or requesting new features, please open an [issue](https://github.com/tiglabs/containerfs/issues).
+* the metanode cluster. multi-raft replication, a metadata range (ino range) per raft; a namespace is partitioned by ino range. 
 
-# User Case
+* the datanode cluster. de-clustering, replicated store of file extents, objects or object segments. 
+
+
+a namespace = a filesystem instance = an object bucket
+
+
+## APIs
+
+RESTful s3-compatible API 
+
+FUSE
+
+Java SDK
+
+Go SDK
+
+NFS
+
+## Use Cases and Ecosystem
+
+minio integration
+
+CBASE - HBase on CFS
+
+nginx integration for image service
+
