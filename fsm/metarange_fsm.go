@@ -12,22 +12,22 @@ type MetaRangeFsm struct {
 	raftopt.RaftStoreFsm
 }
 
-func (mr *MetaRangeFsm) Create(request proto.CreateRequest) (response proto.CreateResponse) {
+func (mr *MetaRangeFsm) Create(request *proto.CreateRequest) (response *proto.CreateResponse) {
 	return
 }
 
-func (mr *MetaRangeFsm) Delete(request proto.DeleteRequest) (response proto.DeleteRsponse) {
+func (mr *MetaRangeFsm) Delete(request *proto.DeleteRequest) (response *proto.DeleteRsponse) {
 	return
 }
 
-func (mr *MetaRangeFsm) OpenFile(request proto.OpenFileRequest) (response proto.OpenFileResponse) {
+func (mr *MetaRangeFsm) OpenFile(request *proto.OpenFileRequest) (response *proto.OpenFileResponse) {
 	return
 }
 
-func (mr *MetaRangeFsm) Rename(request proto.RenameRequest) (response proto.RenameResponse) {
+func (mr *MetaRangeFsm) Rename(request *proto.RenameRequest) (response *proto.RenameResponse) {
 	return
 }
 
-func (mr *MetaRangeFsm) List(request proto.ListDirRequest) (response proto.ListDirResponse) {
+func (mr *MetaRangeFsm) List(request *proto.ListDirRequest) (response *proto.ListDirResponse) {
 	return
 }
