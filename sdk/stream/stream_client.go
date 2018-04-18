@@ -2,24 +2,17 @@ package stream
 
 import (
 	"github.com/tiglabs/containerfs/sdk"
-	"io"
-	"container/list"
 	"sync"
 )
 
 type StreamClient struct {
-	dataList list.Element
 	sync.Mutex
-	wraper *sdk.VolWraper
+	wraper  *sdk.VolWraper
+	extents []*ExtentWriter
+	keys    chan string
 }
 
-
-func (sc *StreamClient)StreamWrite(writer io.ReadWriter)(reader io.Reader,err error){
-
-	return
-}
-
-func (sc *StreamClient)StreamRead(writer io.Writer)(reader io.Reader,err error){
+func (sc *StreamClient) StreamWrite(data []byte, offset int64) (size int) {
 
 	return
 }

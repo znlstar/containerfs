@@ -7,23 +7,24 @@ import (
 	"net"
 	"strconv"
 	"time"
+	"fmt"
+	"sync/atomic"
 )
 
 var (
-	ErrBadNodes           = errors.New("BadNodesErr")
-	ErrArgLenUnmatch      = errors.New("ArgLenUnmatchErr")
-	ErrAddrsNodesUnmatch  = errors.New("AddrsNodesUnmatchErr")
-	ErrBufPoolInfoUnmatch = errors.New("BufPoolDataUnmatchErr")
-	ErrBufPoolTypeUnmatch = errors.New("BufPoolTypeUnmatchErr")
+	ReqIDGlobal = int64(1)
 )
 
+func GetReqID() int64 {
+	return atomic.AddInt64(&ReqIDGlobal, 1)
+}
 
 
 const (
 	ExtentNameSplit = "_"
 	VolNameSplit    = "_"
 	AddrSplit       = "/"
-	HeaderSize      = 40
+	HeaderSize      = 44
 	PkgArgMaxSize   = 100
 )
 
@@ -44,6 +45,13 @@ const (
 	OpSyncDelNeedle         = 0x0C
 	OpNotifyCompact         = 0x0D
 
+	OpRename = 0x0E
+	OpOpen   = 0x0F
+	OpCreate = 0x10
+	OpDelete = 0x11
+	OpList   = 0x12
+
+
 	OpIntraGroupNetErr uint8 = 0xF3
 	OpArgUnmatchErr    uint8 = 0xF4
 	OpFileNotExistErr  uint8 = 0xF5
@@ -61,6 +69,10 @@ const (
 	NoReadDeadlineTime=-1
 )
 
+const (
+	TinyStoreMode   = 0
+	ExtentStoreMode = 1
+)
 
 type Packet struct {
 	Magic     uint8
@@ -71,13 +83,13 @@ type Packet struct {
 	Size      uint32
 	Arglen    uint32
 	VolID     uint32
-	FileID    uint32
+	FileID    uint64
 	Offset    int64
 	ReqID     int64
 	Arg       []byte //if create or append ops, data contains addrs
 	Data      []byte
-	StartT	  int64
-	Additional interface{}
+	StartT    int64
+	OrgOpcode uint8
 }
 
 func NewPacket() *Packet {
@@ -149,9 +161,10 @@ func (p *Packet) MarshalHeader(out []byte) {
 	binary.BigEndian.PutUint32(out[8:12], p.Size)
 	binary.BigEndian.PutUint32(out[12:16], p.Arglen)
 	binary.BigEndian.PutUint32(out[16:20], p.VolID)
-	binary.BigEndian.PutUint32(out[20:24], p.FileID)
-	binary.BigEndian.PutUint64(out[24:32], uint64(p.Offset))
-	binary.BigEndian.PutUint64(out[32:40], uint64(p.ReqID))
+	binary.BigEndian.PutUint64(out[20:28], p.FileID)
+	binary.BigEndian.PutUint64(out[28:36], uint64(p.Offset))
+	binary.BigEndian.PutUint64(out[36:HeaderSize], uint64(p.ReqID))
+	p.OrgOpcode = p.Opcode
 
 	return
 }
@@ -169,13 +182,13 @@ func (p *Packet) UnmarshalHeader(in []byte) error {
 	p.Size = binary.BigEndian.Uint32(in[8:12])
 	p.Arglen = binary.BigEndian.Uint32(in[12:16])
 	p.VolID = binary.BigEndian.Uint32(in[16:20])
-	p.FileID = binary.BigEndian.Uint32(in[20:24])
-	p.Offset = int64(binary.BigEndian.Uint64(in[24:32]))
-	p.ReqID = int64(binary.BigEndian.Uint64(in[32:40]))
+	p.FileID = binary.BigEndian.Uint64(in[20:28])
+	p.Offset = int64(binary.BigEndian.Uint64(in[28:36]))
+	p.ReqID = int64(binary.BigEndian.Uint64(in[36:HeaderSize]))
+	p.OrgOpcode = p.Opcode
 
 	return nil
 }
-
 
 func (p *Packet) WriteToNoDeadLineConn(c net.Conn, freeBody bool) (err error) {
 	header:=make([]byte,HeaderSize)
@@ -281,4 +294,9 @@ func (p *Packet) PackOkGetInfoReply(buf []byte) {
 	p.Arglen = 0
 }
 
+func (p *Packet) GetUniqLogId() (m string) {
+	m = fmt.Sprintf("%v_%v_%v_%v_%v", p.ReqID, p.VolID, p.FileID, p.Offset, GetOpMesg(p.OrgOpcode))
+
+	return
+}
 

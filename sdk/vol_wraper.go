@@ -8,9 +8,9 @@ import (
 )
 
 type Vol struct {
-	VolId uint64
-	Goal  uint8
-	Hosts []string
+	VolId  uint32
+	Goal   uint8
+	Hosts  []string
 	Status uint8
 }
 
